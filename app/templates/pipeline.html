@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Pipeline{% endblock %}
+{% block content %}
+<h2>Pipeline de leads</h2>
+<div style="display:flex; gap:14px; overflow-x:auto;">
+  {% for stage in stages %}
+  <div class="card" style="min-width:260px; flex:1;">
+    <h3>{{ stage.name }} <span class="pill">{{ leads_by_stage[stage.id]|length }}</span></h3>
+    {% for lead in leads_by_stage[stage.id] %}
+      <div class="card" style="margin-bottom:8px; padding:10px;">
+        <a href="/leads/{{ lead.id }}"><strong>{{ lead.name or lead.phone or lead.email }}</strong></a><br>
+        <span class="muted">{{ "WhatsApp" if lead.source == "whatsapp" else "Site" }}
+          {% if lead.assigned_user %} · {{ lead.assigned_user.name }}{% endif %}</span>
+      </div>
+    {% else %}
+      <p class="muted">Sem leads</p>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% if unstaged %}
+<h3 style="margin-top:24px;">Sem etapa definida</h3>
+{% for lead in unstaged %}
+  <p><a href="/leads/{{ lead.id }}">{{ lead.name or lead.phone or lead.email }}</a></p>
+{% endfor %}
+{% endif %}
+{% endblock %}
