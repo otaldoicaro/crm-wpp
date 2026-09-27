@@ -7,6 +7,8 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
 BASE_DOMAIN = os.getenv("BASE_DOMAIN", "localhost")  # ex: agenciajunta-crm.com.br
 SESSION_COOKIE_NAME = "crm_session"
+# token secreto pra proteger o endpoint de provisionamento inicial (/admin/bootstrap)
+ADMIN_SETUP_TOKEN = os.getenv("ADMIN_SETUP_TOKEN", "")
 
 # Meta (WhatsApp Cloud API + Conversions API)
 META_APP_ID = os.getenv("META_APP_ID", "")
