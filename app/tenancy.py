@@ -14,14 +14,21 @@ DEBUG = os.getenv("DEBUG", "1") == "1"
 def resolve_subdomain(request: Request) -> str | None:
     """Extrai o subdomínio do Host. Ex: 'clientea.suacrm.com.br' -> 'clientea'.
 
-    Em dev, também aceita '?tenant=clientea' na URL (só quando DEBUG=1) e
-    hosts como 'clientea.localhost:8000' (o Chrome/macOS já resolvem
-    *.localhost para 127.0.0.1 sem precisar mexer no /etc/hosts).
+    Em dev/teste (sem subdomínio de verdade disponível ainda), também aceita
+    '?tenant=clientea' na URL (só quando DEBUG=1). Como redirects internos
+    (login, troca de etapa, etc.) não carregam esse query param, o valor é
+    também guardado num cookie 'debug_tenant' (ver deps.py::current_tenant)
+    pra sobreviver aos redirects dentro da mesma sessão do navegador.
+    Também aceita hosts como 'clientea.localhost:8000' (o Chrome/macOS já
+    resolvem *.localhost para 127.0.0.1 sem precisar mexer no /etc/hosts).
     """
     if DEBUG:
         override = request.query_params.get("tenant")
         if override:
             return override
+        cookie_override = request.cookies.get("debug_tenant")
+        if cookie_override:
+            return cookie_override
 
     host = request.headers.get("host", "")
     host = host.split(":")[0]  # remove porta
