@@ -1,13 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Entrar{% endblock %}
 {% block content %}
-<div class="card" style="max-width:360px; margin: 60px auto;">
-  <h2>Entrar</h2>
-  {% if error %}<p style="color:#f87171">{{ error }}</p>{% endif %}
-  <form method="post" action="/login">
-    <p><label>E-mail<br><input type="email" name="email" required></label></p>
-    <p><label>Senha<br><input type="password" name="password" required></label></p>
-    <button type="submit">Entrar</button>
-  </form>
+<div class="login-wrap">
+  <div class="card login-card">
+    <img class="logo-img" src="/static/brand/logo-horizontal-amarelo.svg" alt="Junta">
+    <h2>Entrar</h2>
+    {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+    <form method="post" action="/login">
+      <p><label>E-mail<br><input type="email" name="email" required></label></p>
+      <p><label>Senha<br><input type="password" name="password" required></label></p>
+      <button class="btn" type="submit" style="width:100%">Entrar</button>
+    </form>
+  </div>
 </div>
 {% endblock %}

@@ -1,27 +1,77 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m %}
 {% block title %}Pipeline{% endblock %}
 {% block content %}
-<h2>Pipeline de leads</h2>
-<div style="display:flex; gap:14px; overflow-x:auto;">
+<div class="kanban-toolbar">
+  <h2 style="margin:0">Pipeline de leads</h2>
+  <span class="muted">Arraste os cards entre as colunas pra mudar a etapa</span>
+</div>
+
+<div class="kanban">
   {% for stage in stages %}
-  <div class="card" style="min-width:260px; flex:1;">
-    <h3>{{ stage.name }} <span class="pill">{{ leads_by_stage[stage.id]|length }}</span></h3>
-    {% for lead in leads_by_stage[stage.id] %}
-      <div class="card" style="margin-bottom:8px; padding:10px;">
-        <a href="/leads/{{ lead.id }}"><strong>{{ lead.name or lead.phone or lead.email }}</strong></a><br>
-        <span class="muted">{{ "WhatsApp" if lead.source == "whatsapp" else "Site" }}
-          {% if lead.assigned_user %} · {{ lead.assigned_user.name }}{% endif %}</span>
+  <div class="kanban-col" data-stage-id="{{ stage.id }}">
+    <div class="kanban-col-head">
+      <span class="dot" style="background: {{ stage_colors[stage.id] }}"></span>
+      <h3>{{ stage.name }}</h3>
+      <span class="count">{{ leads_by_stage[stage.id]|length }}</span>
+    </div>
+    <div class="kanban-cards" data-stage-id="{{ stage.id }}">
+      {% for lead in leads_by_stage[stage.id] %}
+      <div class="lead-card" draggable="true" data-lead-id="{{ lead.id }}">
+        <span class="name"><a href="/inbox/{{ lead.id }}">{{ lead.name or lead.phone or lead.email or "(sem nome)" }}</a></span>
+        <span class="phone">{{ lead.phone or lead.email }}</span>
+        <div class="meta-row">
+          {{ m.platform_badge(lead_platforms[lead.id], platform_labels[lead_platforms[lead.id]]) }}
+          {% if lead.deal_value %}<span class="value-badge">R$ {{ "%.0f"|format(lead.deal_value) }}</span>{% endif %}
+        </div>
+        {% if lead.attribution and lead.attribution.utm_campaign %}
+          <div class="campaign" title="{{ lead.attribution.utm_campaign }}">{{ lead.attribution.utm_campaign }}</div>
+        {% endif %}
+        <div class="foot">
+          <span>{{ lead.created_at.strftime("%d/%m") }}</span>
+          {% if lead.assigned_user %}<span>{{ lead.assigned_user.name }}</span>{% endif %}
+        </div>
       </div>
-    {% else %}
-      <p class="muted">Sem leads</p>
-    {% endfor %}
+      {% else %}
+      <div class="kanban-empty">Arraste leads pra cá</div>
+      {% endfor %}
+    </div>
   </div>
   {% endfor %}
 </div>
-{% if unstaged %}
-<h3 style="margin-top:24px;">Sem etapa definida</h3>
-{% for lead in unstaged %}
-  <p><a href="/leads/{{ lead.id }}">{{ lead.name or lead.phone or lead.email }}</a></p>
-{% endfor %}
-{% endif %}
+
+<script>
+(function () {
+  let draggedId = null;
+
+  document.querySelectorAll(".lead-card").forEach(function (card) {
+    card.addEventListener("dragstart", function () {
+      draggedId = card.dataset.leadId;
+      card.classList.add("dragging");
+    });
+    card.addEventListener("dragend", function () {
+      card.classList.remove("dragging");
+    });
+  });
+
+  document.querySelectorAll(".kanban-col").forEach(function (col) {
+    col.addEventListener("dragover", function (e) {
+      e.preventDefault();
+      col.classList.add("drag-over");
+    });
+    col.addEventListener("dragleave", function () {
+      col.classList.remove("drag-over");
+    });
+    col.addEventListener("drop", function (e) {
+      e.preventDefault();
+      col.classList.remove("drag-over");
+      const stageId = col.dataset.stageId;
+      if (!draggedId || !stageId) return;
+      const body = new URLSearchParams({ stage_id: stageId, ajax: "1" });
+      fetch("/leads/" + draggedId + "/stage", { method: "POST", body: body })
+        .then(function () { window.location.reload(); });
+    });
+  });
+})();
+</script>
 {% endblock %}

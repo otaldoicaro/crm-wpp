@@ -1,56 +1,44 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m %}
 {% block title %}{{ lead.name or lead.phone }}{% endblock %}
 {% block content %}
 <p><a href="/">&larr; voltar ao pipeline</a></p>
 <div style="display:flex; gap:20px; flex-wrap:wrap;">
   <div class="card" style="flex:2; min-width:320px;">
-    <h2>{{ lead.name or "(sem nome)" }}</h2>
-    <p class="muted">{{ lead.phone }} {% if lead.email %}· {{ lead.email }}{% endif %}</p>
+    <h2 style="display:flex; align-items:center; gap:10px;">
+      {{ lead.name or "(sem nome)" }}
+      {{ m.platform_badge(platform, platform_label) }}
+    </h2>
 
-    <form method="post" action="/leads/{{ lead.id }}/stage">
-      <label>Etapa
-        <select name="stage_id" onchange="this.form.submit()">
+    <form method="post" action="/leads/{{ lead.id }}/update">
+      <p><label>Nome<br><input type="text" name="name" value="{{ lead.name }}"></label></p>
+      <p><label>Telefone<br><input type="text" name="phone" value="{{ lead.phone }}"></label></p>
+      <p><label>E-mail<br><input type="text" name="email" value="{{ lead.email }}"></label></p>
+      <p><label>Etapa<br>
+        <select name="stage_id">
           {% for stage in stages %}
             <option value="{{ stage.id }}" {% if lead.stage_id == stage.id %}selected{% endif %}>{{ stage.name }}</option>
           {% endfor %}
         </select>
-      </label>
+      </label></p>
+      <p><label>Valor fechado (R$)<br><input type="number" step="0.01" name="deal_value" value="{{ lead.deal_value or '' }}" placeholder="preencher quando ganhar"></label></p>
+      <p><label>Motivo de perda<br><input type="text" name="loss_reason" value="{{ lead.loss_reason }}" placeholder="preencher quando perder"></label></p>
+      <button class="btn" type="submit">Salvar alterações</button>
     </form>
-
-    <hr style="border-color:var(--border); margin:16px 0;">
-
-    <div style="max-height:400px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">
-      {% for m in messages %}
-        <div style="align-self: {{ 'flex-end' if m.direction == 'out' else 'flex-start' }}; max-width:75%;">
-          <div class="card" style="padding:8px 10px; background: {{ '#14532d' if m.direction == 'out' else '#1e293b' }};">
-            {{ m.body }}
-          </div>
-          <span class="muted">{{ m.created_at.strftime("%d/%m %H:%M") }}</span>
-        </div>
-      {% else %}
-        <p class="muted">Sem mensagens ainda.</p>
-      {% endfor %}
-    </div>
-
-    {% if lead.source == "whatsapp" %}
-    <form method="post" action="/leads/{{ lead.id }}/reply" style="margin-top:12px; display:flex; gap:8px;">
-      <input type="text" name="body" placeholder="Responder pelo WhatsApp..." required>
-      <button type="submit">Enviar</button>
-    </form>
-    {% endif %}
   </div>
 
-  <div class="card" style="flex:1; min-width:260px;">
-    <h3>Origem</h3>
+  <div class="card attribution-box" style="flex:1; min-width:260px;">
+    <h3 style="margin-top:0">Origem</h3>
     {% if lead.attribution %}
-      <p class="muted">
-        {% if lead.attribution.ctwa_clid %}Anúncio Meta (Clique p/ WhatsApp)<br>ad_id: {{ lead.attribution.ad_id }}<br>{% endif %}
-        {% if lead.attribution.gclid %}Google Ads<br>gclid: {{ lead.attribution.gclid[:24] }}...<br>{% endif %}
-        {% if lead.attribution.utm_source %}utm_source: {{ lead.attribution.utm_source }}<br>{% endif %}
-        {% if lead.attribution.utm_campaign %}utm_campaign: {{ lead.attribution.utm_campaign }}<br>{% endif %}
-        {% if lead.attribution.utm_content %}utm_content: {{ lead.attribution.utm_content }}<br>{% endif %}
-        {% if lead.attribution.utm_term %}utm_term: {{ lead.attribution.utm_term }}<br>{% endif %}
-      </p>
+      <dl>
+        {% if lead.attribution.utm_source %}<dt>UTM Source</dt><dd>{{ lead.attribution.utm_source }}</dd>{% endif %}
+        {% if lead.attribution.utm_medium %}<dt>UTM Medium</dt><dd>{{ lead.attribution.utm_medium }}</dd>{% endif %}
+        {% if lead.attribution.utm_campaign %}<dt>Campanha</dt><dd>{{ lead.attribution.utm_campaign }}</dd>{% endif %}
+        {% if lead.attribution.utm_content %}<dt>Conteúdo/Anúncio</dt><dd>{{ lead.attribution.utm_content }}</dd>{% endif %}
+        {% if lead.attribution.utm_term %}<dt>Termo/Conjunto</dt><dd>{{ lead.attribution.utm_term }}</dd>{% endif %}
+        {% if lead.attribution.gclid %}<dt>gclid</dt><dd>{{ lead.attribution.gclid[:28] }}...</dd>{% endif %}
+        {% if lead.attribution.ctwa_clid %}<dt>ctwa_clid (Meta)</dt><dd>{{ lead.attribution.ctwa_clid[:28] }}...</dd>{% endif %}
+      </dl>
     {% else %}
       <p class="muted">Sem dados de origem.</p>
     {% endif %}

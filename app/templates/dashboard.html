@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h2>Dashboard</h2>
+
+<div class="stat-grid">
+  <div class="stat-card accent">
+    <div class="stat-label">Total de leads</div>
+    <div class="stat-value">{{ total_leads }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Novos (24h)</div>
+    <div class="stat-value">{{ new_24h }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Sem contato 24h+</div>
+    <div class="stat-value">{{ open_no_contact_24h }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Fechados</div>
+    <div class="stat-value">{{ won_count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Receita fechada</div>
+    <div class="stat-value">R$ {{ "%.0f"|format(revenue) }}</div>
+  </div>
+</div>
+
+<div class="section-title"><h3 style="margin:0">Funil por etapa</h3></div>
+<div class="card">
+  <table class="table-simple">
+    <thead><tr><th>Etapa</th><th>Leads</th></tr></thead>
+    <tbody>
+      {% for s in stage_counts %}
+      <tr>
+        <td><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{{ s.color }};margin-right:8px;"></span>{{ s.name }}</td>
+        <td>{{ s.count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="section-title"><h3 style="margin:0">Origem do tráfego</h3></div>
+<div class="card">
+  <table class="table-simple">
+    <thead><tr><th>Plataforma</th><th>Leads</th></tr></thead>
+    <tbody>
+      {% for key, data in platform_counts %}
+      <tr>
+        <td>{{ m.platform_badge(key, data.label) }}</td>
+        <td>{{ data.count }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2" class="muted">Sem leads ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="section-title"><h3 style="margin:0">Melhores campanhas</h3></div>
+<div class="card">
+  <table class="table-simple">
+    <thead><tr><th>Campanha</th><th>Plataforma</th><th>Leads</th><th>Ganhos</th></tr></thead>
+    <tbody>
+      {% for name, data in top_campaigns %}
+      <tr>
+        <td>{{ name }}</td>
+        <td>{{ data.platform }}</td>
+        <td>{{ data.count }}</td>
+        <td>{{ data.won }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">Sem campanhas identificadas ainda (aparece assim que leads de anúncio começarem a chegar).</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

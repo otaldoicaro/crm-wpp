@@ -4,32 +4,24 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}CRM{% endblock %} · {{ tenant.name if tenant else "" }}</title>
-  <style>
-    :root { --bg:#0f172a; --panel:#1e293b; --border:#334155; --text:#e2e8f0; --muted:#94a3b8; --accent:#22c55e; }
-    * { box-sizing: border-box; }
-    body { margin:0; background: var(--bg); color: var(--text); font-family: -apple-system, Helvetica, Arial, sans-serif; }
-    a { color: var(--accent); text-decoration: none; }
-    header { display:flex; align-items:center; justify-content:space-between; padding: 12px 20px; border-bottom: 1px solid var(--border); }
-    header .brand { font-weight: 700; }
-    main { padding: 20px; max-width: 1200px; margin: 0 auto; }
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
-    input, textarea, select, button { font: inherit; }
-    input[type=text], input[type=email], input[type=password], textarea, select {
-      width:100%; padding:8px 10px; border-radius:6px; border:1px solid var(--border); background:#0b1220; color: var(--text);
-    }
-    button { cursor:pointer; padding:8px 14px; border-radius:6px; border:1px solid var(--border); background: var(--accent); color:#052e14; font-weight:600; }
-    button.secondary { background: transparent; color: var(--text); }
-    .muted { color: var(--muted); font-size: 0.85em; }
-    .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#0b1220; border:1px solid var(--border); font-size:0.75em; }
-  </style>
+  <link rel="icon" href="/static/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header>
-    <span class="brand">{{ tenant.name if tenant else "CRM" }}</span>
-    {% if user %}
-      <span class="muted">{{ user.name }} · <form style="display:inline" method="post" action="/logout"><button class="secondary" type="submit">Sair</button></form></span>
-    {% endif %}
+  {% if user %}
+  <header class="topbar">
+    <img class="logo-img" src="/static/brand/logo-horizontal-amarelo.svg" alt="Junta">
+    <nav>
+      <a href="/" class="{{ 'active' if active_nav == 'pipeline' else '' }}">Pipeline</a>
+      <a href="/inbox" class="{{ 'active' if active_nav == 'inbox' else '' }}">Inbox</a>
+      <a href="/dashboard" class="{{ 'active' if active_nav == 'dashboard' else '' }}">Dashboard</a>
+    </nav>
+    <div class="user">
+      <span>{{ tenant.name }} · {{ user.name }}</span>
+      <form method="post" action="/logout"><button class="btn ghost small" type="submit">Sair</button></form>
+    </div>
   </header>
+  {% endif %}
   <main>
     {% block content %}{% endblock %}
   </main>

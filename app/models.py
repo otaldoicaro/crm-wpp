@@ -113,6 +113,8 @@ class Lead(Base):
     stage_id: Mapped[Optional[str]] = mapped_column(ForeignKey("pipeline_stages.id"), nullable=True)
     assigned_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
     whatsapp_number_id: Mapped[Optional[str]] = mapped_column(ForeignKey("whatsapp_numbers.id"), nullable=True)
+    deal_value: Mapped[Optional[float]] = mapped_column(nullable=True)  # valor fechado, preenchido na etapa "Ganho"
+    loss_reason: Mapped[str] = mapped_column(String(255), default="")  # motivo, preenchido na etapa "Perdido"
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 

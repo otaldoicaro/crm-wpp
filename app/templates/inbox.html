@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Inbox{% endblock %}
+{% block content %}
+<div class="inbox-layout {{ 'with-detail' if selected_lead else '' }}">
+  <div class="inbox-list">
+    {% for conv in conversations %}
+      {% set lead = conv.lead %}
+      {% set last = conv.messages[-1] if conv.messages else None %}
+      <a class="inbox-list-item {{ 'active' if selected_lead and selected_lead.id == lead.id }}" href="/inbox/{{ lead.id }}">
+        <span class="time">{{ conv.last_message_at.strftime("%d/%m %H:%M") }}</span>
+        <span class="name">{{ lead.name or lead.phone }}</span>
+        <div class="preview">{{ last.body if last else "Sem mensagens ainda" }}</div>
+      </a>
+    {% else %}
+      <div class="kanban-empty" style="padding:24px">Nenhuma conversa de WhatsApp ainda.<br>Assim que um lead chamar no número conectado, aparece aqui.</div>
+    {% endfor %}
+  </div>
+
+  {% if selected_lead %}
+  <div class="inbox-thread">
+    <div class="inbox-thread-head">
+      <div class="info">
+        <div class="name">{{ selected_lead.name or selected_lead.phone }}</div>
+        <span class="muted">{{ selected_lead.phone }}</span>
+      </div>
+      {{ m.platform_badge(platform, platform_label) }}
+      <a class="btn ghost small" href="/leads/{{ selected_lead.id }}">Ver ficha</a>
+    </div>
+    <div class="inbox-messages">
+      {% for msg in messages %}
+        <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}">{{ msg.body }}</div>
+        <span class="msg-time">{{ msg.created_at.strftime("%d/%m %H:%M") }}</span>
+      {% else %}
+        <p class="muted">Sem mensagens ainda.</p>
+      {% endfor %}
+    </div>
+    <form class="reply-box" method="post" action="/leads/{{ selected_lead.id }}/reply">
+      <input type="text" name="body" placeholder="Responder pelo WhatsApp..." required autocomplete="off">
+      <button class="btn" type="submit">Enviar</button>
+    </form>
+  </div>
+  {% else %}
+  <div class="inbox-thread">
+    <div class="inbox-empty">Selecione uma conversa à esquerda</div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -36,18 +36,22 @@ Acesse `http://demo.localhost:8000/login` (o `*.localhost` já resolve pra
 
 ## O que já está implementado e testado
 
+- **Identidade visual da Junta** aplicada em todo o painel (`app/static/style.css`): cores, fontes (Stapel Semi Expanded + Gilroy, com fallback pra Montserrat, mesmo esquema do Quiz Junta) e logo (`app/static/brand/`).
+- **Navegação com 3 áreas**: Pipeline (kanban), Inbox (conversas de WhatsApp) e Dashboard (funil + análise de tráfego).
 - **Multi-tenant real** por subdomínio, com login/senha isolado por cliente (`app/tenancy.py`, `app/deps.py`).
-- **Pipeline de leads** (kanban simples) com etapas configuráveis por tenant (`app/routers/dashboard.py`).
+- **Pipeline de leads**: kanban com drag-and-drop de verdade entre etapas, badge de origem (Google/Meta/Direto) e valor fechado em cada card (`app/templates/pipeline.html`, `app/routers/dashboard.py`).
+- **Inbox**: lista de conversas de WhatsApp (ordenada pela mais recente) + thread estilo chat + resposta direto pela plataforma (`app/templates/inbox.html`).
+- **Dashboard**: cards de métricas (total de leads, novos 24h, sem contato 24h+, fechados, receita fechada), funil por etapa, origem do tráfego e melhores campanhas (`app/templates/dashboard.html`).
+- **Ficha do lead** (`/leads/{id}`): edição de nome/telefone/e-mail/etapa, valor fechado (etapa "Ganho") e motivo de perda (etapa "Perdido").
 - **Webhook de formulário de site** (`POST /webhooks/site-form/{tenant_id}`) que cria o lead e já captura UTMs/gclid/fbclid vindos da URL da página.
 - **Webhook único do WhatsApp Cloud API** (`GET`/`POST /webhooks/whatsapp`) que recebe mensagens de QUALQUER número de QUALQUER tenant, identifica o número pelo `phone_number_id` do payload, cria o lead e a conversa, e guarda cada mensagem.
 - **Distribuição automática de leads** entre atendentes por menor carga de leads em aberto (`app/services/distribution.py`) — fácil de trocar a regra depois (por horário, por número de origem, etc).
 - **Captura de origem**:
   - Anúncio "Clique para WhatsApp" da Meta → objeto `referral` do próprio webhook (nativo, sem gambiarra).
   - Google Ads (URL final do anúncio vai direto pro WhatsApp, sem passar pelo site) → landing-ponte (`GET /go/{tenant_id}/{whatsapp_number_id}`) que guarda o `gclid`/UTMs e embute um código curto na mensagem pré-preenchida do `wa.me`, casado depois no webhook.
-  - Botão de WhatsApp num site/landing page que já recebe tráfego pago (Google Ads, Facebook feed, etc.) → mesma landing-ponte, mas acionada pelo script `static-snippets/whatsapp-bridge.js` (ver seção abaixo), que repassa o `gclid`/UTMs já presentes na URL da página.
+  - Botão de WhatsApp num site/landing page que já recebe tráfego pago (Google Ads, Facebook feed, etc.) → mesma landing-ponte, mas acionada pelo script `app/static/whatsapp-bridge.js` (ver seção abaixo), que repassa o `gclid`/UTMs já presentes na URL da página.
   - Formulário de site → UTMs/fbclid/gclid direto no POST.
 - **Disparo de conversão** pra Meta Conversions API e Google Ads (click conversion upload) quando o lead entra numa etapa marcada com `conversion_event_name` (ex: "Qualified", "Purchase") — `app/services/conversions/`.
-- **Inbox dentro do CRM**: o atendente responde o lead de WhatsApp sem sair da plataforma (`app/routers/dashboard.py::reply_lead`, via `app/services/whatsapp_client.py`).
 
 Tudo isso já rodou de ponta a ponta neste ambiente (login, lead de site, lead de
 WhatsApp com dado de anúncio, distribuição entre 2 atendentes, troca de etapa).
