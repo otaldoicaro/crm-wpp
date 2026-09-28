@@ -1,9 +1,8 @@
 import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -11,10 +10,10 @@ from app.deps import current_tenant, current_user_required
 from app.models import Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.services.platform import PLATFORM_LABEL, resolve_platform
-from app.services.whatsapp_client import send_text_message
+from app.services.whatsapp_client import fetch_media, send_text_message
+from app.templating import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 
 STAGE_COLOR_PALETTE = ["#4285F4", "#f2a71b", "#8b5cf6", "#22c55e", "#e21b3c", "#06b6d4", "#ec4899"]
 
@@ -196,6 +195,29 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
             "platform_label": PLATFORM_LABEL[resolve_platform(selected_lead.attribution)] if selected_lead else None,
         },
     )
+
+
+@router.get("/media/{message_id}")
+def get_media(
+    message_id: str,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    message = db.get(Message, message_id)
+    if not message or not message.media_id:
+        raise HTTPException(status_code=404, detail="Mídia não encontrada")
+
+    conversation = db.get(Conversation, message.conversation_id)
+    if not conversation or conversation.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail="Mídia não encontrada")
+
+    number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
+    content, mime_type = fetch_media(number, message.media_id)
+    if content is None:
+        raise HTTPException(status_code=502, detail="Não foi possível buscar a mídia na Meta")
+
+    return Response(content=content, media_type=mime_type)
 
 
 @router.post("/leads/{lead_id}/reply")

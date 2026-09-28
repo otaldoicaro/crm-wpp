@@ -36,12 +36,24 @@
         {% if lead.attribution.utm_campaign %}<dt>Campanha</dt><dd>{{ lead.attribution.utm_campaign }}</dd>{% endif %}
         {% if lead.attribution.utm_content %}<dt>Conteúdo/Anúncio</dt><dd>{{ lead.attribution.utm_content }}</dd>{% endif %}
         {% if lead.attribution.utm_term %}<dt>Termo/Conjunto</dt><dd>{{ lead.attribution.utm_term }}</dd>{% endif %}
-        {% if lead.attribution.gclid %}<dt>gclid</dt><dd>{{ lead.attribution.gclid[:28] }}...</dd>{% endif %}
+        {% if lead.attribution.gclid %}<dt>gclid (Google Ads)</dt><dd>{{ lead.attribution.gclid[:28] }}...</dd>{% endif %}
+        {% if lead.attribution.fbclid %}<dt>fbclid (Meta)</dt><dd>{{ lead.attribution.fbclid[:28] }}...</dd>{% endif %}
+        {% if lead.attribution.fbc %}<dt>fbc (cookie Meta)</dt><dd>{{ lead.attribution.fbc[:28] }}...</dd>{% endif %}
+        {% if lead.attribution.fbp %}<dt>fbp (cookie Meta)</dt><dd>{{ lead.attribution.fbp[:28] }}...</dd>{% endif %}
         {% if lead.attribution.ctwa_clid %}<dt>ctwa_clid (Meta)</dt><dd>{{ lead.attribution.ctwa_clid[:28] }}...</dd>{% endif %}
+        {% if lead.attribution.ad_headline %}<dt>Título do anúncio</dt><dd>{{ lead.attribution.ad_headline }}</dd>{% endif %}
+        {% if lead.attribution.ad_id %}<dt>ID do anúncio</dt><dd>{{ lead.attribution.ad_id }}{% if not lead.attribution.utm_campaign %} <span class="muted">(sem nome de campanha — configure META_ADS_ACCESS_TOKEN)</span>{% endif %}</dd>{% endif %}
+        {% if lead.attribution.tracking_code %}<dt>Código de rastreio (ponte)</dt><dd>{{ lead.attribution.tracking_code }}</dd>{% endif %}
       </dl>
     {% else %}
       <p class="muted">Sem dados de origem.</p>
     {% endif %}
   </div>
+</div>
+
+<div class="card" style="margin-top:16px;">
+  <h3 style="margin-top:0">Atendimento</h3>
+  <p class="muted" style="margin:0">Atendente responsável</p>
+  <p style="margin:4px 0 0; font-weight:700;">{{ lead.assigned_user.name if lead.assigned_user else "Ninguém atribuído ainda" }}</p>
 </div>
 {% endblock %}

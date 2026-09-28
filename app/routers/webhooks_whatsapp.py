@@ -68,8 +68,28 @@ async def receive_whatsapp_event(request: Request, db: Session = Depends(get_db)
 def _handle_inbound_message(db: Session, number: WhatsAppNumber, wa_message: dict, contacts: dict) -> None:
     from_phone = wa_message.get("from", "")
     wa_message_id = wa_message.get("id", "")
-    body = wa_message.get("text", {}).get("body", "")
+    msg_type = wa_message.get("type", "text")
     referral = wa_message.get("referral")
+
+    media_id = ""
+    media_type = ""
+    if msg_type == "text":
+        body = wa_message.get("text", {}).get("body", "")
+    elif msg_type in ("audio", "image", "video", "document", "sticker"):
+        media = wa_message.get(msg_type, {})
+        media_id = media.get("id", "")
+        media_type = msg_type
+        caption = media.get("caption", "")
+        placeholder = {
+            "audio": "🎤 Mensagem de áudio",
+            "image": "📷 Imagem",
+            "video": "🎥 Vídeo",
+            "document": "📄 Documento",
+            "sticker": "🖼️ Figurinha",
+        }[msg_type]
+        body = f"{placeholder}{' — ' + caption if caption else ''}"
+    else:
+        body = f"[mensagem do tipo '{msg_type}' ainda não suportada]"
 
     lead = (
         db.query(Lead)
@@ -126,6 +146,8 @@ def _handle_inbound_message(db: Session, number: WhatsAppNumber, wa_message: dic
         direction="in",
         wa_message_id=wa_message_id,
         body=body,
+        media_id=media_id,
+        media_type=media_type,
     )
     conversation.last_message_at = datetime.datetime.utcnow()
     db.add(message)

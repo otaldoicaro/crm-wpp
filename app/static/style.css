@@ -139,10 +139,27 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 
 /* ---------- dashboard ---------- */
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 18px; }
-.stat-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+.stat-card {
+  background: linear-gradient(160deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 14px; padding: 16px 18px;
+  position: relative; overflow: hidden; transition: transform .12s, border-color .15s;
+}
+.stat-card:hover { transform: translateY(-2px); }
+.stat-card .stat-icon { width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+.stat-card .stat-icon svg { width: 16px; height: 16px; }
 .stat-card .stat-label { font-size: .74rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
 .stat-card .stat-value { font-family: var(--title); font-size: 1.9rem; margin-top: 4px; }
-.stat-card.accent { border-color: rgba(236, 242, 61, .5); }
+.stat-card.accent { border-left-color: var(--y); box-shadow: 0 0 0 1px rgba(236, 242, 61, .25); }
+.stat-card.c-info { border-left-color: var(--info); }
+.stat-card.c-info .stat-icon { background: rgba(19, 104, 206, .16); color: #5b9dff; }
+.stat-card.c-danger { border-left-color: var(--danger); }
+.stat-card.c-danger .stat-icon { background: var(--danger-bg); color: #ff8fa3; }
+.stat-card.c-success { border-left-color: var(--success); }
+.stat-card.c-success .stat-icon { background: var(--success-bg); color: #7cf29a; }
+.stat-card.c-gold { border-left-color: var(--y); }
+.stat-card.c-gold .stat-icon { background: rgba(236, 242, 61, .16); color: var(--y); }
+.stat-card.c-purple { border-left-color: #8b5cf6; }
+.stat-card.c-purple .stat-icon { background: rgba(139, 92, 246, .16); color: #b79dfb; }
 .table-simple { width: 100%; border-collapse: collapse; font-size: .85rem; }
 .table-simple th { text-align: left; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
 .table-simple td { padding: 9px 10px; border-bottom: 1px solid var(--line); }

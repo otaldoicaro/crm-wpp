@@ -18,7 +18,7 @@
     <div class="kanban-cards" data-stage-id="{{ stage.id }}">
       {% for lead in leads_by_stage[stage.id] %}
       <div class="lead-card" draggable="true" data-lead-id="{{ lead.id }}">
-        <span class="name"><a href="/inbox/{{ lead.id }}">{{ lead.name or lead.phone or lead.email or "(sem nome)" }}</a></span>
+        <span class="name"><a href="{{ '/inbox/' if lead.source == 'whatsapp' else '/leads/' }}{{ lead.id }}">{{ lead.name or lead.phone or lead.email or "(sem nome)" }}</a></span>
         <span class="phone">{{ lead.phone or lead.email }}</span>
         <div class="meta-row">
           {{ m.platform_badge(lead_platforms[lead.id], platform_labels[lead_platforms[lead.id]]) }}

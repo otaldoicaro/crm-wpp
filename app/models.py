@@ -211,6 +211,10 @@ class Message(Base):
     wa_message_id: Mapped[str] = mapped_column(String(120), default="")
     body: Mapped[str] = mapped_column(Text, default="")
     media_url: Mapped[str] = mapped_column(String(500), default="")
+    # id de mídia da Cloud API (áudio/imagem/documento) — a URL da Meta expira em minutos,
+    # então guardamos o id e buscamos os bytes sob demanda via /media/{message_id}
+    media_id: Mapped[str] = mapped_column(String(120), default="")
+    media_type: Mapped[str] = mapped_column(String(30), default="")  # audio | image | video | document | sticker
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")

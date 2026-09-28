@@ -11,6 +11,7 @@
         <span class="time">{{ conv.last_message_at.strftime("%d/%m %H:%M") }}</span>
         <span class="name">{{ lead.name or lead.phone }}</span>
         <div class="preview">{{ last.body if last else "Sem mensagens ainda" }}</div>
+        <div class="preview" style="opacity:.7">{{ lead.assigned_user.name if lead.assigned_user else "sem atendente" }}</div>
       </a>
     {% else %}
       <div class="kanban-empty" style="padding:24px">Nenhuma conversa de WhatsApp ainda.<br>Assim que um lead chamar no número conectado, aparece aqui.</div>
@@ -22,23 +23,60 @@
     <div class="inbox-thread-head">
       <div class="info">
         <div class="name">{{ selected_lead.name or selected_lead.phone }}</div>
-        <span class="muted">{{ selected_lead.phone }}</span>
+        <span class="muted">{{ selected_lead.phone }} · atendente: {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "não atribuído" }}</span>
       </div>
       {{ m.platform_badge(platform, platform_label) }}
       <a class="btn ghost small" href="/leads/{{ selected_lead.id }}">Ver ficha</a>
     </div>
     <div class="inbox-messages">
       {% for msg in messages %}
-        <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}">{{ msg.body }}</div>
+        <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}">
+          {% if msg.media_type == "audio" %}
+            <div>{{ msg.body }}</div>
+            <audio controls preload="none" style="max-width:220px; margin-top:6px;"><source src="/media/{{ msg.id }}"></audio>
+          {% elif msg.media_type == "image" or msg.media_type == "sticker" %}
+            <div>{{ msg.body }}</div>
+            <img src="/media/{{ msg.id }}" style="max-width:220px; border-radius:8px; margin-top:6px; display:block;">
+          {% else %}
+            {{ msg.body }}
+          {% endif %}
+        </div>
         <span class="msg-time">{{ msg.created_at.strftime("%d/%m %H:%M") }}</span>
       {% else %}
         <p class="muted">Sem mensagens ainda.</p>
       {% endfor %}
     </div>
-    <form class="reply-box" method="post" action="/leads/{{ selected_lead.id }}/reply">
-      <input type="text" name="body" placeholder="Responder pelo WhatsApp..." required autocomplete="off">
+    <form class="reply-box" method="post" action="/leads/{{ selected_lead.id }}/reply" style="position:relative;">
+      <button type="button" class="btn ghost small" id="emojiToggle" title="Emojis" style="flex:0 0 auto;">🙂</button>
+      <div id="emojiPicker" hidden style="position:absolute; bottom:56px; left:14px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:8px; display:grid; grid-template-columns:repeat(8,1fr); gap:4px; z-index:10;"></div>
+      <input type="text" name="body" id="replyInput" placeholder="Responder pelo WhatsApp..." required autocomplete="off">
       <button class="btn" type="submit">Enviar</button>
     </form>
+    <script>
+    (function () {
+      var EMOJIS = ["😀","😂","😍","👍","🙏","🎉","❤️","🔥","😉","😢","👏","🤔","✅","❌","📅","💰","⏰","📞","😅","🙌","👋","💡","🚀","😎"];
+      var toggle = document.getElementById("emojiToggle");
+      var picker = document.getElementById("emojiPicker");
+      var input = document.getElementById("replyInput");
+      EMOJIS.forEach(function (emoji) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = emoji;
+        btn.style.cssText = "background:none;border:0;box-shadow:none;font-size:1.2rem;padding:4px;cursor:pointer;";
+        btn.addEventListener("click", function () {
+          input.value += emoji;
+          input.focus();
+        });
+        picker.appendChild(btn);
+      });
+      toggle.addEventListener("click", function () {
+        picker.hidden = !picker.hidden;
+      });
+      document.addEventListener("click", function (e) {
+        if (!picker.contains(e.target) && e.target !== toggle) picker.hidden = true;
+      });
+    })();
+    </script>
   </div>
   {% else %}
   <div class="inbox-thread">
