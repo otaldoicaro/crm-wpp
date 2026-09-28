@@ -232,6 +232,10 @@ def reply_lead(
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard_view(
     request: Request,
+    card: str = "all",
+    stage_filter: str = "",
+    platform_filter: str = "",
+    q: str = "",
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -242,25 +246,45 @@ def dashboard_view(
     now = datetime.datetime.utcnow()
     last_24h = now - datetime.timedelta(hours=24)
 
-    total_leads = len(leads)
-    new_24h = sum(1 for lead in leads if lead.created_at >= last_24h)
     won_stage_ids = {s.id for s in stages if s.is_won}
     lost_stage_ids = {s.id for s in stages if s.is_lost}
     won_leads = [lead for lead in leads if lead.stage_id in won_stage_ids]
+
+    def is_no_contact_24h(lead: Lead) -> bool:
+        return (
+            lead.stage_id not in won_stage_ids
+            and lead.stage_id not in lost_stage_ids
+            and not lead.conversations
+            and lead.created_at < last_24h
+        )
+
+    # ---- KPIs fixos (sempre sobre a base inteira do tenant) ----
+    total_leads = len(leads)
+    new_24h = sum(1 for lead in leads if lead.created_at >= last_24h)
+    open_no_contact_24h = sum(1 for lead in leads if is_no_contact_24h(lead))
     revenue = sum(lead.deal_value or 0 for lead in won_leads)
-    open_no_contact_24h = sum(
-        1
-        for lead in leads
-        if lead.stage_id not in won_stage_ids
-        and lead.stage_id not in lost_stage_ids
-        and not lead.conversations
-        and lead.created_at < last_24h
-    )
+
+    creative_counts: dict[str, int] = {}
+    for lead in leads:
+        creative = (lead.attribution.utm_content if lead.attribution else "") or (
+            lead.attribution.ad_headline if lead.attribution else ""
+        )
+        if creative:
+            creative_counts[creative] = creative_counts.get(creative, 0) + 1
+    best_creative = max(creative_counts.items(), key=lambda kv: kv[1])[0] if creative_counts else None
 
     stage_counts = []
+    max_stage_count = max([sum(1 for lead in leads if lead.stage_id == s.id) for s in stages] or [1]) or 1
     for stage in stages:
         count = sum(1 for lead in leads if lead.stage_id == stage.id)
-        stage_counts.append({"name": stage.name, "count": count, "color": _stage_colors(stages)[stage.id]})
+        stage_counts.append(
+            {
+                "name": stage.name,
+                "count": count,
+                "pct": round(count / max_stage_count * 100) if max_stage_count else 0,
+                "color": _stage_colors(stages)[stage.id],
+            }
+        )
 
     platform_counts: dict[str, dict] = {}
     campaign_counts: dict[str, dict] = {}
@@ -278,6 +302,32 @@ def dashboard_view(
 
     top_campaigns = sorted(campaign_counts.items(), key=lambda kv: kv[1]["count"], reverse=True)[:8]
 
+    # ---- lista filtrável de leads (cards clicaveis + pills + busca) ----
+    table_leads = leads
+    if card == "new_24h":
+        table_leads = [lead for lead in table_leads if lead.created_at >= last_24h]
+    elif card == "no_contact":
+        table_leads = [lead for lead in table_leads if is_no_contact_24h(lead)]
+    elif card == "won":
+        table_leads = [lead for lead in table_leads if lead.stage_id in won_stage_ids]
+
+    if stage_filter:
+        table_leads = [lead for lead in table_leads if lead.stage_id == stage_filter]
+    if platform_filter:
+        table_leads = [lead for lead in table_leads if resolve_platform(lead.attribution) == platform_filter]
+    if q:
+        needle = q.lower()
+        table_leads = [
+            lead
+            for lead in table_leads
+            if needle in (lead.name or "").lower()
+            or needle in (lead.phone or "").lower()
+            or needle in (lead.email or "").lower()
+        ]
+
+    table_leads = sorted(table_leads, key=lambda lead: lead.created_at, reverse=True)[:150]
+    stage_by_id = {s.id: s for s in stages}
+
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -290,8 +340,18 @@ def dashboard_view(
             "open_no_contact_24h": open_no_contact_24h,
             "won_count": len(won_leads),
             "revenue": revenue,
+            "best_creative": best_creative,
             "stage_counts": stage_counts,
             "platform_counts": sorted(platform_counts.items(), key=lambda kv: kv[1]["count"], reverse=True),
             "top_campaigns": top_campaigns,
+            "stages": stages,
+            "stage_by_id": stage_by_id,
+            "table_leads": table_leads,
+            "lead_platforms": {lead.id: resolve_platform(lead.attribution) for lead in table_leads},
+            "platform_labels": PLATFORM_LABEL,
+            "card": card,
+            "stage_filter": stage_filter,
+            "platform_filter": platform_filter,
+            "q": q,
         },
     )

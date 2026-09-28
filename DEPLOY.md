@@ -3,12 +3,14 @@
 Mesmo esquema que vocês já usam no Quiz Junta: Render tem plano grátis que roda
 um servidor de verdade (diferente do Netlify, que só serve arquivo estático).
 
-**Aviso importante pro teste de agora:** no plano grátis do Render, o disco é
-"ephemeral" — some quando o serviço reinicia/redeploy. Isso é totalmente OK
-pra só validar o webhook do WhatsApp e a atribuição de UTM (que é o objetivo
-agora), mas **não guarde dados reais de cliente nesse ambiente**. Quando
-formos pra produção de verdade, trocamos `DATABASE_URL` por um Postgres
-persistente (o próprio Render tem, ou pode ser o Postgres do Hostinger VPS).
+**Aviso importante:** no plano grátis do Render, o disco do servidor é
+"ephemeral" — some não só em deploy, mas toda vez que o serviço "dorme" por
+inatividade e acorda de novo (o que acontece sozinho, sem avisar). Por isso
+os dados de teste (SQLite) ficam sumindo. A seção "3b" abaixo resolve isso
+ligando um banco Postgres separado (também grátis), que não some. **Ainda
+não guarde dados reais de cliente nesse ambiente** — quando formos pra
+produção de verdade, o Postgres vira pago (ou migra pra um Postgres do
+Hostinger VPS), junto com o upgrade do servidor pra não dormir mais.
 
 ## 1. Código no GitHub (privado)
 1. github.com → **New repository** → `crm-junta` → **Private** → Create.
@@ -32,6 +34,12 @@ git push -u origin main
    - `META_WEBHOOK_VERIFY_TOKEN`: invente uma string qualquer (ex: `junta-verify-2024`) — vamos usar o MESMO valor na configuração do webhook lá na Meta.
    - Todo o resto (Google Ads, Meta CAPI, etc.) pode ficar em branco por enquanto — só precisamos deles mais pra frente.
 3. Espere ficar **Live** e copie a URL (`https://crm-junta-xxxx.onrender.com`).
+
+## 3b. Ligar um banco Postgres grátis (pra parar de perder os dados de teste)
+1. render.com → **New +** → **PostgreSQL** → nome `crm-junta-db` → plano **Free** → **Create Database**.
+2. Espere ficar disponível, entre na página do banco, copie o campo **"Internal Database URL"**.
+3. Vai na página do serviço `crm-junta` → **Environment** → edita a variável `DATABASE_URL` → cola essa URL → **Save Changes**.
+4. O serviço reinicia sozinho. A partir daqui os dados sobrevivem a "sono"/restart do servidor (só não sobrevivem se você apagar o banco).
 
 ## 3. Registrar o número de teste no CRM
 Depois que o serviço estiver no ar, me avisa a URL que o Render gerou — eu te
