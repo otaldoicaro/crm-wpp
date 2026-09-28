@@ -8,6 +8,7 @@ fica sempre desativado (nunca aceita chamada nenhuma) — assim não corre risco
 de ficar uma porta aberta esquecida em produção.
 """
 
+import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.auth import hash_password
 from app.config import ADMIN_SETUP_TOKEN
 from app.db import SessionLocal
-from app.models import PipelineStage, Tenant, User, WhatsAppNumber
+from app.models import CampaignSpend, PipelineStage, Tenant, User, WhatsAppNumber
 
 router = APIRouter()
 
@@ -127,5 +128,70 @@ def bootstrap_tenant(payload: BootstrapIn, x_setup_token: Optional[str] = Header
             "admin_user_id": admin.id,
             "whatsapp_number_id": whatsapp_number_id,
         }
+    finally:
+        db.close()
+
+
+class SpendRowIn(BaseModel):
+    platform: str  # google | meta | bing | tiktok
+    campaign: str = ""
+    adset: str = ""
+    ad: str = ""
+    date: datetime.date
+    spend: float = 0.0
+    impressions: int = 0
+    clicks: int = 0
+    source: str = "manual"
+
+
+class ImportSpendIn(BaseModel):
+    tenant_id: str
+    rows: list[SpendRowIn]
+
+
+@router.post("/admin/import-spend")
+def import_spend(payload: ImportSpendIn, x_setup_token: Optional[str] = Header(default=None)):
+    """Importa linhas de gasto de anúncio (uma por dia/campanha/conjunto/
+    anúncio). Reimportar o mesmo dia+campanha+conjunto+anúncio substitui o
+    valor anterior (idempotente), então dá pra rodar de novo sem duplicar."""
+    _require_setup_enabled(x_setup_token)
+
+    db: Session = SessionLocal()
+    try:
+        tenant = db.get(Tenant, payload.tenant_id)
+        if not tenant:
+            raise HTTPException(status_code=404, detail="tenant não encontrado")
+
+        imported = 0
+        for row in payload.rows:
+            existing = (
+                db.query(CampaignSpend)
+                .filter(
+                    CampaignSpend.tenant_id == tenant.id,
+                    CampaignSpend.platform == row.platform,
+                    CampaignSpend.campaign == row.campaign,
+                    CampaignSpend.adset == row.adset,
+                    CampaignSpend.ad == row.ad,
+                    CampaignSpend.date == row.date,
+                )
+                .first()
+            )
+            if not existing:
+                existing = CampaignSpend(
+                    tenant_id=tenant.id,
+                    platform=row.platform,
+                    campaign=row.campaign,
+                    adset=row.adset,
+                    ad=row.ad,
+                    date=row.date,
+                )
+            existing.spend = row.spend
+            existing.impressions = row.impressions
+            existing.clicks = row.clicks
+            existing.source = row.source
+            db.add(existing)
+            imported += 1
+        db.commit()
+        return {"ok": True, "imported": imported}
     finally:
         db.close()

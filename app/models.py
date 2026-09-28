@@ -6,6 +6,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
@@ -236,3 +237,30 @@ class ConversionEvent(Base):
     error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
     sent_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class CampaignSpend(Base):
+    """Gasto de anúncio por dia, importado de uma fonte externa (Meta Ads,
+    Google Ads, Windsor.ai, planilha manual, etc). Casamos com os leads pelo
+    nome de campanha/conjunto/anúncio (utm_campaign/utm_term/utm_content) —
+    não é um join perfeito por ID, mas é o suficiente pra calcular CPL, custo
+    por qualificado, CAC e ticket médio sem depender de nenhuma integração
+    específica. Ainda não tem nenhuma fonte plugada — a estrutura só está
+    pronta pra receber os dados assim que decidirmos por onde importar
+    (Windsor.ai é uma opção já disponível neste ambiente, mas precisa
+    conectar as contas de anúncio reais dos clientes primeiro)."""
+
+    __tablename__ = "campaign_spend"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(20))  # google | meta | bing | tiktok
+    campaign: Mapped[str] = mapped_column(String(160), default="")
+    adset: Mapped[str] = mapped_column(String(160), default="")  # conjunto (Meta) / grupo de anúncios (Google)
+    ad: Mapped[str] = mapped_column(String(160), default="")  # anúncio/criativo
+    date: Mapped[datetime.date] = mapped_column(Date)
+    spend: Mapped[float] = mapped_column(default=0.0)
+    impressions: Mapped[int] = mapped_column(Integer, default=0)
+    clicks: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(String(40), default="manual")  # manual | windsor_ai | meta_api | google_ads_api
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)

@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.db import Base, engine
+from app.db import sync_schema
 from app.routers import admin_setup, auth_router, bridge, dashboard, webhooks_site, webhooks_whatsapp
 from app.tenancy import DEBUG
 
@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="CRM Multi-Tenant WhatsApp + Site")
 
-Base.metadata.create_all(bind=engine)
+sync_schema()
 
 
 @app.middleware("http")

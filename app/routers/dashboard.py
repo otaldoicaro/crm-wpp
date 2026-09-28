@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
-from app.models import Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
+from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.services.platform import PLATFORM_LABEL, resolve_platform
 from app.services.whatsapp_client import fetch_media, send_text_message
@@ -251,6 +251,27 @@ def reply_lead(
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
 
+DATE_RANGE_LABELS = [
+    ("all", "Todos"),
+    ("today", "Hoje"),
+    ("7d", "7 dias"),
+    ("30d", "30 dias"),
+    ("month", "Este mês"),
+]
+
+
+def _range_from(now: datetime.datetime, date_range: str) -> Optional[datetime.datetime]:
+    if date_range == "today":
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if date_range == "7d":
+        return now - datetime.timedelta(days=7)
+    if date_range == "30d":
+        return now - datetime.timedelta(days=30)
+    if date_range == "month":
+        return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return None
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard_view(
     request: Request,
@@ -258,14 +279,20 @@ def dashboard_view(
     stage_filter: str = "",
     platform_filter: str = "",
     q: str = "",
+    date_range: str = "all",
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
-    leads = db.query(Lead).filter(Lead.tenant_id == tenant.id).all()
 
     now = datetime.datetime.utcnow()
+    range_from = _range_from(now, date_range)
+    leads_query = db.query(Lead).filter(Lead.tenant_id == tenant.id)
+    if range_from:
+        leads_query = leads_query.filter(Lead.created_at >= range_from)
+    leads = leads_query.all()
+
     last_24h = now - datetime.timedelta(hours=24)
 
     won_stage_ids = {s.id for s in stages if s.is_won}
@@ -350,6 +377,62 @@ def dashboard_view(
     table_leads = sorted(table_leads, key=lambda lead: lead.created_at, reverse=True)[:150]
     stage_by_id = {s.id: s for s in stages}
 
+    # ---- tráfego: cruza leads (por campanha/conjunto/anúncio) com gasto importado ----
+    qualified_stage_ids = {s.id for s in stages if s.conversion_event_name or s.is_won}
+    spend_query = db.query(CampaignSpend).filter(CampaignSpend.tenant_id == tenant.id)
+    if range_from:
+        spend_query = spend_query.filter(CampaignSpend.date >= range_from.date())
+    spend_rows = spend_query.all()
+    spend_by_key: dict[tuple, float] = {}
+    for row in spend_rows:
+        key = (row.platform, row.campaign, row.adset, row.ad)
+        spend_by_key[key] = spend_by_key.get(key, 0.0) + row.spend
+    has_spend_data = bool(spend_rows)
+
+    traffic_groups: dict[tuple, dict] = {}
+    for lead in leads:
+        platform = resolve_platform(lead.attribution)
+        campaign = lead.attribution.utm_campaign if lead.attribution else ""
+        adset = lead.attribution.utm_term if lead.attribution else ""
+        ad = lead.attribution.utm_content if lead.attribution else ""
+        if not campaign:
+            continue
+        key = (platform, campaign, adset, ad)
+        g = traffic_groups.setdefault(
+            key,
+            {
+                "platform": PLATFORM_LABEL[platform],
+                "campaign": campaign,
+                "adset": adset,
+                "ad": ad,
+                "leads": 0,
+                "qualified": 0,
+                "won": 0,
+                "revenue": 0.0,
+            },
+        )
+        g["leads"] += 1
+        if lead.stage_id in qualified_stage_ids:
+            g["qualified"] += 1
+        if lead.stage_id in won_stage_ids:
+            g["won"] += 1
+            g["revenue"] += lead.deal_value or 0
+
+    traffic_rows = []
+    for key, g in traffic_groups.items():
+        spend = spend_by_key.get(key, 0.0)
+        traffic_rows.append(
+            {
+                **g,
+                "spend": spend,
+                "cpl": (spend / g["leads"]) if g["leads"] else None,
+                "cost_per_qualified": (spend / g["qualified"]) if g["qualified"] else None,
+                "cac": (spend / g["won"]) if g["won"] else None,
+                "ticket_medio": (g["revenue"] / g["won"]) if g["won"] else None,
+            }
+        )
+    traffic_rows.sort(key=lambda r: r["leads"], reverse=True)
+
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -375,5 +458,9 @@ def dashboard_view(
             "stage_filter": stage_filter,
             "platform_filter": platform_filter,
             "q": q,
+            "date_range": date_range,
+            "date_range_labels": DATE_RANGE_LABELS,
+            "traffic_rows": traffic_rows,
+            "has_spend_data": has_spend_data,
         },
     )
