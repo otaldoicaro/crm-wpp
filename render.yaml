@@ -13,7 +13,9 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: DEBUG
-        value: "0"
+        sync: false  # "1" enquanto testamos sem subdominio real (onrender.com); "0" em producao com dominio proprio
+      - key: ADMIN_SETUP_TOKEN
+        sync: false
       - key: META_APP_ID
         sync: false
       - key: META_APP_SECRET
