@@ -4,30 +4,43 @@
 {% block content %}
 <div class="kanban-toolbar">
   <h2 style="margin:0">Dashboard</h2>
-  <div style="display:flex; flex-wrap:wrap; gap:6px;">
+  <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px;">
     {% for key, label in date_range_labels %}
-    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if date_range == key }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&platform_filter={{ platform_filter }}&q={{ q }}&date_range={{ key }}">{{ label }}</a>
+      {% if key != "custom" %}
+      <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if date_range == key }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&platform_filter={{ platform_filter }}&q={{ q }}&date_range={{ key }}">{{ label }}</a>
+      {% endif %}
     {% endfor %}
+    <form method="get" action="/dashboard" style="display:flex; align-items:center; gap:4px;">
+      <input type="hidden" name="card" value="{{ card }}">
+      <input type="hidden" name="stage_filter" value="{{ stage_filter }}">
+      <input type="hidden" name="platform_filter" value="{{ platform_filter }}">
+      <input type="hidden" name="q" value="{{ q }}">
+      <input type="hidden" name="date_range" value="custom">
+      <input type="date" name="date_from" value="{{ date_from }}" style="padding:6px 8px; font-size:.78rem; width:auto;">
+      <span class="muted" style="font-size:.78rem;">até</span>
+      <input type="date" name="date_to" value="{{ date_to }}" style="padding:6px 8px; font-size:.78rem; width:auto;">
+      <button type="submit" class="pill" style="{{ 'background:var(--y); color:var(--ink);' if date_range == 'custom' }} border:0; cursor:pointer;">Aplicar</button>
+    </form>
   </div>
 </div>
 
 <div class="stat-grid">
-  <a class="stat-card c-gold {{ 'accent' if card == 'all' }}" href="/dashboard?card=all&date_range={{ date_range }}" style="text-decoration:none; color:inherit;">
+  <a class="stat-card c-gold {{ 'accent' if card == 'all' }}" href="/dashboard?card=all&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
     {{ m.stat_icon("users") }}
     <div class="stat-label">Total de leads</div>
     <div class="stat-value">{{ total_leads }}</div>
   </a>
-  <a class="stat-card c-info {{ 'accent' if card == 'new_24h' }}" href="/dashboard?card=new_24h&date_range={{ date_range }}" style="text-decoration:none; color:inherit;">
+  <a class="stat-card c-info {{ 'accent' if card == 'new_24h' }}" href="/dashboard?card=new_24h&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
     {{ m.stat_icon("trending-up") }}
     <div class="stat-label">Novos (24h)</div>
     <div class="stat-value">{{ new_24h }}</div>
   </a>
-  <a class="stat-card c-danger {{ 'accent' if card == 'no_contact' }}" href="/dashboard?card=no_contact&date_range={{ date_range }}" style="text-decoration:none; color:inherit;">
+  <a class="stat-card c-danger {{ 'accent' if card == 'no_contact' }}" href="/dashboard?card=no_contact&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
     {{ m.stat_icon("clock") }}
     <div class="stat-label">Sem contato 24h+</div>
     <div class="stat-value">{{ open_no_contact_24h }}</div>
   </a>
-  <a class="stat-card c-success {{ 'accent' if card == 'won' }}" href="/dashboard?card=won&date_range={{ date_range }}" style="text-decoration:none; color:inherit;">
+  <a class="stat-card c-success {{ 'accent' if card == 'won' }}" href="/dashboard?card=won&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
     {{ m.stat_icon("check") }}
     <div class="stat-label">Fechados</div>
     <div class="stat-value">{{ won_count }}</div>
@@ -123,19 +136,21 @@
   <form method="get" action="/dashboard" style="margin-bottom:14px;">
     <input type="hidden" name="card" value="{{ card }}">
     <input type="hidden" name="date_range" value="{{ date_range }}">
+    <input type="hidden" name="date_from" value="{{ date_from }}">
+    <input type="hidden" name="date_to" value="{{ date_to }}">
     <input type="text" name="q" value="{{ q }}" placeholder="Buscar nome, telefone, e-mail...">
   </form>
 
   <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
-    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if not stage_filter }}" href="/dashboard?card={{ card }}&q={{ q }}&date_range={{ date_range }}">Todas as etapas</a>
+    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if not stage_filter }}" href="/dashboard?card={{ card }}&q={{ q }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}">Todas as etapas</a>
     {% for stage in stages %}
-    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if stage_filter == stage.id }}" href="/dashboard?card={{ card }}&stage_filter={{ stage.id }}&platform_filter={{ platform_filter }}&q={{ q }}&date_range={{ date_range }}">{{ stage.name }}</a>
+    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if stage_filter == stage.id }}" href="/dashboard?card={{ card }}&stage_filter={{ stage.id }}&platform_filter={{ platform_filter }}&q={{ q }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}">{{ stage.name }}</a>
     {% endfor %}
   </div>
   <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px;">
-    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if not platform_filter }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&q={{ q }}&date_range={{ date_range }}">Todas as plataformas</a>
+    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if not platform_filter }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&q={{ q }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}">Todas as plataformas</a>
     {% for key, label in platform_labels.items() %}
-    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if platform_filter == key }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&platform_filter={{ key }}&q={{ q }}&date_range={{ date_range }}">{{ label }}</a>
+    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if platform_filter == key }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&platform_filter={{ key }}&q={{ q }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}">{{ label }}</a>
     {% endfor %}
   </div>
 

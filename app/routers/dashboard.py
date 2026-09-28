@@ -257,6 +257,7 @@ DATE_RANGE_LABELS = [
     ("7d", "7 dias"),
     ("30d", "30 dias"),
     ("month", "Este mês"),
+    ("custom", "Personalizado"),
 ]
 
 
@@ -272,6 +273,13 @@ def _range_from(now: datetime.datetime, date_range: str) -> Optional[datetime.da
     return None
 
 
+def _parse_date(value: str) -> Optional[datetime.date]:
+    try:
+        return datetime.date.fromisoformat(value) if value else None
+    except ValueError:
+        return None
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard_view(
     request: Request,
@@ -280,6 +288,8 @@ def dashboard_view(
     platform_filter: str = "",
     q: str = "",
     date_range: str = "all",
+    date_from: str = "",
+    date_to: str = "",
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -287,10 +297,20 @@ def dashboard_view(
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
 
     now = datetime.datetime.utcnow()
-    range_from = _range_from(now, date_range)
+    range_to: Optional[datetime.datetime] = None
+    if date_range == "custom":
+        parsed_from = _parse_date(date_from)
+        parsed_to = _parse_date(date_to)
+        range_from = datetime.datetime.combine(parsed_from, datetime.time.min) if parsed_from else None
+        range_to = datetime.datetime.combine(parsed_to, datetime.time.max) if parsed_to else None
+    else:
+        range_from = _range_from(now, date_range)
+
     leads_query = db.query(Lead).filter(Lead.tenant_id == tenant.id)
     if range_from:
         leads_query = leads_query.filter(Lead.created_at >= range_from)
+    if range_to:
+        leads_query = leads_query.filter(Lead.created_at <= range_to)
     leads = leads_query.all()
 
     last_24h = now - datetime.timedelta(hours=24)
@@ -382,6 +402,8 @@ def dashboard_view(
     spend_query = db.query(CampaignSpend).filter(CampaignSpend.tenant_id == tenant.id)
     if range_from:
         spend_query = spend_query.filter(CampaignSpend.date >= range_from.date())
+    if range_to:
+        spend_query = spend_query.filter(CampaignSpend.date <= range_to.date())
     spend_rows = spend_query.all()
     spend_by_key: dict[tuple, float] = {}
     for row in spend_rows:
@@ -459,6 +481,8 @@ def dashboard_view(
             "platform_filter": platform_filter,
             "q": q,
             "date_range": date_range,
+            "date_from": date_from,
+            "date_to": date_to,
             "date_range_labels": DATE_RANGE_LABELS,
             "traffic_rows": traffic_rows,
             "has_spend_data": has_spend_data,
