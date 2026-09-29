@@ -8,10 +8,12 @@
       {% set lead = conv.lead %}
       {% set last = conv.messages[-1] if conv.messages else None %}
       <a class="inbox-list-item {{ 'active' if selected_lead and selected_lead.id == lead.id }}" href="/inbox/{{ lead.id }}">
-        <span class="time">{{ conv.last_message_at.strftime("%d/%m %H:%M") }}</span>
-        <span class="name">{{ lead.name or lead.phone }}</span>
-        <div class="preview">{{ last.body if last else "Sem mensagens ainda" }}</div>
-        <div class="preview" style="opacity:.7">{{ lead.assigned_user.name if lead.assigned_user else "sem atendente" }}</div>
+        <span class="avatar">{{ (lead.name or lead.phone or "?")[0]|upper }}</span>
+        <div class="inbox-list-item-body">
+          <div class="row1"><span class="name">{{ lead.name or lead.phone }}</span><span class="time">{{ conv.last_message_at.strftime("%d/%m %H:%M") }}</span></div>
+          <div class="preview">{{ last.body if last else "Sem mensagens ainda" }}</div>
+          <div class="preview" style="opacity:.7">{{ lead.assigned_user.name if lead.assigned_user else "sem atendente" }}</div>
+        </div>
       </a>
     {% else %}
       <div class="kanban-empty" style="padding:24px">Nenhuma conversa de WhatsApp ainda.<br>Assim que um lead chamar no número conectado, aparece aqui.</div>
@@ -21,6 +23,8 @@
   {% if selected_lead %}
   <div class="inbox-thread">
     <div class="inbox-thread-head">
+      <a href="/inbox" class="back-btn" aria-label="Voltar">←</a>
+      <span class="avatar">{{ (selected_lead.name or selected_lead.phone or "?")[0]|upper }}</span>
       <div class="info">
         <div class="name">{{ selected_lead.name or selected_lead.phone }}</div>
         <span class="muted">{{ selected_lead.phone }} · atendente: {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "não atribuído" }}</span>
@@ -28,15 +32,20 @@
       {{ m.platform_badge(platform, platform_label) }}
       <a class="btn ghost small" href="/leads/{{ selected_lead.id }}">Ver ficha</a>
     </div>
-    <div class="inbox-messages">
+    <div class="inbox-messages" id="inboxMessages">
       {% for msg in messages %}
         <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}">
           {% if msg.media_type == "audio" %}
-            <div>{{ msg.body }}</div>
-            <audio controls preload="none" style="max-width:220px; margin-top:6px;"><source src="/media/{{ msg.id }}"></audio>
+            {% if msg.body and not msg.body.startswith("🎤") %}<div>{{ msg.body }}</div>{% endif %}
+            <audio controls preload="none" style="max-width:220px; margin-top:4px;"><source src="/media/{{ msg.id }}"></audio>
           {% elif msg.media_type == "image" or msg.media_type == "sticker" %}
-            <div>{{ msg.body }}</div>
-            <img src="/media/{{ msg.id }}" style="max-width:220px; border-radius:8px; margin-top:6px; display:block;">
+            <img src="/media/{{ msg.id }}" style="max-width:240px; border-radius:8px; display:block;">
+            {% if msg.body and not msg.body.startswith("📷") %}<div style="margin-top:4px;">{{ msg.body }}</div>{% endif %}
+          {% elif msg.media_type == "video" %}
+            <video controls preload="none" style="max-width:240px; border-radius:8px; display:block;"><source src="/media/{{ msg.id }}"></video>
+            {% if msg.body and not msg.body.startswith("🎥") %}<div style="margin-top:4px;">{{ msg.body }}</div>{% endif %}
+          {% elif msg.media_type == "document" %}
+            <a href="/media/{{ msg.id }}" target="_blank" style="color:inherit; text-decoration:underline;">{{ msg.body }}</a>
           {% else %}
             {{ msg.body }}
           {% endif %}
@@ -47,11 +56,14 @@
       {% endfor %}
     </div>
     <form class="reply-box" method="post" action="/leads/{{ selected_lead.id }}/reply" style="position:relative;">
+      <button type="button" class="btn ghost small" id="attachToggle" title="Anexar" style="flex:0 0 auto;">📎</button>
+      <input type="file" id="attachInput" accept="image/*,video/*,application/pdf" hidden>
       <button type="button" class="btn ghost small" id="emojiToggle" title="Emojis" style="flex:0 0 auto;">🙂</button>
       <div id="emojiPicker" hidden style="position:absolute; bottom:56px; left:14px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:8px; display:grid; grid-template-columns:repeat(8,1fr); gap:4px; z-index:10;"></div>
       <input type="text" name="body" id="replyInput" placeholder="Responder pelo WhatsApp..." required autocomplete="off">
-      <button class="btn" type="submit">Enviar</button>
+      <button class="btn" type="submit" id="sendBtn">Enviar</button>
     </form>
+    <div id="attachStatus" class="muted" style="padding:0 14px 10px; display:none;"></div>
     <script>
     (function () {
       var EMOJIS = ["😀","😂","😍","👍","🙏","🎉","❤️","🔥","😉","😢","👏","🤔","✅","❌","📅","💰","⏰","📞","😅","🙌","👋","💡","🚀","😎"];
@@ -74,6 +86,46 @@
       });
       document.addEventListener("click", function (e) {
         if (!picker.contains(e.target) && e.target !== toggle) picker.hidden = true;
+      });
+
+      // rola pro final da conversa ao abrir
+      var messagesEl = document.getElementById("inboxMessages");
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      // anexo (foto/video/documento)
+      var attachToggle = document.getElementById("attachToggle");
+      var attachInput = document.getElementById("attachInput");
+      var attachStatus = document.getElementById("attachStatus");
+      var sendBtn = document.getElementById("sendBtn");
+      attachToggle.addEventListener("click", function () { attachInput.click(); });
+      attachInput.addEventListener("change", function () {
+        var file = attachInput.files[0];
+        if (!file) return;
+        attachStatus.style.display = "block";
+        attachStatus.textContent = "Enviando " + file.name + "...";
+        attachToggle.disabled = true;
+        sendBtn.disabled = true;
+
+        var formData = new FormData();
+        formData.append("file", file);
+        formData.append("caption", input.value || "");
+
+        fetch("/leads/{{ selected_lead.id }}/reply-media", { method: "POST", body: formData })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              window.location.reload();
+            } else {
+              attachStatus.textContent = "Falha ao enviar: " + (data.error || "erro desconhecido");
+              attachToggle.disabled = false;
+              sendBtn.disabled = false;
+            }
+          })
+          .catch(function () {
+            attachStatus.textContent = "Falha ao enviar (conexão).";
+            attachToggle.disabled = false;
+            sendBtn.disabled = false;
+          });
       });
     })();
     </script>

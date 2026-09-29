@@ -1,7 +1,7 @@
 import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -10,7 +10,13 @@ from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.services.platform import PLATFORM_LABEL, resolve_platform
-from app.services.whatsapp_client import fetch_media, send_text_message
+from app.services.whatsapp_client import (
+    fetch_media,
+    media_kind_for_mime,
+    send_media_message,
+    send_text_message,
+    upload_media,
+)
 from app.templating import templates
 
 router = APIRouter()
@@ -249,6 +255,56 @@ def reply_lead(
     db.commit()
 
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
+
+
+@router.post("/leads/{lead_id}/reply-media")
+async def reply_lead_media(
+    lead_id: str,
+    file: UploadFile,
+    caption: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Envia foto/vídeo/documento pro lead. Chamado via fetch() do Inbox (não
+    é um form comum) pra dar pra mostrar 'enviando...' sem recarregar a
+    página até a resposta da Meta confirmar."""
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    if not lead or not lead.conversations:
+        return JSONResponse({"ok": False, "error": "conversa não encontrada"}, status_code=404)
+
+    content = await file.read()
+    max_bytes = 16 * 1024 * 1024  # limite da própria Cloud API pra imagem/doc (vídeo é maior, mas fica um teto seguro)
+    if len(content) > max_bytes:
+        return JSONResponse({"ok": False, "error": "arquivo maior que 16MB"}, status_code=400)
+
+    conversation = lead.conversations[0]
+    number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
+    mime_type = file.content_type or "application/octet-stream"
+    media_kind = media_kind_for_mime(mime_type)
+
+    media_id = upload_media(number, content, file.filename or "arquivo", mime_type)
+    if not media_id:
+        return JSONResponse({"ok": False, "error": "falha ao enviar arquivo pra Meta"}, status_code=502)
+
+    result = send_media_message(number, lead.phone, media_id, media_kind, caption)
+
+    placeholder = {"image": "📷 Imagem", "video": "🎥 Vídeo", "audio": "🎤 Áudio", "document": "📄 Documento"}[media_kind]
+    message = Message(
+        conversation_id=conversation.id,
+        direction="out",
+        sender_user_id=user.id,
+        body=f"{placeholder}{' — ' + caption if caption else ''}",
+        media_id=media_id,
+        media_type=media_kind,
+        wa_message_id=result.get("body", {}).get("messages", [{}])[0].get("id", "") if result["ok"] else "",
+    )
+    conversation.last_message_at = datetime.datetime.utcnow()
+    db.add(message)
+    db.add(conversation)
+    db.commit()
+
+    return JSONResponse({"ok": result["ok"]})
 
 
 DATE_RANGE_LABELS = [

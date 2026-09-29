@@ -44,3 +44,47 @@ def send_text_message(number: WhatsAppNumber, to_phone_e164_digits: str, body: s
     except ValueError:
         response_body = {"raw": resp.text}
     return {"ok": resp.ok, "status_code": resp.status_code, "body": response_body}
+
+
+def upload_media(number: WhatsAppNumber, content: bytes, filename: str, mime_type: str):
+    """Sobe um arquivo (imagem/vídeo/documento) pro WhatsApp e retorna o
+    media_id da Meta, necessário pra depois mandar como mensagem. Retorna
+    None em caso de erro."""
+    url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{number.waba_phone_number_id}/media"
+    headers = {"Authorization": f"Bearer {number.access_token}"}
+    files = {"file": (filename, content, mime_type)}
+    data = {"messaging_product": "whatsapp"}
+    resp = requests.post(url, headers=headers, files=files, data=data, timeout=30)
+    if not resp.ok:
+        return None
+    return resp.json().get("id")
+
+
+MEDIA_KIND_BY_MIME_PREFIX = {"image": "image", "video": "video", "audio": "audio"}
+
+
+def media_kind_for_mime(mime_type: str) -> str:
+    prefix = (mime_type or "").split("/")[0]
+    return MEDIA_KIND_BY_MIME_PREFIX.get(prefix, "document")
+
+
+def send_media_message(
+    number: WhatsAppNumber, to_phone_e164_digits: str, media_id: str, media_kind: str, caption: str = ""
+) -> dict:
+    url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{number.waba_phone_number_id}/messages"
+    headers = {"Authorization": f"Bearer {number.access_token}", "Content-Type": "application/json"}
+    media_payload = {"id": media_id}
+    if caption and media_kind in ("image", "video", "document"):
+        media_payload["caption"] = caption
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_phone_e164_digits,
+        "type": media_kind,
+        media_kind: media_payload,
+    }
+    resp = requests.post(url, headers=headers, json=payload, timeout=15)
+    try:
+        response_body = resp.json()
+    except ValueError:
+        response_body = {"raw": resp.text}
+    return {"ok": resp.ok, "status_code": resp.status_code, "body": response_body}
