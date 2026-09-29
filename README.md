@@ -64,26 +64,44 @@ está pronta pra recebê-las.
 ## Botão de WhatsApp no site do cliente (rastreando UTM/gclid)
 
 Quando o lead já cai numa landing page/site (ex: vindo do Google Ads, que
-anexa `gclid` e UTMs na URL da página) e ali tem um botão "Fale no WhatsApp",
-esse botão não deve apontar direto pra `wa.me` — ele precisa passar pela nossa
-landing-ponte pra registrar a origem antes de redirecionar. Use o script
-`static-snippets/whatsapp-bridge.js`:
+anexa `gclid` e UTMs na URL da página) e ali tem um botão "Fale no WhatsApp"
+(seja de um plugin, um componente React/Next.js, ou um link manual), esse
+botão não deve apontar direto pra `wa.me` — ele precisa passar pela nossa
+landing-ponte pra registrar a origem antes de redirecionar.
+
+O script `app/static/whatsapp-bridge.js` acha esses links **sozinho** (por
+padrão de URL, `wa.me`/`api.whatsapp.com`) e reescreve o `href` deles — não
+precisa editar o HTML/código do site nem marcar o botão com classe nenhuma.
+Também observa mudanças no DOM, então pega botões que só aparecem depois do
+carregamento inicial (comum em sites React/Next.js).
+
+**Forma mais simples de instalar — via Google Tag Manager, sem precisar mexer
+no código do site** (o caso mais comum: dá pra publicar sem depender do time
+de dev): Tag Manager → Tags → Nova → Configuração da tag → **HTML
+personalizado** → cola:
 
 ```html
-<a href="#" class="wa-bridge-btn"
-   data-tenant="SEU_TENANT_ID"
-   data-number="SEU_WHATSAPP_NUMBER_ID"
-   data-text="Quero saber mais!">
-  Fale no WhatsApp
-</a>
+<script>
+  window.CRM_JUNTA_WA_BRIDGE = {
+    base: "https://SEU_DOMINIO_DO_CRM",
+    tenant: "SEU_TENANT_ID",
+    number: "SEU_WHATSAPP_NUMBER_ID"
+  };
+</script>
 <script src="https://SEU_DOMINIO_DO_CRM/static/whatsapp-bridge.js"></script>
 ```
 
+Acionador: **Todas as páginas**. Salva e publica o container do GTM — pronto,
+sem precisar de deploy nenhum no site.
+
+(Se preferir colar direto no código do site em vez de via GTM, funciona
+exatamente igual — o `<script>` pode ir em qualquer lugar da página.)
+
 O script lê `gclid`/`utm_*` da URL atual, guarda em `sessionStorage` (pra não
-perder se a pessoa navegar pra outra página do site antes de clicar), e
-reescreve o `href` do botão pra passar pela nossa ponte antes do WhatsApp.
-Funciona pra Google Ads e também pra qualquer outro tráfego pago que chegue
-no site com UTMs (ex: um anúncio do Facebook que leva pro site, não direto pro WhatsApp).
+perder se a pessoa navegar pra outra página do site antes de clicar), preserva
+o texto pré-preenchido que o botão já tinha, e funciona pra Google Ads e
+também pra qualquer outro tráfego pago que chegue no site com UTMs (ex: um
+anúncio do Facebook que leva pro site, não direto pro WhatsApp).
 
 ## O que falta você me passar (nenhuma delas eu posso gerar sozinho)
 

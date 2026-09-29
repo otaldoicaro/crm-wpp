@@ -1,32 +1,39 @@
 /**
- * Cole este script no site/landing page do cliente (antes do </body>), e
- * marque os botões de WhatsApp com a classe "wa-bridge-btn" + atributos
- * data-tenant e data-number. Exemplo:
+ * Faz QUALQUER link de WhatsApp que já exista na página (botão flutuante de
+ * plugin, componente React/Next.js, link manual, o que for) passar pela
+ * nossa landing-ponte antes de abrir o WhatsApp — sem precisar editar o
+ * HTML/código do site. Acha os links sozinho por padrão de URL
+ * (wa.me / api.whatsapp.com), então funciona também com botões que já
+ * existem hoje, plugin ou não.
  *
- *   <a href="#" class="wa-bridge-btn"
- *      data-tenant="SEU_TENANT_ID"
- *      data-number="SEU_WHATSAPP_NUMBER_ID"
- *      data-text="Quero saber mais!">
- *     Fale no WhatsApp
- *   </a>
+ * Uso mais comum: colar via Google Tag Manager (tag "HTML personalizado",
+ * disparo "Todas as páginas"), sem precisar mexer no código do site:
  *
- * O script pega o gclid/UTMs da URL atual da página (ex: quem clicou num
- * anúncio do Google Ads e caiu aqui) e os repassa pra nossa landing-ponte,
- * que registra a origem e redireciona pro WhatsApp já com o texto
- * pré-preenchido. Também guarda os parâmetros em sessionStorage, pra não
- * perder a origem se a pessoa navegar pra outra página do site antes de
- * clicar no botão.
+ *   <script>
+ *     window.CRM_JUNTA_WA_BRIDGE = {
+ *       base: "https://SEU_DOMINIO_DO_CRM",
+ *       tenant: "SEU_TENANT_ID",
+ *       number: "SEU_WHATSAPP_NUMBER_ID"
+ *     };
+ *   </script>
+ *   <script src="https://SEU_DOMINIO_DO_CRM/static/whatsapp-bridge.js"></script>
+ *
+ * O script pega o gclid/UTMs da URL atual (ex: quem clicou num anúncio do
+ * Google Ads e caiu aqui) e repassa pra nossa landing-ponte, que registra a
+ * origem e redireciona pro WhatsApp já com o texto pré-preenchido original
+ * preservado. Também guarda os parâmetros em sessionStorage (não perde a
+ * origem se a pessoa navegar pra outra página antes de clicar) e observa
+ * mudanças no DOM (o botão pode renderizar depois do carregamento inicial,
+ * comum em sites React/Next.js).
  */
 (function () {
-  var BRIDGE_BASE = "https://SEU_DOMINIO_DO_CRM"; // troque pelo domínio onde o CRM está publicado
-  var TRACKED_PARAMS = [
-    "gclid",
-    "utm_source",
-    "utm_medium",
-    "utm_campaign",
-    "utm_content",
-    "utm_term",
-  ];
+  var config = window.CRM_JUNTA_WA_BRIDGE || {};
+  var BRIDGE_BASE = config.base || "https://SEU_DOMINIO_DO_CRM";
+  var TENANT_ID = config.tenant || "SEU_TENANT_ID";
+  var WHATSAPP_NUMBER_ID = config.number || "SEU_WHATSAPP_NUMBER_ID";
+  var LINK_SELECTOR = 'a[href*="wa.me/"], a[href*="api.whatsapp.com/send"]';
+
+  var TRACKED_PARAMS = ["gclid", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
   var STORAGE_KEY = "wa_bridge_attribution";
 
   function readCurrentParams() {
@@ -60,18 +67,38 @@
   var merged = Object.assign({}, loadStored(), readCurrentParams());
   persist(merged);
 
-  document.querySelectorAll(".wa-bridge-btn").forEach(function (btn) {
-    var tenant = btn.getAttribute("data-tenant");
-    var number = btn.getAttribute("data-number");
-    if (!tenant || !number) return;
+  function extractPrefilledText(href) {
+    try {
+      var url = new URL(href, window.location.href);
+      return url.searchParams.get("text") || "";
+    } catch (e) {
+      return "";
+    }
+  }
 
-    var url = new URL(BRIDGE_BASE + "/go/" + tenant + "/" + number);
-    Object.keys(merged).forEach(function (key) {
-      url.searchParams.set(key, merged[key]);
+  function rewriteLinks() {
+    var links = document.querySelectorAll(LINK_SELECTOR);
+    links.forEach(function (link) {
+      if (link.dataset.crmJuntaBridged === "1") return; // não reprocessa o mesmo link
+
+      var text = extractPrefilledText(link.href);
+      var url = new URL(BRIDGE_BASE + "/go/" + TENANT_ID + "/" + WHATSAPP_NUMBER_ID);
+      Object.keys(merged).forEach(function (key) {
+        url.searchParams.set(key, merged[key]);
+      });
+      if (text) url.searchParams.set("texto", text);
+
+      link.setAttribute("href", url.toString());
+      link.dataset.crmJuntaBridged = "1";
     });
-    var text = btn.getAttribute("data-text");
-    if (text) url.searchParams.set("texto", text);
+  }
 
-    btn.setAttribute("href", url.toString());
-  });
+  rewriteLinks();
+
+  // botões renderizados depois do load inicial (comum em SPA/React) também
+  // precisam ser pegos — observa mudanças no DOM e reaplica
+  if (window.MutationObserver) {
+    var observer = new MutationObserver(rewriteLinks);
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  }
 })();
