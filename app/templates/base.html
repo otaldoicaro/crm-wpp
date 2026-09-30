@@ -3,14 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#15130F">
   <title>{% block title %}CRM{% endblock %} · {{ tenant.name if tenant else "" }}</title>
-  <link rel="icon" href="/static/brand/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/brand/favicon-nv.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body>
   {% if user %}
   <header class="topbar">
-    <img class="logo-img" src="/static/brand/logo-horizontal-amarelo.svg" alt="Junta">
+    <span class="nv-logo" aria-label="Nova Viseu Autopeças"><b>NOVA VISEU</b><small>AUTOPEÇAS</small></span>
     <nav>
       <a href="/" class="{{ 'active' if active_nav == 'pipeline' else '' }}">Pipeline</a>
       <a href="/inbox" class="{{ 'active' if active_nav == 'inbox' else '' }}">Inbox</a>
