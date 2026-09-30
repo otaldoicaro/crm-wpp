@@ -1,6 +1,9 @@
-"""Tela "WhatsApp" do painel: o admin do cliente adiciona um número e conecta
-lendo o QR code com o celular, sem precisar de ninguém da agência. Mostra
-também se algum número caiu (desconectou) pra reconectar na hora.
+"""Tela "WhatsApp" do painel, conexão por QR code sem ninguém da agência:
+- vendedor ("Meu WhatsApp"): conecta o WhatsApp do próprio celular, que vira
+  o número dele no rodízio do link rotativo; só enxerga o próprio número.
+- admin: vê todos os números, adiciona, escolhe o vendedor dono de cada um e
+  pega o link rotativo pra usar nos anúncios/site.
+Mostra também se algum número caiu (desconectou) pra reconectar na hora.
 """
 
 import re
@@ -13,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import Tenant, User, WhatsAppNumber
+from app.config import PUBLIC_BASE_URL
 from app.services import evolution_client
 from app.templating import templates
 
@@ -24,11 +28,17 @@ def _require_admin(user: User) -> None:
         raise HTTPException(status_code=403, detail="Só o admin pode gerenciar os números de WhatsApp")
 
 
-def _get_number(db: Session, tenant: Tenant, number_id: str) -> WhatsAppNumber:
+def _get_number(db: Session, tenant: Tenant, user: User, number_id: str) -> WhatsAppNumber:
     number = db.get(WhatsAppNumber, number_id)
     if not number or number.tenant_id != tenant.id or number.provider != "evolution":
         raise HTTPException(status_code=404, detail="Número não encontrado")
+    if user.role != "admin" and number.owner_user_id != user.id:
+        raise HTTPException(status_code=404, detail="Número não encontrado")
     return number
+
+
+def _users(db: Session, tenant: Tenant) -> list:
+    return db.query(User).filter(User.tenant_id == tenant.id, User.is_active.is_(True)).order_by(User.name).all()
 
 
 def _instance_name(db: Session, tenant: Tenant) -> str:
@@ -50,13 +60,12 @@ def whatsapp_page(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    _require_admin(user)
-    numbers = (
-        db.query(WhatsAppNumber)
-        .filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.provider == "evolution")
-        .order_by(WhatsAppNumber.created_at)
-        .all()
+    query = db.query(WhatsAppNumber).filter(
+        WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.provider == "evolution"
     )
+    if user.role != "admin":
+        query = query.filter(WhatsAppNumber.owner_user_id == user.id)
+    numbers = query.order_by(WhatsAppNumber.created_at).all()
     return templates.TemplateResponse(
         request,
         "whatsapp.html",
@@ -65,6 +74,8 @@ def whatsapp_page(
             "user": user,
             "active_nav": "whatsapp",
             "numbers": numbers,
+            "users": _users(db, tenant) if user.role == "admin" else [],
+            "rotating_link": f"{PUBLIC_BASE_URL}/go/{tenant.id}",
             "configured": evolution_client.is_configured(),
             "error": request.query_params.get("error", ""),
             "auto_connect": request.query_params.get("connect", ""),
@@ -74,13 +85,26 @@ def whatsapp_page(
 
 @router.post("/whatsapp/add")
 def add_number(
-    label: str = Form(...),
+    label: str = Form(""),
     phone: str = Form(""),
+    owner_user_id: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    _require_admin(user)
+    if user.role != "admin":
+        # vendedor só conecta o próprio WhatsApp, e um só
+        existing = (
+            db.query(WhatsAppNumber)
+            .filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.owner_user_id == user.id)
+            .first()
+        )
+        if existing:
+            return RedirectResponse(url=f"/whatsapp?connect={existing.id}", status_code=302)
+        owner_user_id, label = user.id, label or f"WhatsApp de {user.name}"
+    elif owner_user_id and not any(u.id == owner_user_id for u in _users(db, tenant)):
+        owner_user_id = ""
+
     instance = _instance_name(db, tenant)
     try:
         evolution_client.create_instance(instance)
@@ -91,6 +115,7 @@ def add_number(
         tenant_id=tenant.id,
         label=label.strip() or "WhatsApp",
         phone_number=re.sub(r"\D", "", phone),
+        owner_user_id=owner_user_id or None,
         provider="evolution",
         evolution_instance=instance,
         connection_state="close",
@@ -107,8 +132,7 @@ def number_qr(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    _require_admin(user)
-    number = _get_number(db, tenant, number_id)
+    number = _get_number(db, tenant, user, number_id)
     try:
         state = evolution_client.connection_state(number.evolution_instance)
         if state == "open":
@@ -127,8 +151,7 @@ def number_status(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    _require_admin(user)
-    number = _get_number(db, tenant, number_id)
+    number = _get_number(db, tenant, user, number_id)
     try:
         state = evolution_client.connection_state(number.evolution_instance)
     except evolution_client.EvolutionError as exc:
@@ -156,13 +179,29 @@ def disconnect_number(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    _require_admin(user)
-    number = _get_number(db, tenant, number_id)
+    number = _get_number(db, tenant, user, number_id)
     try:
         evolution_client.logout(number.evolution_instance)
     except evolution_client.EvolutionError:
         pass  # já estava desconectado
     number.connection_state = "close"
+    db.add(number)
+    db.commit()
+    return RedirectResponse(url="/whatsapp", status_code=302)
+
+
+@router.post("/whatsapp/{number_id}/owner")
+def set_owner(
+    number_id: str,
+    owner_user_id: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    _require_admin(user)
+    number = _get_number(db, tenant, user, number_id)
+    valid = {u.id for u in _users(db, tenant)}
+    number.owner_user_id = owner_user_id if owner_user_id in valid else None
     db.add(number)
     db.commit()
     return RedirectResponse(url="/whatsapp", status_code=302)

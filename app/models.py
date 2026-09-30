@@ -87,10 +87,16 @@ class WhatsAppNumber(Base):
     evolution_instance: Mapped[str] = mapped_column(String(80), default="", index=True)
     # último estado conhecido da conexão (Evolution): open | connecting | close
     connection_state: Mapped[str] = mapped_column(String(20), default="")
+    # vendedor dono do número (o WhatsApp do celular dele). Lead que chega nesse
+    # número vai direto pra ele; vazio = número compartilhado, entra no rodízio.
+    owner_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # último clique do link rotativo (/go/{tenant}) mandado pra este número
+    last_routed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="whatsapp_numbers")
+    owner: Mapped[Optional["User"]] = relationship()
 
 
 class PipelineStage(Base):
@@ -185,6 +191,7 @@ class ClickBridge(Base):
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
     tracking_code: Mapped[str] = mapped_column(String(20), unique=True, index=True)
     gclid: Mapped[str] = mapped_column(String(255), default="")
+    fbclid: Mapped[str] = mapped_column(String(255), default="")
     utm_source: Mapped[str] = mapped_column(String(120), default="")
     utm_medium: Mapped[str] = mapped_column(String(120), default="")
     utm_campaign: Mapped[str] = mapped_column(String(160), default="")

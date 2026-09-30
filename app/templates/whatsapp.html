@@ -1,12 +1,28 @@
 {% extends "base.html" %}
 {% block title %}WhatsApp{% endblock %}
 {% block content %}
+{% set is_admin = user.role == "admin" %}
 <div class="kanban-toolbar">
   <div>
-    <h2 style="margin:0">WhatsApp</h2>
-    <span class="muted">Números conectados ao CRM. As conversas que chegam aqui são distribuídas em rodízio entre os vendedores.</span>
+    <h2 style="margin:0">{{ "WhatsApp" if is_admin else "Meu WhatsApp" }}</h2>
+    {% if is_admin %}
+    <span class="muted">Cada vendedor conecta o WhatsApp do próprio celular (pelo login dele, em "Meu WhatsApp") ou você conecta aqui. O link rotativo abaixo reveza os clientes entre os números conectados.</span>
+    {% else %}
+    <span class="muted">Conecte o WhatsApp do seu celular. Você continua usando o WhatsApp normalmente no celular, e as conversas com clientes também aparecem aqui no CRM.</span>
+    {% endif %}
   </div>
 </div>
+
+{% if is_admin %}
+<div class="card wa-link">
+  <div class="wa-label">Link rotativo</div>
+  <p class="muted" style="margin:4px 0 10px">Use este link único nos anúncios, no botão do site e na bio do Instagram. Cada clique abre o WhatsApp de um vendedor diferente. Número desconectado, vendedor pausado ou no limite de leads fica de fora sozinho.</p>
+  <div class="wa-link-row">
+    <input type="text" readonly value="{{ rotating_link }}" id="rotLink" onclick="this.select()">
+    <button class="btn small" type="button" onclick="navigator.clipboard.writeText(document.getElementById('rotLink').value); this.textContent='Copiado!'">Copiar</button>
+  </div>
+</div>
+{% endif %}
 
 {% if not configured %}
   <div class="error-box">O servidor de WhatsApp ainda não foi configurado neste ambiente (EVOLUTION_API_URL / EVOLUTION_API_KEY). Fale com a agência.</div>
@@ -20,6 +36,16 @@
       <div>
         <div class="wa-label">{{ n.label }}</div>
         <div class="muted">{{ ("+" ~ n.phone_number) if n.phone_number else "número ainda não pareado" }}</div>
+        {% if not is_admin %}{% elif users %}
+        <form method="post" action="/whatsapp/{{ n.id }}/owner" class="wa-owner">
+          <label>Vendedor dono
+            <select name="owner_user_id" onchange="this.form.submit()">
+              <option value="">— compartilhado (rodízio geral) —</option>
+              {% for u in users %}<option value="{{ u.id }}" {{ "selected" if n.owner_user_id == u.id }}>{{ u.name }}</option>{% endfor %}
+            </select>
+          </label>
+        </form>
+        {% endif %}
       </div>
       <span class="wa-status {{ 'on' if n.connection_state == 'open' else 'off' }}">
         {{ "Conectado" if n.connection_state == "open" else "Desconectado" }}
@@ -51,14 +77,30 @@
   </div>
   {% endfor %}
 
+  {% if is_admin %}
   <div class="card wa-card wa-add">
     <div class="wa-label">+ Adicionar número</div>
     <form method="post" action="/whatsapp/add">
-      <p><label>Nome (pra você identificar)<br><input type="text" name="label" placeholder="Ex: Comercial central" required></label></p>
+      <p><label>Nome (pra você identificar)<br><input type="text" name="label" placeholder="Ex: WhatsApp do Carlos" required></label></p>
+      <p><label>Vendedor dono<br>
+        <select name="owner_user_id">
+          <option value="">— compartilhado (rodízio geral) —</option>
+          {% for u in users %}<option value="{{ u.id }}">{{ u.name }}</option>{% endfor %}
+        </select></label></p>
       <p><label>Número com DDD (opcional)<br><input type="text" name="phone" placeholder="Ex: 21 99999-9999" inputmode="tel"></label></p>
       <button class="btn" type="submit" {{ "disabled" if not configured }}>Adicionar e conectar</button>
     </form>
   </div>
+  {% elif not numbers %}
+  <div class="card wa-card wa-add">
+    <div class="wa-label">Conectar meu WhatsApp</div>
+    <p class="muted">Deixe o celular com o WhatsApp à mão. Leva menos de 1 minuto.</p>
+    <form method="post" action="/whatsapp/add">
+      <p><label>Seu número com DDD (opcional)<br><input type="text" name="phone" placeholder="Ex: 21 99999-9999" inputmode="tel"></label></p>
+      <button class="btn" type="submit" {{ "disabled" if not configured }}>Conectar meu WhatsApp</button>
+    </form>
+  </div>
+  {% endif %}
 </div>
 
 <script>

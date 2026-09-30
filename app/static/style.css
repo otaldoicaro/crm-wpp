@@ -254,3 +254,8 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .wa-actions { margin-top: 14px; }
 .wa-actions form { margin: 0; }
 .wa-add form p { margin: 10px 0; }
+.wa-link { margin-bottom: 14px; }
+.wa-link-row { display: flex; gap: 8px; }
+.wa-link-row input { font-family: ui-monospace, Menlo, monospace; font-size: .82rem; }
+.wa-owner { margin-top: 8px; }
+.wa-owner select { margin-top: 3px; padding: 6px 10px; font-size: .82rem; }

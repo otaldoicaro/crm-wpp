@@ -58,7 +58,7 @@ def _parse_content(message: dict) -> tuple:
         message = message["viewOnceMessageV2"].get("message", {})
 
     if "conversation" in message:
-        return message["conversation"], "", message.get("messageContextInfo", {}) or {}
+        return message["conversation"], "", {}
     if "extendedTextMessage" in message:
         ext = message["extendedTextMessage"]
         return ext.get("text", ""), "", ext.get("contextInfo", {}) or {}
@@ -139,7 +139,10 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict) -> None:
     body, media_type, context_info = _parse_content(item.get("message") or {})
     if not body and not media_type:
         return  # reação, confirmação de leitura, etc.
-    context_info = context_info or item.get("contextInfo") or {}
+    # o Evolution (prepareMessage, v2.3.x) converte extendedTextMessage em
+    # "conversation" e move o contextInfo — onde fica o externalAdReply do
+    # anúncio — pro nível de cima do payload; por isso ele tem prioridade
+    context_info = item.get("contextInfo") or context_info or {}
     media_id = wa_message_id if media_type else ""
 
     if key.get("fromMe"):

@@ -12,8 +12,9 @@
  *   <script>
  *     window.CRM_JUNTA_WA_BRIDGE = {
  *       base: "https://SEU_DOMINIO_DO_CRM",
- *       tenant: "SEU_TENANT_ID",
- *       number: "SEU_WHATSAPP_NUMBER_ID"
+ *       tenant: "SEU_TENANT_ID"
+ *       // number: "ID_DE_UM_NUMERO"  -> opcional: sem ele, cada clique vai
+ *       // pro WhatsApp de um vendedor diferente (rodízio, pula número caído)
  *     };
  *   </script>
  *   <script src="https://SEU_DOMINIO_DO_CRM/static/whatsapp-bridge.js"></script>
@@ -30,10 +31,10 @@
   var config = window.CRM_JUNTA_WA_BRIDGE || {};
   var BRIDGE_BASE = config.base || "https://SEU_DOMINIO_DO_CRM";
   var TENANT_ID = config.tenant || "SEU_TENANT_ID";
-  var WHATSAPP_NUMBER_ID = config.number || "SEU_WHATSAPP_NUMBER_ID";
+  var WHATSAPP_NUMBER_ID = config.number || "";
   var LINK_SELECTOR = 'a[href*="wa.me/"], a[href*="api.whatsapp.com/send"]';
 
-  var TRACKED_PARAMS = ["gclid", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
+  var TRACKED_PARAMS = ["gclid", "fbclid", "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
   var STORAGE_KEY = "wa_bridge_attribution";
 
   function readCurrentParams() {
@@ -82,7 +83,7 @@
       if (link.dataset.crmJuntaBridged === "1") return; // não reprocessa o mesmo link
 
       var text = extractPrefilledText(link.href);
-      var url = new URL(BRIDGE_BASE + "/go/" + TENANT_ID + "/" + WHATSAPP_NUMBER_ID);
+      var url = new URL(BRIDGE_BASE + "/go/" + TENANT_ID + (WHATSAPP_NUMBER_ID ? "/" + WHATSAPP_NUMBER_ID : ""));
       Object.keys(merged).forEach(function (key) {
         url.searchParams.set(key, merged[key]);
       });

@@ -72,6 +72,7 @@ def attribution_from_click_bridge(db: Session, lead: Lead, message_body: str) ->
         utm_content=bridge.utm_content,
         utm_term=bridge.utm_term,
         gclid=bridge.gclid,
+        fbclid=bridge.fbclid,
         tracking_code=code,
     )
     import datetime

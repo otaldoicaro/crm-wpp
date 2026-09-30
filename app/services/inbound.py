@@ -80,7 +80,7 @@ def ingest_inbound(
         else:
             attribution.attribution_from_click_bridge(db, lead, body)
 
-        assign_lead(db, lead)
+        assign_lead(db, lead, number)
     elif profile_name and not lead.name:
         lead.name = profile_name
         db.add(lead)
