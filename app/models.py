@@ -37,6 +37,8 @@ class Tenant(Base):
     subdomain: Mapped[str] = mapped_column(String(63), unique=True, index=True)
     # identidade visual do painel (chave de app/themes.py, ex: "junta", "novaviseu")
     theme: Mapped[str] = mapped_column(String(40), default="junta")
+    # segredo do link de convite (/convite/{token}) pra vendedor criar o próprio login; vazio = sem link
+    invite_token: Mapped[str] = mapped_column(String(40), default="", index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     users: Mapped[list["User"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")

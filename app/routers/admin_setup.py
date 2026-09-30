@@ -100,6 +100,7 @@ def bootstrap_tenant(payload: BootstrapIn, x_setup_token: Optional[str] = Header
                 email=payload.admin_email.lower().strip(),
                 password_hash=hash_password(payload.admin_password),
                 role="admin",
+                accepting_leads=False,  # gestor não entra no rodízio (dá pra ligar na tela Equipe)
             )
             db.add(admin)
             db.commit()

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Equipe{% endblock %}
+{% block content %}
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">Equipe</h2>
+    <span class="muted">Quem está "no rodízio" recebe clientes novos. Pause quem estiver de folga; desative quem saiu da empresa.</span>
+  </div>
+</div>
+
+<div class="card wa-link">
+  <div class="wa-label">Link de convite pra vendedores</div>
+  <p class="muted" style="margin:4px 0 10px">Mande este link no grupo da equipe. Cada vendedor abre, cria o próprio login e já conecta o WhatsApp do celular.</p>
+  <div class="wa-link-row">
+    <input type="text" readonly value="{{ invite_link }}" id="inviteLink" onclick="this.select()">
+    <button class="btn small" type="button" onclick="navigator.clipboard.writeText(document.getElementById('inviteLink').value); this.textContent='Copiado!'">Copiar</button>
+  </div>
+  <form method="post" action="/equipe/convite/novo" style="margin-top:8px" onsubmit="return confirm('Gerar um link novo? O link atual para de funcionar.')">
+    <button class="btn ghost small" type="submit">Gerar link novo</button>
+  </form>
+</div>
+
+<div class="card">
+  <div style="overflow-x:auto;">
+  <table class="table-simple">
+    <thead><tr><th>Nome</th><th>E-mail</th><th>WhatsApp</th><th>Rodízio</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      {% set n = numbers_by_owner.get(u.id) %}
+      <tr style="{{ 'opacity:.5' if not u.is_active }}">
+        <td><b>{{ u.name }}</b>{% if u.role == "admin" %} <span class="pill">admin</span>{% endif %}</td>
+        <td>{{ u.email }}</td>
+        <td>
+          {% if n %}<span class="wa-status {{ 'on' if n.connection_state == 'open' else 'off' }}">{{ "Conectado" if n.connection_state == "open" else "Desconectado" }}</span>
+          {% else %}<span class="muted">não conectou</span>{% endif %}
+        </td>
+        <td>
+          {% if u.is_active %}
+          <form method="post" action="/equipe/{{ u.id }}/rodizio" style="margin:0">
+            <button class="btn small {{ '' if u.accepting_leads else 'ghost' }}" type="submit">{{ "No rodízio" if u.accepting_leads else "Pausado" }}</button>
+          </form>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.id != user.id %}
+          <form method="post" action="/equipe/{{ u.id }}/ativo" style="margin:0" onsubmit="return confirm('{{ 'Desativar' if u.is_active else 'Reativar' }} {{ u.name }}?')">
+            <button class="btn ghost small" type="submit">{{ "Desativar" if u.is_active else "Reativar" }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
