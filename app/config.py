@@ -37,7 +37,7 @@ EVOLUTION_WEBHOOK_TOKEN = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
 
 # Cópia própria das mídias das conversas (S3/MinIO/R2) — ver app/services/media_store.py
-MEDIA_S3_ENDPOINT = os.getenv("MEDIA_S3_ENDPOINT", "")  # ex: http://179.236.226.37:9000
+MEDIA_S3_ENDPOINT = os.getenv("MEDIA_S3_ENDPOINT", "")  # ex: http://179.236.226.37:8333 (SeaweedFS no VPS)
 MEDIA_S3_ACCESS_KEY = os.getenv("MEDIA_S3_ACCESS_KEY", "")
 MEDIA_S3_SECRET_KEY = os.getenv("MEDIA_S3_SECRET_KEY", "")
 MEDIA_S3_BUCKET = os.getenv("MEDIA_S3_BUCKET", "crm-midias")
