@@ -19,6 +19,7 @@ from app.auth import hash_password
 from app.config import ADMIN_SETUP_TOKEN
 from app.db import SessionLocal
 from app.models import CampaignSpend, PipelineStage, Tenant, User, WhatsAppNumber
+from app.themes import THEMES
 
 router = APIRouter()
 
@@ -36,6 +37,7 @@ class BootstrapIn(BaseModel):
     tenant_name: str
     admin_email: str
     admin_password: str
+    theme: str = ""  # chave de app/themes.py (ex: "junta", "novaviseu"); vazio = não muda
     whatsapp: Optional[WhatsAppNumberIn] = None
 
 
@@ -77,6 +79,13 @@ def bootstrap_tenant(payload: BootstrapIn, x_setup_token: Optional[str] = Header
                         is_lost=is_lost,
                     )
                 )
+            db.commit()
+
+        if payload.theme:
+            if payload.theme not in THEMES:
+                raise HTTPException(status_code=400, detail=f"tema desconhecido; opções: {', '.join(THEMES)}")
+            tenant.theme = payload.theme
+            db.add(tenant)
             db.commit()
 
         admin = (
@@ -125,6 +134,7 @@ def bootstrap_tenant(payload: BootstrapIn, x_setup_token: Optional[str] = Header
             "created_tenant": created_tenant,
             "tenant_id": tenant.id,
             "subdomain": tenant.subdomain,
+            "theme": tenant.theme,
             "admin_user_id": admin.id,
             "whatsapp_number_id": whatsapp_number_id,
         }

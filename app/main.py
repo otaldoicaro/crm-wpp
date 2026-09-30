@@ -4,7 +4,16 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.db import sync_schema
-from app.routers import admin_setup, auth_router, bridge, dashboard, webhooks_site, webhooks_whatsapp
+from app.routers import (
+    admin_setup,
+    auth_router,
+    bridge,
+    dashboard,
+    webhooks_evolution,
+    webhooks_site,
+    webhooks_whatsapp,
+    whatsapp_connect,
+)
 from app.tenancy import DEBUG
 
 logging.basicConfig(level=logging.INFO)
@@ -33,10 +42,12 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 app.include_router(admin_setup.router)
 app.include_router(webhooks_whatsapp.router)
+app.include_router(webhooks_evolution.router)
 app.include_router(webhooks_site.router)
 app.include_router(bridge.router)
 app.include_router(auth_router.router)
 app.include_router(dashboard.router)
+app.include_router(whatsapp_connect.router)
 
 
 @app.get("/health")

@@ -10,13 +10,8 @@ from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.services.platform import PLATFORM_LABEL, resolve_platform
-from app.services.whatsapp_client import (
-    fetch_media,
-    media_kind_for_mime,
-    send_media_message,
-    send_text_message,
-    upload_media,
-)
+from app.services import messaging
+from app.services.messaging import media_kind_for_mime
 from app.templating import templates
 
 router = APIRouter()
@@ -173,12 +168,11 @@ def inbox_thread(
 
 
 def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]):
-    conversations = (
-        db.query(Conversation)
-        .filter(Conversation.tenant_id == tenant.id)
-        .order_by(Conversation.last_message_at.desc())
-        .all()
-    )
+    query = db.query(Conversation).filter(Conversation.tenant_id == tenant.id)
+    if user.role != "admin":
+        # no rodízio cada vendedor só enxerga os leads que caíram pra ele; admin vê tudo
+        query = query.join(Lead, Lead.id == Conversation.lead_id).filter(Lead.assigned_user_id == user.id)
+    conversations = query.order_by(Conversation.last_message_at.desc()).all()
 
     selected_lead = None
     messages = []
@@ -219,9 +213,9 @@ def get_media(
         raise HTTPException(status_code=404, detail="Mídia não encontrada")
 
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
-    content, mime_type = fetch_media(number, message.media_id)
+    content, mime_type = messaging.fetch_media(number, message.media_id)
     if content is None:
-        raise HTTPException(status_code=502, detail="Não foi possível buscar a mídia na Meta")
+        raise HTTPException(status_code=502, detail="Não foi possível buscar a mídia no WhatsApp")
 
     return Response(content=content, media_type=mime_type)
 
@@ -240,19 +234,8 @@ def reply_lead(
 
     conversation = lead.conversations[0]
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
-    result = send_text_message(number, lead.phone, body)
-
-    message = Message(
-        conversation_id=conversation.id,
-        direction="out",
-        sender_user_id=user.id,
-        body=body,
-        wa_message_id=result.get("body", {}).get("messages", [{}])[0].get("id", "") if result["ok"] else "",
-    )
-    conversation.last_message_at = datetime.datetime.utcnow()
-    db.add(message)
-    db.add(conversation)
-    db.commit()
+    ok, wa_id = messaging.send_text(number, lead.phone, body)
+    _record_outbound(db, conversation, user, wa_id, body if ok else f"⚠️ Não enviada: {body}")
 
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
@@ -283,28 +266,40 @@ async def reply_lead_media(
     mime_type = file.content_type or "application/octet-stream"
     media_kind = media_kind_for_mime(mime_type)
 
-    media_id = upload_media(number, content, file.filename or "arquivo", mime_type)
-    if not media_id:
-        return JSONResponse({"ok": False, "error": "falha ao enviar arquivo pra Meta"}, status_code=502)
-
-    result = send_media_message(number, lead.phone, media_id, media_kind, caption)
+    ok, wa_id, media_id, error = messaging.send_media(
+        number, lead.phone, content, file.filename or "arquivo", mime_type, media_kind, caption
+    )
+    if not ok:
+        return JSONResponse({"ok": False, "error": error}, status_code=502)
 
     placeholder = {"image": "📷 Imagem", "video": "🎥 Vídeo", "audio": "🎤 Áudio", "document": "📄 Documento"}[media_kind]
-    message = Message(
-        conversation_id=conversation.id,
-        direction="out",
-        sender_user_id=user.id,
-        body=f"{placeholder}{' — ' + caption if caption else ''}",
-        media_id=media_id,
-        media_type=media_kind,
-        wa_message_id=result.get("body", {}).get("messages", [{}])[0].get("id", "") if result["ok"] else "",
+    _record_outbound(
+        db, conversation, user, wa_id, f"{placeholder}{' — ' + caption if caption else ''}", media_id, media_kind
     )
+    return JSONResponse({"ok": True})
+
+
+def _record_outbound(
+    db: Session,
+    conversation: Conversation,
+    user: User,
+    wa_id: str,
+    body: str,
+    media_id: str = "",
+    media_type: str = "",
+) -> None:
+    # no Evolution o webhook "fromMe" dessa mesma mensagem pode chegar antes
+    # deste commit; aí ela já está salva e só marcamos quem enviou
+    existing = db.query(Message).filter(Message.wa_message_id == wa_id).first() if wa_id else None
+    message = existing or Message(conversation_id=conversation.id, direction="out", wa_message_id=wa_id)
+    message.sender_user_id = user.id
+    message.body = body
+    message.media_id = media_id or message.media_id
+    message.media_type = media_type or message.media_type
     conversation.last_message_at = datetime.datetime.utcnow()
     db.add(message)
     db.add(conversation)
     db.commit()
-
-    return JSONResponse({"ok": result["ok"]})
 
 
 DATE_RANGE_LABELS = [

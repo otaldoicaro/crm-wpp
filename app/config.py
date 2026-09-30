@@ -27,3 +27,11 @@ GOOGLE_ADS_CONVERSION_ACTION_ID = os.getenv("GOOGLE_ADS_CONVERSION_ACTION_ID", "
 GOOGLE_ADS_REFRESH_TOKEN = os.getenv("GOOGLE_ADS_REFRESH_TOKEN", "")
 GOOGLE_ADS_CLIENT_ID = os.getenv("GOOGLE_ADS_CLIENT_ID", "")
 GOOGLE_ADS_CLIENT_SECRET = os.getenv("GOOGLE_ADS_CLIENT_SECRET", "")
+
+# Evolution API (WhatsApp não-oficial, self-hosted na VPS)
+EVOLUTION_API_URL = os.getenv("EVOLUTION_API_URL", "").rstrip("/")  # ex: http://179.236.226.37:8080
+EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "")  # apikey global do Evolution
+# segredo que vai na URL do webhook (?token=...) pra só o nosso Evolution conseguir postar mensagens
+EVOLUTION_WEBHOOK_TOKEN = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "")
+# endereço público deste CRM, usado pra montar a URL do webhook ao criar instâncias
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")

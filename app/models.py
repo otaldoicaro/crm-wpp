@@ -35,6 +35,8 @@ class Tenant(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(120))
     subdomain: Mapped[str] = mapped_column(String(63), unique=True, index=True)
+    # identidade visual do painel (chave de app/themes.py, ex: "junta", "novaviseu")
+    theme: Mapped[str] = mapped_column(String(40), default="junta")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     users: Mapped[list["User"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
@@ -66,7 +68,10 @@ class User(Base):
 
 
 class WhatsAppNumber(Base):
-    """Um número de WhatsApp (Cloud API) conectado ao tenant."""
+    """Um número de WhatsApp conectado ao tenant. Dois tipos (`provider`):
+    - "cloud_api": API oficial da Meta (usa waba_phone_number_id + access_token)
+    - "evolution": Evolution API não-oficial, pareada por QR code (usa evolution_instance);
+      o número continua funcionando no app nativo do celular ao mesmo tempo."""
 
     __tablename__ = "whatsapp_numbers"
 
@@ -74,10 +79,14 @@ class WhatsAppNumber(Base):
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
     label: Mapped[str] = mapped_column(String(120))
     phone_number: Mapped[str] = mapped_column(String(30))  # E.164, ex: +5511999999999
-    waba_phone_number_id: Mapped[str] = mapped_column(String(60))  # id do número na Cloud API
+    waba_phone_number_id: Mapped[str] = mapped_column(String(60), default="")  # id do número na Cloud API
     waba_business_account_id: Mapped[str] = mapped_column(String(60), default="")
     access_token: Mapped[str] = mapped_column(Text, default="")  # token do sistema/app da Meta
     verify_token: Mapped[str] = mapped_column(String(120), default="")  # usado no handshake do webhook
+    provider: Mapped[str] = mapped_column(String(20), default="cloud_api")  # cloud_api | evolution
+    evolution_instance: Mapped[str] = mapped_column(String(80), default="", index=True)
+    # último estado conhecido da conexão (Evolution): open | connecting | close
+    connection_state: Mapped[str] = mapped_column(String(20), default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 

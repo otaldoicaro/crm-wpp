@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}WhatsApp{% endblock %}
+{% block content %}
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">WhatsApp</h2>
+    <span class="muted">Números conectados ao CRM. As conversas que chegam aqui são distribuídas em rodízio entre os vendedores.</span>
+  </div>
+</div>
+
+{% if not configured %}
+  <div class="error-box">O servidor de WhatsApp ainda não foi configurado neste ambiente (EVOLUTION_API_URL / EVOLUTION_API_KEY). Fale com a agência.</div>
+{% endif %}
+{% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+
+<div class="wa-grid">
+  {% for n in numbers %}
+  <div class="card wa-card" data-id="{{ n.id }}" data-state="{{ n.connection_state }}">
+    <div class="wa-card-head">
+      <div>
+        <div class="wa-label">{{ n.label }}</div>
+        <div class="muted">{{ ("+" ~ n.phone_number) if n.phone_number else "número ainda não pareado" }}</div>
+      </div>
+      <span class="wa-status {{ 'on' if n.connection_state == 'open' else 'off' }}">
+        {{ "Conectado" if n.connection_state == "open" else "Desconectado" }}
+      </span>
+    </div>
+
+    <div class="wa-connect" hidden>
+      <ol class="wa-steps">
+        <li>Abra o <b>WhatsApp</b> no celular deste número</li>
+        <li>Toque em <b>⋮ (Android)</b> ou <b>Configurações (iPhone)</b> → <b>Aparelhos conectados</b></li>
+        <li>Toque em <b>Conectar um aparelho</b> e aponte a câmera pro código abaixo</li>
+      </ol>
+      <div class="wa-qr"><span class="muted">Gerando código…</span></div>
+      <div class="wa-pairing muted" hidden>
+        Não dá pra escanear? No passo 3 toque em <b>Conectar com número de telefone</b> e digite: <b class="wa-code"></b>
+      </div>
+      <p class="muted wa-hint">O código troca sozinho a cada ~40 segundos. Esta tela avisa quando conectar.</p>
+    </div>
+
+    <div class="wa-actions">
+      {% if n.connection_state == "open" %}
+        <form method="post" action="/whatsapp/{{ n.id }}/disconnect" onsubmit="return confirm('Desconectar este número do CRM? As conversas deixam de chegar aqui até conectar de novo.')">
+          <button class="btn ghost small" type="submit">Desconectar</button>
+        </form>
+      {% else %}
+        <button class="btn small wa-connect-btn" type="button">Conectar agora</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="card wa-card wa-add">
+    <div class="wa-label">+ Adicionar número</div>
+    <form method="post" action="/whatsapp/add">
+      <p><label>Nome (pra você identificar)<br><input type="text" name="label" placeholder="Ex: Comercial central" required></label></p>
+      <p><label>Número com DDD (opcional)<br><input type="text" name="phone" placeholder="Ex: 21 99999-9999" inputmode="tel"></label></p>
+      <button class="btn" type="submit" {{ "disabled" if not configured }}>Adicionar e conectar</button>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  function start(card) {
+    var box = card.querySelector(".wa-connect");
+    var qrBox = card.querySelector(".wa-qr");
+    var pairing = card.querySelector(".wa-pairing");
+    var btn = card.querySelector(".wa-connect-btn");
+    var id = card.dataset.id;
+    box.hidden = false;
+    if (btn) btn.hidden = true;
+
+    var qrTimer, statusTimer;
+    function done() {
+      clearInterval(qrTimer); clearInterval(statusTimer);
+      qrBox.innerHTML = '<div class="wa-ok">✅ Conectado!</div>';
+      setTimeout(function () { window.location = "/whatsapp"; }, 1500);
+    }
+    function loadQr() {
+      fetch("/whatsapp/" + id + "/qr").then(function (r) { return r.json(); }).then(function (d) {
+        if (d.state === "open") return done();
+        if (d.state === "error") { qrBox.innerHTML = '<span class="muted"></span>'; qrBox.firstChild.textContent = "Erro: " + (d.error || "sem resposta"); return; }
+        if (d.qr_base64) qrBox.innerHTML = '<img alt="QR code" src="' + d.qr_base64 + '">';
+        else setTimeout(loadQr, 2000);  // o Evolution leva alguns segundos pra gerar o primeiro QR
+        if (d.pairing_code) { pairing.hidden = false; pairing.querySelector(".wa-code").textContent = d.pairing_code; }
+      });
+    }
+    function checkStatus() {
+      fetch("/whatsapp/" + id + "/status").then(function (r) { return r.json(); }).then(function (d) {
+        if (d.state === "open") done();
+      });
+    }
+    loadQr();
+    qrTimer = setInterval(loadQr, 35000);
+    statusTimer = setInterval(checkStatus, 3000);
+  }
+
+  document.querySelectorAll(".wa-connect-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () { start(btn.closest(".wa-card")); });
+  });
+  var auto = "{{ auto_connect }}";
+  if (auto) {
+    var card = document.querySelector('.wa-card[data-id="' + auto + '"]');
+    if (card && card.dataset.state !== "open") start(card);
+  }
+})();
+</script>
+{% endblock %}

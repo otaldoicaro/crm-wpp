@@ -40,3 +40,11 @@ services:
         sync: false
       - key: GOOGLE_ADS_REFRESH_TOKEN
         sync: false
+      - key: EVOLUTION_API_URL
+        sync: false
+      - key: EVOLUTION_API_KEY
+        sync: false
+      - key: EVOLUTION_WEBHOOK_TOKEN
+        generateValue: true
+      - key: PUBLIC_BASE_URL
+        sync: false

@@ -36,7 +36,9 @@ Acesse `http://demo.localhost:8000/login` (o `*.localhost` já resolve pra
 
 ## O que já está implementado e testado
 
-- **Identidade visual da Junta** aplicada em todo o painel (`app/static/style.css`): cores, fontes (Stapel Semi Expanded + Gilroy, com fallback pra Montserrat, mesmo esquema do Quiz Junta) e logo (`app/static/brand/`).
+- **Identidade visual por cliente** (`app/themes.py`, campo `tenant.theme`): cada cliente vê o painel com as próprias cores, fontes e logo. Temas prontos: `junta` (escuro, amarelo-limão, Stapel + Gilroy) e `novaviseu` (creme, amarelo + preto, Barlow). O `style.css` só usa variáveis; o tema é trocado pelo campo `theme` no `/admin/bootstrap-tenant`.
+- **WhatsApp não-oficial via Evolution API** (`app/services/evolution_client.py`, `app/routers/webhooks_evolution.py`): o número continua funcionando no app do celular E no CRM. Tela **WhatsApp** (só admin) pra adicionar número e conectar lendo o QR code (ou código de pareamento), com aviso vermelho no menu quando algum número cai. Mensagens do lead entram no mesmo fluxo da API oficial (`app/services/inbound.py`: lead → atribuição → rodízio → conversa); o que o vendedor manda pelo próprio celular também aparece no histórico. Grupos e conversas pessoais (de quem não é lead) são ignorados. Anúncio "clique pro WhatsApp" é lido de `contextInfo.externalAdReply`.
+- **Rodízio com número central**: todos os leads chegam num número só e são distribuídos entre os vendedores; no Inbox cada vendedor vê só as conversas dele (admin vê todas).
 - **Navegação com 3 áreas**: Pipeline (kanban), Inbox (conversas de WhatsApp) e Dashboard (funil + análise de tráfego).
 - **Multi-tenant real** por subdomínio, com login/senha isolado por cliente (`app/tenancy.py`, `app/deps.py`).
 - **Pipeline de leads**: kanban com drag-and-drop de verdade entre etapas, badge de origem (Google/Meta/Direto) e valor fechado em cada card (`app/templates/pipeline.html`, `app/routers/dashboard.py`).

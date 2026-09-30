@@ -3,7 +3,7 @@
 {% block content %}
 <div class="login-wrap">
   <div class="card login-card">
-    <span class="nv-logo dark big" aria-label="Nova Viseu Autopeças"><b>NOVA VISEU</b><small>AUTOPEÇAS</small></span>
+    {{ theme_for(tenant).logo_login }}
     <h2>Entrar</h2>
     {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
     <form method="post" action="/login">
