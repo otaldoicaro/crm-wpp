@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.db import sync_schema
+from app.services import media_store
 from app.routers import (
     admin_setup,
     auth_router,
@@ -21,6 +22,7 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="CRM Multi-Tenant WhatsApp + Site")
 
 sync_schema()
+media_store.setup()
 
 
 @app.middleware("http")

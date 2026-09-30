@@ -140,7 +140,20 @@ class Lead(Base):
     attribution: Mapped[Optional["UtmAttribution"]] = relationship(
         back_populates="lead", uselist=False, cascade="all, delete-orphan"
     )
-    conversations: Mapped[list["Conversation"]] = relationship(back_populates="lead", cascade="all, delete-orphan")
+    # uma conversa por número de WhatsApp com que o lead falou; ordenadas da
+    # menos pra mais recente (a última é a "ativa", por onde a resposta sai)
+    conversations: Mapped[list["Conversation"]] = relationship(
+        back_populates="lead", cascade="all, delete-orphan", order_by="Conversation.last_message_at"
+    )
+
+    @property
+    def active_conversation(self) -> Optional["Conversation"]:
+        return self.conversations[-1] if self.conversations else None
+
+    @property
+    def all_messages(self) -> list["Message"]:
+        """Histórico completo, juntando todos os números por onde a conversa passou."""
+        return sorted((m for c in self.conversations for m in c.messages), key=lambda m: m.created_at)
 
 
 class UtmAttribution(Base):
@@ -215,6 +228,7 @@ class Conversation(Base):
     last_message_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     lead: Mapped["Lead"] = relationship(back_populates="conversations")
+    whatsapp_number: Mapped["WhatsAppNumber"] = relationship()
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation", cascade="all, delete-orphan")
 
 
@@ -232,6 +246,8 @@ class Message(Base):
     # então guardamos o id e buscamos os bytes sob demanda via /media/{message_id}
     media_id: Mapped[str] = mapped_column(String(120), default="")
     media_type: Mapped[str] = mapped_column(String(30), default="")  # audio | image | video | document | sticker
+    # chave da cópia própria da mídia (app/services/media_store.py); vazio = não copiada
+    media_stored_key: Mapped[str] = mapped_column(String(160), default="")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")

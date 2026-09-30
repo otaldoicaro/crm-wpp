@@ -259,3 +259,7 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .wa-link-row input { font-family: ui-monospace, Menlo, monospace; font-size: .82rem; }
 .wa-owner { margin-top: 8px; }
 .wa-owner select { margin-top: 3px; padding: 6px 10px; font-size: .82rem; }
+.via-number { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; font-size: .78rem; }
+.via-number form { margin: 0; }
+.via-number select { width: auto; padding: 4px 8px; font-size: .76rem; border-radius: 8px; }
+.via-down { color: var(--danger); font-weight: 800; }

@@ -10,7 +10,7 @@ from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.services.platform import PLATFORM_LABEL, resolve_platform
-from app.services import messaging
+from app.services import media_store, messaging
 from app.services.messaging import media_kind_for_mime
 from app.templating import templates
 
@@ -172,14 +172,31 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     if user.role != "admin":
         # no rodízio cada vendedor só enxerga os leads que caíram pra ele; admin vê tudo
         query = query.join(Lead, Lead.id == Conversation.lead_id).filter(Lead.assigned_user_id == user.id)
-    conversations = query.order_by(Conversation.last_message_at.desc()).all()
+    # um item por lead (um lead pode ter conversa em mais de um número), o mais recente primeiro
+    conversations, seen = [], set()
+    for conv in query.order_by(Conversation.last_message_at.desc()).all():
+        if conv.lead_id not in seen:
+            seen.add(conv.lead_id)
+            conversations.append(conv)
 
     selected_lead = None
     messages = []
+    active_conversation = None
+    other_numbers = []
     if selected_lead_id:
         selected_lead = db.query(Lead).filter(Lead.id == selected_lead_id, Lead.tenant_id == tenant.id).first()
         if selected_lead and selected_lead.conversations:
-            messages = selected_lead.conversations[0].messages
+            messages = selected_lead.all_messages
+            active_conversation = selected_lead.active_conversation
+            other_numbers = [
+                n
+                for n in db.query(WhatsAppNumber)
+                .filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
+                .order_by(WhatsAppNumber.label)
+                .all()
+                if n.id != active_conversation.whatsapp_number_id
+                and (n.provider != "evolution" or n.connection_state == "open")
+            ]
 
     return templates.TemplateResponse(
         request,
@@ -191,6 +208,8 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
             "conversations": conversations,
             "selected_lead": selected_lead,
             "messages": messages,
+            "active_conversation": active_conversation,
+            "other_numbers": other_numbers,
             "platform": resolve_platform(selected_lead.attribution) if selected_lead else None,
             "platform_label": PLATFORM_LABEL[resolve_platform(selected_lead.attribution)] if selected_lead else None,
         },
@@ -212,10 +231,13 @@ def get_media(
     if not conversation or conversation.tenant_id != tenant.id:
         raise HTTPException(status_code=404, detail="Mídia não encontrada")
 
-    number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
-    content, mime_type = messaging.fetch_media(number, message.media_id)
+    # 1º a cópia própria (sobrevive a número bloqueado); senão busca no WhatsApp
+    content, mime_type = media_store.load(message.media_stored_key)
     if content is None:
-        raise HTTPException(status_code=502, detail="Não foi possível buscar a mídia no WhatsApp")
+        number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
+        content, mime_type = messaging.fetch_media(number, message.media_id)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Mídia indisponível (expirou ou o número foi desconectado)")
 
     return Response(content=content, media_type=mime_type)
 
@@ -232,11 +254,45 @@ def reply_lead(
     if not lead or not lead.conversations:
         return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
-    conversation = lead.conversations[0]
+    conversation = lead.active_conversation
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
     ok, wa_id = messaging.send_text(number, lead.phone, body)
     _record_outbound(db, conversation, user, wa_id, body if ok else f"⚠️ Não enviada: {body}")
 
+    return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
+
+
+@router.post("/leads/{lead_id}/switch-number")
+def switch_number(
+    lead_id: str,
+    whatsapp_number_id: str = Form(...),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Continuar a conversa por outro número (ex: o número do vendedor caiu ou
+    foi bloqueado). O histórico continua o mesmo; só as próximas mensagens
+    saem pelo número escolhido."""
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    number = db.get(WhatsAppNumber, whatsapp_number_id)
+    if not lead or not number or number.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail="Lead ou número não encontrado")
+
+    conversation = (
+        db.query(Conversation)
+        .filter(Conversation.lead_id == lead.id, Conversation.whatsapp_number_id == number.id)
+        .first()
+    )
+    if not conversation:
+        conversation = Conversation(
+            tenant_id=tenant.id,
+            lead_id=lead.id,
+            whatsapp_number_id=number.id,
+            assigned_user_id=lead.assigned_user_id,
+        )
+    conversation.last_message_at = datetime.datetime.utcnow()  # vira a conversa ativa
+    db.add(conversation)
+    db.commit()
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
 
@@ -261,7 +317,7 @@ async def reply_lead_media(
     if len(content) > max_bytes:
         return JSONResponse({"ok": False, "error": "arquivo maior que 16MB"}, status_code=400)
 
-    conversation = lead.conversations[0]
+    conversation = lead.active_conversation
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
     mime_type = file.content_type or "application/octet-stream"
     media_kind = media_kind_for_mime(mime_type)
@@ -273,9 +329,14 @@ async def reply_lead_media(
         return JSONResponse({"ok": False, "error": error}, status_code=502)
 
     placeholder = {"image": "📷 Imagem", "video": "🎥 Vídeo", "audio": "🎤 Áudio", "document": "📄 Documento"}[media_kind]
-    _record_outbound(
+    message = _record_outbound(
         db, conversation, user, wa_id, f"{placeholder}{' — ' + caption if caption else ''}", media_id, media_kind
     )
+    stored_key = media_store.save(message.id, content, mime_type)
+    if stored_key:
+        message.media_stored_key = stored_key
+        db.add(message)
+        db.commit()
     return JSONResponse({"ok": True})
 
 
@@ -287,7 +348,7 @@ def _record_outbound(
     body: str,
     media_id: str = "",
     media_type: str = "",
-) -> None:
+) -> Message:
     # no Evolution o webhook "fromMe" dessa mesma mensagem pode chegar antes
     # deste commit; aí ela já está salva e só marcamos quem enviou
     existing = db.query(Message).filter(Message.wa_message_id == wa_id).first() if wa_id else None
@@ -300,6 +361,7 @@ def _record_outbound(
     db.add(message)
     db.add(conversation)
     db.commit()
+    return message
 
 
 DATE_RANGE_LABELS = [

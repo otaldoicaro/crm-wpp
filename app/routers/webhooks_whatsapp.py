@@ -11,7 +11,7 @@ Configuração no Meta for Developers > seu App > WhatsApp > Configuration:
 
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from app.config import META_WEBHOOK_VERIFY_TOKEN
 from app.db import get_db
 from app.models import WhatsAppNumber
 from app.services.inbound import ingest_inbound
+from app.services.media_store import backup_message_media
 
 router = APIRouter()
 logger = logging.getLogger("whatsapp_webhook")
@@ -36,7 +37,7 @@ def verify_webhook(request: Request):
 
 
 @router.post("/webhooks/whatsapp")
-async def receive_whatsapp_event(request: Request, db: Session = Depends(get_db)):
+async def receive_whatsapp_event(request: Request, background: BackgroundTasks, db: Session = Depends(get_db)):
     payload = await request.json()
 
     for entry in payload.get("entry", []):
@@ -58,12 +59,14 @@ async def receive_whatsapp_event(request: Request, db: Session = Depends(get_db)
             contacts = {c["wa_id"]: c for c in value.get("contacts", [])}
 
             for wa_message in value.get("messages", []):
-                _handle_inbound_message(db, number, wa_message, contacts)
+                message = _handle_inbound_message(db, number, wa_message, contacts)
+                if message is not None and message.media_id:
+                    background.add_task(backup_message_media, message.id)
 
     return JSONResponse({"ok": True})
 
 
-def _handle_inbound_message(db: Session, number: WhatsAppNumber, wa_message: dict, contacts: dict) -> None:
+def _handle_inbound_message(db: Session, number: WhatsAppNumber, wa_message: dict, contacts: dict):
     from_phone = wa_message.get("from", "")
     wa_message_id = wa_message.get("id", "")
     msg_type = wa_message.get("type", "text")
@@ -90,7 +93,7 @@ def _handle_inbound_message(db: Session, number: WhatsAppNumber, wa_message: dic
         body = f"[mensagem do tipo '{msg_type}' ainda não suportada]"
 
     profile_name = contacts.get(from_phone, {}).get("profile", {}).get("name", "")
-    ingest_inbound(
+    return ingest_inbound(
         db,
         number,
         from_phone=from_phone,

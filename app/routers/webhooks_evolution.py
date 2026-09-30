@@ -12,7 +12,7 @@ número é adicionado pela tela WhatsApp do CRM (ver evolution_client.set_webhoo
 
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ from app.config import EVOLUTION_WEBHOOK_TOKEN
 from app.db import get_db
 from app.models import WhatsAppNumber
 from app.services.inbound import ingest_inbound, record_outbound_from_phone
+from app.services.media_store import backup_message_media
 
 router = APIRouter()
 logger = logging.getLogger("evolution_webhook")
@@ -94,7 +95,7 @@ def _referral_from_context(context_info: dict):
 
 
 @router.post("/webhooks/evolution")
-async def receive_evolution_event(request: Request, db: Session = Depends(get_db)):
+async def receive_evolution_event(request: Request, background: BackgroundTasks, db: Session = Depends(get_db)):
     if EVOLUTION_WEBHOOK_TOKEN and request.query_params.get("token") != EVOLUTION_WEBHOOK_TOKEN:
         return JSONResponse({"ok": False}, status_code=403)
 
@@ -124,21 +125,23 @@ async def receive_evolution_event(request: Request, db: Session = Depends(get_db
         return JSONResponse({"ok": True})
 
     for item in data if isinstance(data, list) else [data]:
-        _handle_message(db, number, item)
+        message = _handle_message(db, number, item)
+        if message is not None and message.media_id:
+            background.add_task(backup_message_media, message.id)
     return JSONResponse({"ok": True})
 
 
-def _handle_message(db: Session, number: WhatsAppNumber, item: dict) -> None:
+def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
     key = item.get("key") or {}
     jid = key.get("remoteJid", "")
     if not jid or jid.endswith("@g.us") or jid.endswith("@broadcast") or jid.endswith("@newsletter"):
-        return  # grupos, status e canais não viram lead
+        return None  # grupos, status e canais não viram lead
 
     phone = _phone_from_key(key, item)
     wa_message_id = key.get("id", "")
     body, media_type, context_info = _parse_content(item.get("message") or {})
     if not body and not media_type:
-        return  # reação, confirmação de leitura, etc.
+        return None  # reação, confirmação de leitura, etc.
     # o Evolution (prepareMessage, v2.3.x) converte extendedTextMessage em
     # "conversation" e move o contextInfo — onde fica o externalAdReply do
     # anúncio — pro nível de cima do payload; por isso ele tem prioridade
@@ -146,10 +149,9 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict) -> None:
     media_id = wa_message_id if media_type else ""
 
     if key.get("fromMe"):
-        record_outbound_from_phone(db, number, phone, wa_message_id, body, media_id, media_type)
-        return
+        return record_outbound_from_phone(db, number, phone, wa_message_id, body, media_id, media_type)
 
-    ingest_inbound(
+    return ingest_inbound(
         db,
         number,
         from_phone=phone,

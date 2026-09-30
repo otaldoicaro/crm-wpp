@@ -28,6 +28,20 @@
       <div class="info">
         <div class="name">{{ selected_lead.name or selected_lead.phone }}</div>
         <span class="muted">{{ selected_lead.phone }} · atendente: {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "não atribuído" }}</span>
+        {% if active_conversation %}
+        {% set active_number = active_conversation.whatsapp_number %}
+        <div class="via-number">
+          <span class="muted">Enviando por: <b>{{ active_number.label }}</b>{% if active_number.provider == "evolution" and active_number.connection_state != "open" %} <span class="via-down">desconectado</span>{% endif %}</span>
+          {% if other_numbers %}
+          <form method="post" action="/leads/{{ selected_lead.id }}/switch-number">
+            <select name="whatsapp_number_id" onchange="if (this.value && confirm('Continuar esta conversa por ' + this.options[this.selectedIndex].text + '? O histórico continua aqui; as próximas mensagens saem por esse número.')) this.form.submit(); else this.value='';">
+              <option value="">Continuar por outro número…</option>
+              {% for n in other_numbers %}<option value="{{ n.id }}">{{ n.label }}</option>{% endfor %}
+            </select>
+          </form>
+          {% endif %}
+        </div>
+        {% endif %}
       </div>
       {{ m.platform_badge(platform, platform_label) }}
       <a class="btn ghost small" href="/leads/{{ selected_lead.id }}">Ver ficha</a>

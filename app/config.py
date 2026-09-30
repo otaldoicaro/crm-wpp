@@ -35,3 +35,11 @@ EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "")  # apikey global do Evolu
 EVOLUTION_WEBHOOK_TOKEN = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "")
 # endereço público deste CRM, usado pra montar a URL do webhook ao criar instâncias
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
+
+# Cópia própria das mídias das conversas (S3/MinIO/R2) — ver app/services/media_store.py
+MEDIA_S3_ENDPOINT = os.getenv("MEDIA_S3_ENDPOINT", "")  # ex: http://179.236.226.37:9000
+MEDIA_S3_ACCESS_KEY = os.getenv("MEDIA_S3_ACCESS_KEY", "")
+MEDIA_S3_SECRET_KEY = os.getenv("MEDIA_S3_SECRET_KEY", "")
+MEDIA_S3_BUCKET = os.getenv("MEDIA_S3_BUCKET", "crm-midias")
+# por quantos dias guardar foto/áudio/vídeo/documento (texto e dados do lead ficam pra sempre)
+MEDIA_RETENTION_DAYS = int(os.getenv("MEDIA_RETENTION_DAYS", "90"))
