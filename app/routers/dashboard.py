@@ -58,7 +58,7 @@ def pipeline_view(
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
     range_from, range_to = _period_bounds(date_range, date_from, date_to)
 
-    base = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.archived_at.is_(None))
+    base = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.archived_at.is_(None), Lead.deleted_at.is_(None))
     if range_from:
         base = base.filter(Lead.created_at >= range_from)
     if range_to:
@@ -76,7 +76,9 @@ def pipeline_view(
     shown = [lead for col_leads in leads_by_stage.values() for lead in col_leads]
     lead_platforms = {lead.id: resolve_platform(lead.attribution) for lead in shown}
     archived_count = (
-        db.query(func.count(Lead.id)).filter(Lead.tenant_id == tenant.id, Lead.archived_at.isnot(None)).scalar()
+        db.query(func.count(Lead.id))
+        .filter(Lead.tenant_id == tenant.id, Lead.archived_at.isnot(None), Lead.deleted_at.is_(None))
+        .scalar()
     )
 
     return templates.TemplateResponse(
@@ -102,6 +104,7 @@ def pipeline_view(
             .order_by(User.name)
             .all(),
             "archived_count": archived_count,
+            "just_deleted": request.query_params.get("excluido") == "1",
             "stage_colors": _stage_colors(stages),
             "lead_platforms": lead_platforms,
             "platform_labels": PLATFORM_LABEL,
@@ -117,7 +120,7 @@ def archived_view(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    query = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.archived_at.isnot(None))
+    query = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.archived_at.isnot(None), Lead.deleted_at.is_(None))
     busca = busca.strip()
     if busca:
         digits = "".join(ch for ch in busca if ch.isdigit())
@@ -159,6 +162,75 @@ def toggle_archive(
     db.add(lead)
     db.commit()
     return RedirectResponse(url=voltar if voltar.startswith("/") else "/", status_code=302)
+
+
+@router.post("/leads/{lead_id}/excluir")
+def delete_lead(
+    lead_id: str,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Manda o lead pra Lixeira (some de tudo). Fica registrado quem excluiu e quando."""
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    lead.deleted_at = datetime.datetime.utcnow()
+    lead.deleted_by_user_id = user.id
+    db.add(lead)
+    db.commit()
+    return RedirectResponse(url="/?excluido=1", status_code=302)
+
+
+@router.get("/lixeira", response_class=HTMLResponse)
+def trash_view(
+    request: Request,
+    busca: str = "",
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Só o admin vê a Lixeira")
+    query = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.deleted_at.isnot(None))
+    busca = busca.strip()
+    if busca:
+        digits = "".join(ch for ch in busca if ch.isdigit())
+        conditions = [Lead.name.ilike(f"%{busca}%")]
+        if digits:
+            conditions.append(Lead.phone.like(f"%{digits}%"))
+        query = query.filter(or_(*conditions))
+    total = query.count()
+    return templates.TemplateResponse(
+        request,
+        "lixeira.html",
+        {
+            "tenant": tenant,
+            "user": user,
+            "active_nav": "pipeline",
+            "leads": query.order_by(Lead.deleted_at.desc()).limit(200).all(),
+            "total": total,
+            "busca": busca,
+        },
+    )
+
+
+@router.post("/leads/{lead_id}/restaurar")
+def restore_lead(
+    lead_id: str,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Só o admin pode restaurar da Lixeira")
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    lead.deleted_at = None
+    db.add(lead)
+    db.commit()
+    return RedirectResponse(url="/lixeira?salvo=1", status_code=302)
 
 
 @router.get("/leads/{lead_id}", response_class=HTMLResponse)
@@ -281,7 +353,11 @@ INBOX_LIST_LIMIT = 60  # com milhares de leads/mês a lista inteira pesaria; o r
 
 
 def _inbox_context(db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str], busca: str = "") -> dict:
-    query = db.query(Conversation).join(Lead, Lead.id == Conversation.lead_id).filter(Conversation.tenant_id == tenant.id)
+    query = (
+        db.query(Conversation)
+        .join(Lead, Lead.id == Conversation.lead_id)
+        .filter(Conversation.tenant_id == tenant.id, Lead.deleted_at.is_(None))
+    )
     if user.role != "admin":
         # no rodízio cada vendedor só enxerga os leads que caíram pra ele; admin vê tudo
         query = query.filter(Lead.assigned_user_id == user.id)
@@ -623,7 +699,7 @@ def dashboard_view(
     else:
         range_from = _range_from(now, date_range)
 
-    leads_query = db.query(Lead).filter(Lead.tenant_id == tenant.id)
+    leads_query = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None))
     if range_from:
         leads_query = leads_query.filter(Lead.created_at >= range_from)
     if range_to:

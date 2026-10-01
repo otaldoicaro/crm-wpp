@@ -8,9 +8,16 @@
     <h2 style="margin:0">Pipeline de leads</h2>
     <span class="muted">Leads que chegaram no período escolhido. Arraste os cards entre as colunas pra mudar a etapa.</span>
   </div>
-  <a class="btn ghost small" href="/arquivados">Arquivados ({{ archived_count }})</a>
+  <div class="toolbar-links">
+    <a class="btn ghost small" href="/arquivados">Arquivados ({{ archived_count }})</a>
+    {% if user.role == "admin" %}<a class="btn ghost small" href="/lixeira">Lixeira</a>{% endif %}
+  </div>
 </div>
 
+{% if just_deleted %}
+<div class="toast" role="status">🗑️ Lead excluído (fica na Lixeira, dá pra restaurar)</div>
+<script>history.replaceState(null, "", location.pathname); setTimeout(function () { var t = document.querySelector(".toast"); if (t) t.remove(); }, 4500);</script>
+{% endif %}
 <div class="pipeline-filters">
   {% for key, label in date_range_labels %}
     {% if key != "custom" %}

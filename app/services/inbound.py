@@ -86,6 +86,8 @@ def ingest_inbound(
             lead.name = profile_name
         if lead.archived_at:
             lead.archived_at = None  # cliente voltou a falar: volta pro Pipeline
+        if lead.deleted_at:
+            lead.deleted_at = None  # idem pra quem estava na Lixeira (fica registrado em deleted_by)
         db.add(lead)
 
     conversation = _get_or_create_conversation(db, number, lead)
@@ -121,7 +123,7 @@ def record_outbound_from_phone(
     if message_exists(db, wa_message_id):
         return None  # já registrada quando foi enviada pelo próprio CRM
     lead = db.query(Lead).filter(Lead.tenant_id == number.tenant_id, Lead.phone == to_phone).first()
-    if lead is None:
+    if lead is None or lead.deleted_at:
         return None
 
     conversation = _get_or_create_conversation(db, number, lead)

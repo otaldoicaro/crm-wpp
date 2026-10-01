@@ -145,10 +145,15 @@ class Lead(Base):
     # arquivado = some do Pipeline (continua no banco, no Dashboard e em /arquivados).
     # Automático (app/services/archiver.py) ou manual; volta sozinho se o cliente mandar mensagem.
     archived_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    # excluído = vai pra Lixeira (some de tudo, inclusive Dashboard). Nada é apagado de verdade:
+    # a Lixeira mostra quem excluiu e quando, e o admin pode restaurar.
+    deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    deleted_by_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="leads")
     stage: Mapped[Optional["PipelineStage"]] = relationship()
-    assigned_user: Mapped[Optional["User"]] = relationship()
+    assigned_user: Mapped[Optional["User"]] = relationship(foreign_keys=[assigned_user_id])
+    deleted_by: Mapped[Optional["User"]] = relationship(foreign_keys=[deleted_by_user_id])
     attribution: Mapped[Optional["UtmAttribution"]] = relationship(
         back_populates="lead", uselist=False, cascade="all, delete-orphan"
     )

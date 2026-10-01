@@ -318,3 +318,6 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .pipeline-filter-form input[type=date] { width: auto; padding: 6px 8px; font-size: .78rem; }
 .pipeline-filter-form select { width: auto; padding: 6px 10px; font-size: .8rem; }
 .ver-mais { display: block; text-align: center; margin-top: 4px; }
+.toolbar-links { display: flex; gap: 6px; flex-wrap: wrap; }
+.lead-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.lead-actions form { margin: 0; }

@@ -35,7 +35,7 @@ def archive_old_leads(db) -> int:
     )
 
     archived = 0
-    for lead in db.query(Lead).filter(Lead.archived_at.is_(None), Lead.updated_at < done_cutoff):
+    for lead in db.query(Lead).filter(Lead.archived_at.is_(None), Lead.deleted_at.is_(None), Lead.updated_at < done_cutoff):
         last_activity = max(lead.updated_at, last_msg.get(lead.id) or lead.updated_at)
         if lead.stage_id in terminal:
             should = last_activity < done_cutoff

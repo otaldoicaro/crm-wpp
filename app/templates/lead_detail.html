@@ -3,6 +3,11 @@
 {% block title %}{{ lead.name or lead.phone }}{% endblock %}
 {% block content %}
 <p>{% if voltar == "inbox" %}<a href="/inbox/{{ lead.id }}">&larr; voltar pra conversa</a>{% else %}<a href="/">&larr; voltar ao pipeline</a>{% endif %}</p>
+{% if lead.deleted_at %}
+<div class="stage-warning" style="margin:0 0 14px">🗑️ Este lead está na Lixeira: excluído por {{ lead.deleted_by.name if lead.deleted_by else "—" }} em {{ lead.deleted_at|hora("%d/%m/%Y %H:%M") }}.
+  {% if user.role == "admin" %}<form method="post" action="/leads/{{ lead.id }}/restaurar" style="margin:0"><button class="btn small" type="submit">Restaurar</button></form>{% endif %}
+</div>
+{% endif %}
 {% if lead.archived_at %}
 <div class="stage-warning" style="margin:0 0 14px">📦 Este lead está arquivado desde {{ lead.archived_at|hora("%d/%m/%Y") }} (não aparece no Pipeline).
   <form method="post" action="/leads/{{ lead.id }}/arquivo" style="margin:0"><input type="hidden" name="voltar" value="/leads/{{ lead.id }}"><button class="btn small" type="submit">Restaurar pro Pipeline</button></form>
@@ -89,10 +94,15 @@
   <p class="muted" style="margin:0">Atendente responsável</p>
   <p style="margin:4px 0 0; font-weight:700;">{{ lead.assigned_user.name if lead.assigned_user else "Ninguém atribuído ainda" }}</p>
   {% if not lead.archived_at %}
-  <form method="post" action="/leads/{{ lead.id }}/arquivo" style="margin:14px 0 0" onsubmit="return confirm('Arquivar este lead? Ele sai do Pipeline mas continua salvo (menu Pipeline > Arquivados).')">
-    <input type="hidden" name="voltar" value="/">
-    <button class="btn ghost small" type="submit">Arquivar lead</button>
-  </form>
+  <div class="lead-actions">
+    <form method="post" action="/leads/{{ lead.id }}/arquivo" onsubmit="return confirm('Arquivar este lead? Ele sai do Pipeline mas continua salvo e contando no Dashboard (Pipeline > Arquivados).')">
+      <input type="hidden" name="voltar" value="/">
+      <button class="btn ghost small" type="submit">Arquivar lead</button>
+    </form>
+    <form method="post" action="/leads/{{ lead.id }}/excluir" onsubmit="return confirm('Excluir {{ (lead.name or lead.phone or 'este lead')|e }}?\n\nEle some do Pipeline, Inbox e Dashboard. Fica registrado na Lixeira quem excluiu, e o admin pode restaurar.')">
+      <button class="btn danger small" type="submit">Excluir lead</button>
+    </form>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

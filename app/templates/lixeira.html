@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Lixeira{% endblock %}
+{% block content %}
+<p><a href="/">&larr; voltar ao pipeline</a></p>
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">Lixeira ({{ total }})</h2>
+    <span class="muted">Leads excluídos, com quem excluiu e quando. Nada foi apagado de verdade: clique em Restaurar pra trazer de volta. Se o cliente mandar mensagem de novo, o lead volta sozinho.</span>
+  </div>
+</div>
+<div class="card">
+  <form method="get" action="/lixeira" style="margin-bottom:14px;">
+    <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone...">
+  </form>
+  <div style="overflow-x:auto;">
+  <table class="table-simple">
+    <thead><tr><th>Nome</th><th class="hide-sm">Telefone</th><th>Excluído por</th><th>Quando</th><th></th></tr></thead>
+    <tbody>
+    {% for lead in leads %}
+      <tr>
+        <td><b>{{ lead.name or "(sem nome)" }}</b><div class="muted show-sm">{{ lead.phone }}</div></td>
+        <td class="hide-sm muted">{{ lead.phone or lead.email }}</td>
+        <td>{{ lead.deleted_by.name if lead.deleted_by else "—" }}</td>
+        <td>{{ lead.deleted_at|hora("%d/%m/%Y %H:%M") }}</td>
+        <td>
+          <form method="post" action="/leads/{{ lead.id }}/restaurar" style="margin:0">
+            <button class="btn small" type="submit">Restaurar</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">{{ "Nada encontrado." if busca else "A lixeira está vazia." }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if total > leads|length %}<p class="muted">Mostrando os {{ leads|length }} mais recentes. Use a busca pra achar os outros.</p>{% endif %}
+</div>
+{% endblock %}
