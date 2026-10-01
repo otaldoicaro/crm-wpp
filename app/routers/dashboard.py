@@ -403,10 +403,16 @@ def dashboard_view(
     date_range: str = "all",
     date_from: str = "",
     date_to: str = "",
+    seller: str = "",
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
+    if user.role != "admin":
+        seller = user.id  # vendedor só vê os próprios números
+    sellers = (
+        db.query(User).filter(User.tenant_id == tenant.id, User.pending_approval.is_(False)).order_by(User.name).all()
+    )
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
 
     now = datetime.datetime.utcnow()
@@ -424,7 +430,8 @@ def dashboard_view(
         leads_query = leads_query.filter(Lead.created_at >= range_from)
     if range_to:
         leads_query = leads_query.filter(Lead.created_at <= range_to)
-    leads = leads_query.all()
+    all_period_leads = leads_query.all()
+    leads = [lead for lead in all_period_leads if lead.assigned_user_id == seller] if seller else all_period_leads
 
     last_24h = now - datetime.timedelta(hours=24)
 
@@ -467,6 +474,26 @@ def dashboard_view(
                 "color": _stage_colors(stages)[stage.id],
             }
         )
+
+    # funil lado a lado por vendedor (mesmo período; ignora o filtro de vendedor)
+    seller_rows = []
+    for s in sellers:
+        mine = [lead for lead in all_period_leads if lead.assigned_user_id == s.id]
+        if not mine and not s.is_active:
+            continue
+        won = [lead for lead in mine if lead.stage_id in won_stage_ids]
+        seller_rows.append(
+            {
+                "user": s,
+                "total": len(mine),
+                "by_stage": {st.id: sum(1 for lead in mine if lead.stage_id == st.id) for st in stages},
+                "won": len(won),
+                "conversion": round(len(won) / len(mine) * 100) if mine else 0,
+                "revenue": sum(lead.deal_value or 0 for lead in won),
+            }
+        )
+    seller_rows.sort(key=lambda r: (r["won"], r["total"]), reverse=True)
+    unassigned = sum(1 for lead in all_period_leads if not lead.assigned_user_id)
 
     platform_counts: dict[str, dict] = {}
     campaign_counts: dict[str, dict] = {}
@@ -597,6 +624,10 @@ def dashboard_view(
             "date_from": date_from,
             "date_to": date_to,
             "date_range_labels": DATE_RANGE_LABELS,
+            "seller": seller,
+            "sellers": sellers,
+            "seller_rows": seller_rows,
+            "unassigned": unassigned,
             "traffic_rows": traffic_rows,
             "has_spend_data": has_spend_data,
         },

@@ -7,7 +7,7 @@
   <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px;">
     {% for key, label in date_range_labels %}
       {% if key != "custom" %}
-      <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if date_range == key }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&platform_filter={{ platform_filter }}&q={{ q }}&date_range={{ key }}">{{ label }}</a>
+      <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if date_range == key }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&platform_filter={{ platform_filter }}&q={{ q }}&seller={{ seller }}&date_range={{ key }}">{{ label }}</a>
       {% endif %}
     {% endfor %}
     <form method="get" action="/dashboard" style="display:flex; flex-wrap:wrap; align-items:center; gap:4px;">
@@ -15,6 +15,7 @@
       <input type="hidden" name="stage_filter" value="{{ stage_filter }}">
       <input type="hidden" name="platform_filter" value="{{ platform_filter }}">
       <input type="hidden" name="q" value="{{ q }}">
+      <input type="hidden" name="seller" value="{{ seller }}">
       <input type="hidden" name="date_range" value="custom">
       <input type="date" name="date_from" value="{{ date_from }}" style="padding:6px 8px; font-size:.78rem; width:auto;">
       <span class="muted" style="font-size:.78rem;">até</span>
@@ -24,23 +25,37 @@
   </div>
 </div>
 
+{% if user.role == "admin" %}
+<form method="get" action="/dashboard" class="seller-filter">
+  <input type="hidden" name="date_range" value="{{ date_range }}">
+  <input type="hidden" name="date_from" value="{{ date_from }}">
+  <input type="hidden" name="date_to" value="{{ date_to }}">
+  <label>Vendedor
+    <select name="seller" onchange="this.form.submit()">
+      <option value="">Toda a equipe</option>
+      {% for s in sellers %}<option value="{{ s.id }}" {{ "selected" if seller == s.id }}>{{ s.name }}{{ "" if s.is_active else " (inativo)" }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
+{% endif %}
+
 <div class="stat-grid">
-  <a class="stat-card c-gold {{ 'accent' if card == 'all' }}" href="/dashboard?card=all&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
+  <a class="stat-card c-gold {{ 'accent' if card == 'all' }}" href="/dashboard?card=all&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
     {{ m.stat_icon("users") }}
     <div class="stat-label">Total de leads</div>
     <div class="stat-value">{{ total_leads }}</div>
   </a>
-  <a class="stat-card c-info {{ 'accent' if card == 'new_24h' }}" href="/dashboard?card=new_24h&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
+  <a class="stat-card c-info {{ 'accent' if card == 'new_24h' }}" href="/dashboard?card=new_24h&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
     {{ m.stat_icon("trending-up") }}
     <div class="stat-label">Novos (24h)</div>
     <div class="stat-value">{{ new_24h }}</div>
   </a>
-  <a class="stat-card c-danger {{ 'accent' if card == 'no_contact' }}" href="/dashboard?card=no_contact&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
+  <a class="stat-card c-danger {{ 'accent' if card == 'no_contact' }}" href="/dashboard?card=no_contact&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
     {{ m.stat_icon("clock") }}
     <div class="stat-label">Sem contato 24h+</div>
     <div class="stat-value">{{ open_no_contact_24h }}</div>
   </a>
-  <a class="stat-card c-success {{ 'accent' if card == 'won' }}" href="/dashboard?card=won&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
+  <a class="stat-card c-success {{ 'accent' if card == 'won' }}" href="/dashboard?card=won&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
     {{ m.stat_icon("check") }}
     <div class="stat-label">Fechados</div>
     <div class="stat-value">{{ won_count }}</div>
@@ -72,6 +87,29 @@
   </div>
   {% endfor %}
 </div>
+
+{% if user.role == "admin" and not seller %}
+<div class="section-title"><h3 style="margin:0">Funil por vendedor</h3></div>
+<div class="card">
+  <div style="overflow-x:auto;">
+  <table class="table-simple seller-table">
+    <thead><tr><th>Vendedor</th><th>Leads</th>{% for st in stages %}<th>{{ st.name }}</th>{% endfor %}<th>Conversão</th><th>Receita</th></tr></thead>
+    <tbody>
+    {% for r in seller_rows %}
+      <tr style="cursor:pointer" onclick="window.location='/dashboard?seller={{ r.user.id }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}'">
+        <td><b>{{ r.user.name }}</b>{% if not r.user.is_active %} <span class="muted">(inativo)</span>{% elif not r.user.accepting_leads %} <span class="muted">(pausado)</span>{% endif %}</td>
+        <td><b>{{ r.total }}</b></td>
+        {% for st in stages %}<td class="{{ 'muted' if not r.by_stage[st.id] }}">{{ r.by_stage[st.id] }}</td>{% endfor %}
+        <td><span class="conv-pill">{{ r.conversion }}%</span></td>
+        <td>R$ {{ "{:,.0f}".format(r.revenue).replace(",", ".") }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted" style="margin:10px 0 0">Clique num vendedor pra ver o dashboard só dele.{% if unassigned %} {{ unassigned }} lead(s) sem vendedor no período.{% endif %}</p>
+</div>
+{% endif %}
 
 <div class="section-title"><h3 style="margin:0">Origem do tráfego</h3></div>
 <div class="card">
@@ -135,22 +173,23 @@
 <div class="card">
   <form method="get" action="/dashboard" style="margin-bottom:14px;">
     <input type="hidden" name="card" value="{{ card }}">
-    <input type="hidden" name="date_range" value="{{ date_range }}">
+    <input type="hidden" name="seller" value="{{ seller }}">
+      <input type="hidden" name="date_range" value="{{ date_range }}">
     <input type="hidden" name="date_from" value="{{ date_from }}">
     <input type="hidden" name="date_to" value="{{ date_to }}">
     <input type="text" name="q" value="{{ q }}" placeholder="Buscar nome, telefone, e-mail...">
   </form>
 
   <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
-    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if not stage_filter }}" href="/dashboard?card={{ card }}&q={{ q }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}">Todas as etapas</a>
+    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if not stage_filter }}" href="/dashboard?card={{ card }}&q={{ q }}&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}">Todas as etapas</a>
     {% for stage in stages %}
-    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if stage_filter == stage.id }}" href="/dashboard?card={{ card }}&stage_filter={{ stage.id }}&platform_filter={{ platform_filter }}&q={{ q }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}">{{ stage.name }}</a>
+    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if stage_filter == stage.id }}" href="/dashboard?card={{ card }}&stage_filter={{ stage.id }}&platform_filter={{ platform_filter }}&q={{ q }}&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}">{{ stage.name }}</a>
     {% endfor %}
   </div>
   <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px;">
-    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if not platform_filter }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&q={{ q }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}">Todas as plataformas</a>
+    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if not platform_filter }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&q={{ q }}&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}">Todas as plataformas</a>
     {% for key, label in platform_labels.items() %}
-    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if platform_filter == key }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&platform_filter={{ key }}&q={{ q }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}">{{ label }}</a>
+    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if platform_filter == key }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&platform_filter={{ key }}&q={{ q }}&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}">{{ label }}</a>
     {% endfor %}
   </div>
 

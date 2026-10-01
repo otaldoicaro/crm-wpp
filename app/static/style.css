@@ -283,3 +283,8 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
   .stat-card { padding: 12px 14px; }
   .stat-card .stat-value { font-size: 1.7rem; }
 }
+.seller-filter { margin: -4px 0 14px; }
+.seller-filter label { display: inline-flex; align-items: center; gap: 8px; }
+.seller-filter select { width: auto; min-width: 200px; padding: 7px 10px; }
+.seller-table td, .seller-table th { white-space: nowrap; }
+.conv-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--y-soft); font-weight: 800; font-size: .78rem; }

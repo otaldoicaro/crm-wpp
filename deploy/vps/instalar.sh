@@ -104,8 +104,19 @@ if [ "$TABLES" = "0" ]; then
   echo "(Render > crm-junta-db > Connect > External). Não aparece na tela. Enter = começar vazio."
   read -r -s -p "External Database URL: " RENDER_URL </dev/tty; echo
   if [ -n "$RENDER_URL" ]; then
+    # colaram o endereço INTERNO (host "dpg-xxxx-a", só funciona dentro do Render)? vira o externo
+    RENDER_HOST=$(echo "$RENDER_URL" | sed -E 's#^[a-z]+://[^@]*@([^:/]+).*#\1#')
+    if ! echo "$RENDER_HOST" | grep -q '\.'; then
+      RENDER_URL=$(echo "$RENDER_URL" | sed -E "s#@$RENDER_HOST([:/])#@$RENDER_HOST.oregon-postgres.render.com\1#")
+      echo "(endereço interno do Render detectado; usando o externo: $RENDER_HOST.oregon-postgres.render.com)"
+    fi
     say "Copiando os dados do Render (pode levar 1-2 minutos)"
-    docker run --rm postgres:18 pg_dump --no-owner --no-acl "$RENDER_URL" | docker exec -i crm-db psql -q -U crm -d crm -v ON_ERROR_STOP=1 --single-transaction >/dev/null  # tudo ou nada: se falhar, pode rodar de novo
+    if ! docker run --rm postgres:18 pg_dump --no-owner --no-acl "$RENDER_URL" > /tmp/crm-render.sql; then
+      rm -f /tmp/crm-render.sql
+      fail "não consegui ler o banco do Render (endereço errado?). Nada foi alterado: rode o instalador de novo e cole o 'External Database URL'."
+    fi
+    docker exec -i crm-db psql -q -U crm -d crm -v ON_ERROR_STOP=1 --single-transaction < /tmp/crm-render.sql >/dev/null  # tudo ou nada
+    rm -f /tmp/crm-render.sql
     echo "Dados copiados: $(docker exec crm-db psql -U crm -d crm -tAc 'select count(*) from leads') leads, $(docker exec crm-db psql -U crm -d crm -tAc 'select count(*) from users') logins."
   fi
 fi
