@@ -3,6 +3,11 @@
 {% block title %}{{ lead.name or lead.phone }}{% endblock %}
 {% block content %}
 <p>{% if voltar == "inbox" %}<a href="/inbox/{{ lead.id }}">&larr; voltar pra conversa</a>{% else %}<a href="/">&larr; voltar ao pipeline</a>{% endif %}</p>
+{% if lead.archived_at %}
+<div class="stage-warning" style="margin:0 0 14px">📦 Este lead está arquivado desde {{ lead.archived_at|hora("%d/%m/%Y") }} (não aparece no Pipeline).
+  <form method="post" action="/leads/{{ lead.id }}/arquivo" style="margin:0"><input type="hidden" name="voltar" value="/leads/{{ lead.id }}"><button class="btn small" type="submit">Restaurar pro Pipeline</button></form>
+</div>
+{% endif %}
 <div style="display:flex; gap:20px; flex-wrap:wrap;">
   <div class="card" style="flex:2; min-width:320px;">
     <h2 style="display:flex; align-items:center; gap:10px;">
@@ -83,5 +88,11 @@
   <h3 style="margin-top:0">Atendimento</h3>
   <p class="muted" style="margin:0">Atendente responsável</p>
   <p style="margin:4px 0 0; font-weight:700;">{{ lead.assigned_user.name if lead.assigned_user else "Ninguém atribuído ainda" }}</p>
+  {% if not lead.archived_at %}
+  <form method="post" action="/leads/{{ lead.id }}/arquivo" style="margin:14px 0 0" onsubmit="return confirm('Arquivar este lead? Ele sai do Pipeline mas continua salvo (menu Pipeline > Arquivados).')">
+    <input type="hidden" name="voltar" value="/">
+    <button class="btn ghost small" type="submit">Arquivar lead</button>
+  </form>
+  {% endif %}
 </div>
 {% endblock %}

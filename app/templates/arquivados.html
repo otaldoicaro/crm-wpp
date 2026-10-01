@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Arquivados{% endblock %}
+{% block content %}
+<p><a href="/">&larr; voltar ao pipeline</a></p>
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">Leads arquivados ({{ total }})</h2>
+    <span class="muted">Saíram do Pipeline pra ele não ficar pesado: Ganho/Perdido parados há 30 dias, ou em aberto sem nenhuma atividade há 60 dias. Nada foi apagado: continuam contando no Dashboard, e voltam sozinhos se o cliente mandar mensagem.</span>
+  </div>
+</div>
+<div class="card">
+  <form method="get" action="/arquivados" style="margin-bottom:14px;">
+    <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone...">
+  </form>
+  <div style="overflow-x:auto;">
+  <table class="table-simple">
+    <thead><tr><th>Nome</th><th class="hide-sm">Telefone</th><th>Etapa</th><th class="hide-sm">Chegou em</th><th class="hide-sm">Arquivado em</th><th></th></tr></thead>
+    <tbody>
+    {% for lead in leads %}
+      <tr>
+        <td><a href="{{ '/inbox/' if lead.source == 'whatsapp' else '/leads/' }}{{ lead.id }}"><b>{{ lead.name or "(sem nome)" }}</b></a><div class="muted show-sm">{{ lead.phone }}</div></td>
+        <td class="hide-sm muted">{{ lead.phone or lead.email }}</td>
+        <td>{{ stage_by_id[lead.stage_id].name if lead.stage_id in stage_by_id else "—" }}</td>
+        <td class="hide-sm">{{ lead.created_at|hora("%d/%m/%Y") }}</td>
+        <td class="hide-sm">{{ lead.archived_at|hora("%d/%m/%Y") }}</td>
+        <td>
+          <form method="post" action="/leads/{{ lead.id }}/arquivo" style="margin:0">
+            <input type="hidden" name="voltar" value="/arquivados?busca={{ busca }}">
+            <button class="btn ghost small" type="submit">Restaurar</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">{{ "Nenhum arquivado encontrado." if busca else "Nenhum lead arquivado ainda." }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if total > leads|length %}<p class="muted">Mostrando os {{ leads|length }} mais recentes. Use a busca pra achar os outros.</p>{% endif %}
+</div>
+{% endblock %}

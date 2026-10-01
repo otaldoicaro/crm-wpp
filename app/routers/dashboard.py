@@ -4,7 +4,7 @@ from typing import Optional
 import requests
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -26,22 +26,58 @@ def _stage_colors(stages: list[PipelineStage]) -> dict[str, str]:
     return {stage.id: STAGE_COLOR_PALETTE[i % len(STAGE_COLOR_PALETTE)] for i, stage in enumerate(stages)}
 
 
+PIPELINE_COL_LIMIT = 30  # cartões por coluna; "ver mais" soma de 30 em 30
+
+
+def _period_bounds(date_range: str, date_from: str, date_to: str):
+    """(início, fim) em UTC pros filtros de período; None = sem limite."""
+    if date_range == "custom":
+        parsed_from, parsed_to = _parse_date(date_from), _parse_date(date_to)
+        return (
+            local_to_utc(datetime.datetime.combine(parsed_from, datetime.time.min)) if parsed_from else None,
+            local_to_utc(datetime.datetime.combine(parsed_to, datetime.time.max)) if parsed_to else None,
+        )
+    return _range_from(datetime.datetime.utcnow(), date_range), None
+
+
 @router.get("/", response_class=HTMLResponse)
 def pipeline_view(
     request: Request,
+    date_range: str = "30d",
+    date_from: str = "",
+    date_to: str = "",
+    seller: str = "",
+    col: str = "",
+    n: int = PIPELINE_COL_LIMIT,
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
+    """Quadro do Pipeline. Por padrão só leads que chegaram nos últimos 30 dias, sem
+    arquivados, e no máximo 30 cartões por coluna (o total aparece no topo da coluna)."""
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
-    leads = db.query(Lead).filter(Lead.tenant_id == tenant.id).order_by(Lead.updated_at.desc()).all()
+    range_from, range_to = _period_bounds(date_range, date_from, date_to)
 
-    leads_by_stage: dict[str, list[Lead]] = {stage.id: [] for stage in stages}
-    for lead in leads:
-        if lead.stage_id and lead.stage_id in leads_by_stage:
-            leads_by_stage[lead.stage_id].append(lead)
+    base = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.archived_at.is_(None))
+    if range_from:
+        base = base.filter(Lead.created_at >= range_from)
+    if range_to:
+        base = base.filter(Lead.created_at <= range_to)
+    if seller:
+        base = base.filter(Lead.assigned_user_id == seller)
 
-    lead_platforms = {lead.id: resolve_platform(lead.attribution) for lead in leads}
+    totals = dict(base.with_entities(Lead.stage_id, func.count(Lead.id)).group_by(Lead.stage_id).all())
+    leads_by_stage: dict[str, list[Lead]] = {}
+    for stage in stages:
+        limit = max(n, PIPELINE_COL_LIMIT) if col == stage.id else PIPELINE_COL_LIMIT
+        leads_by_stage[stage.id] = (
+            base.filter(Lead.stage_id == stage.id).order_by(Lead.updated_at.desc()).limit(limit).all()
+        )
+    shown = [lead for col_leads in leads_by_stage.values() for lead in col_leads]
+    lead_platforms = {lead.id: resolve_platform(lead.attribution) for lead in shown}
+    archived_count = (
+        db.query(func.count(Lead.id)).filter(Lead.tenant_id == tenant.id, Lead.archived_at.isnot(None)).scalar()
+    )
 
     return templates.TemplateResponse(
         request,
@@ -52,11 +88,77 @@ def pipeline_view(
             "active_nav": "pipeline",
             "stages": stages,
             "leads_by_stage": leads_by_stage,
+            "totals": totals,
+            "col_limit": PIPELINE_COL_LIMIT,
+            "col": col,
+            "n": n,
+            "date_range": date_range,
+            "date_from": date_from,
+            "date_to": date_to,
+            "date_range_labels": DATE_RANGE_LABELS,
+            "seller": seller,
+            "sellers": db.query(User)
+            .filter(User.tenant_id == tenant.id, User.pending_approval.is_(False))
+            .order_by(User.name)
+            .all(),
+            "archived_count": archived_count,
             "stage_colors": _stage_colors(stages),
             "lead_platforms": lead_platforms,
             "platform_labels": PLATFORM_LABEL,
         },
     )
+
+
+@router.get("/arquivados", response_class=HTMLResponse)
+def archived_view(
+    request: Request,
+    busca: str = "",
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    query = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.archived_at.isnot(None))
+    busca = busca.strip()
+    if busca:
+        digits = "".join(ch for ch in busca if ch.isdigit())
+        conditions = [Lead.name.ilike(f"%{busca}%")]
+        if digits:
+            conditions.append(Lead.phone.like(f"%{digits}%"))
+        query = query.filter(or_(*conditions))
+    total = query.count()
+    leads = query.order_by(Lead.archived_at.desc()).limit(200).all()
+    stages = {s.id: s for s in db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id)}
+    return templates.TemplateResponse(
+        request,
+        "arquivados.html",
+        {
+            "tenant": tenant,
+            "user": user,
+            "active_nav": "pipeline",
+            "leads": leads,
+            "total": total,
+            "busca": busca,
+            "stage_by_id": stages,
+        },
+    )
+
+
+@router.post("/leads/{lead_id}/arquivo")
+def toggle_archive(
+    lead_id: str,
+    voltar: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Arquiva (sai do Pipeline) ou restaura um lead manualmente."""
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    lead.archived_at = None if lead.archived_at else datetime.datetime.utcnow()
+    db.add(lead)
+    db.commit()
+    return RedirectResponse(url=voltar if voltar.startswith("/") else "/", status_code=302)
 
 
 @router.get("/leads/{lead_id}", response_class=HTMLResponse)

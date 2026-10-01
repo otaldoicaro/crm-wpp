@@ -56,11 +56,46 @@ def extract_tracking_code(message_body: str) -> str | None:
     return match.group(1) if match else None
 
 
+def normalize_br_phone(raw: str) -> str:
+    """'(21) 99999-1234' -> '5521999991234' (só dígitos, com DDI 55)."""
+    digits = re.sub(r"\D", "", raw or "")
+    if len(digits) in (10, 11):
+        digits = "55" + digits
+    return digits
+
+
+def _phone_variants(phone: str) -> set:
+    """WhatsApp às vezes entrega celular sem o 9º dígito (5521 9xxxx-xxxx vs 5521 xxxx-xxxx)."""
+    variants = {phone}
+    if phone.startswith("55") and len(phone) == 13 and phone[4] == "9":
+        variants.add(phone[:4] + phone[5:])
+    if phone.startswith("55") and len(phone) == 12:
+        variants.add(phone[:4] + "9" + phone[4:])
+    return variants
+
+
 def attribution_from_click_bridge(db: Session, lead: Lead, message_body: str) -> UtmAttribution | None:
+    import datetime
+
     code = extract_tracking_code(message_body)
-    if not code:
-        return None
-    bridge = db.query(ClickBridge).filter(ClickBridge.tracking_code == code).first()
+    bridge = None
+    if code:
+        bridge = db.query(ClickBridge).filter(ClickBridge.tracking_code == code).first()
+    if bridge is None and lead.phone:
+        # sem código na mensagem (a pessoa apagou?): casa pelo telefone do formulário, clique das últimas 24h
+        since = datetime.datetime.utcnow() - datetime.timedelta(hours=24)
+        bridge = (
+            db.query(ClickBridge)
+            .filter(
+                ClickBridge.tenant_id == lead.tenant_id,
+                ClickBridge.lead_phone.in_(_phone_variants(lead.phone)),
+                ClickBridge.consumed_at.is_(None),
+                ClickBridge.created_at >= since,
+            )
+            .order_by(ClickBridge.created_at.desc())
+            .first()
+        )
+        code = bridge.tracking_code if bridge else None
     if not bridge or bridge.consumed_at:
         return None
 
@@ -75,8 +110,6 @@ def attribution_from_click_bridge(db: Session, lead: Lead, message_body: str) ->
         fbclid=bridge.fbclid,
         tracking_code=code,
     )
-    import datetime
-
     bridge.consumed_at = datetime.datetime.utcnow()
     db.add(bridge)
     db.add(attribution)

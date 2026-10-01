@@ -2,18 +2,47 @@
 {% import "_macros.html" as m %}
 {% block title %}Pipeline{% endblock %}
 {% block content %}
+{% set qs = "date_range=" ~ date_range ~ "&date_from=" ~ date_from ~ "&date_to=" ~ date_to ~ "&seller=" ~ seller %}
 <div class="kanban-toolbar">
-  <h2 style="margin:0">Pipeline de leads</h2>
-  <span class="muted">Arraste os cards entre as colunas pra mudar a etapa</span>
+  <div>
+    <h2 style="margin:0">Pipeline de leads</h2>
+    <span class="muted">Leads que chegaram no período escolhido. Arraste os cards entre as colunas pra mudar a etapa.</span>
+  </div>
+  <a class="btn ghost small" href="/arquivados">Arquivados ({{ archived_count }})</a>
+</div>
+
+<div class="pipeline-filters">
+  {% for key, label in date_range_labels %}
+    {% if key != "custom" %}
+    <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if date_range == key }}" href="/?date_range={{ key }}&seller={{ seller }}">{{ label }}</a>
+    {% endif %}
+  {% endfor %}
+  <form method="get" action="/" class="pipeline-filter-form">
+    <input type="hidden" name="date_range" value="custom">
+    <input type="hidden" name="seller" value="{{ seller }}">
+    <input type="date" name="date_from" value="{{ date_from }}">
+    <span class="muted">até</span>
+    <input type="date" name="date_to" value="{{ date_to }}">
+    <button type="submit" class="pill" style="{{ 'background:var(--y); color:var(--ink);' if date_range == 'custom' }} border:0; cursor:pointer;">Aplicar</button>
+  </form>
+  <form method="get" action="/" class="pipeline-filter-form">
+    <input type="hidden" name="date_range" value="{{ date_range }}">
+    <input type="hidden" name="date_from" value="{{ date_from }}">
+    <input type="hidden" name="date_to" value="{{ date_to }}">
+    <select name="seller" onchange="this.form.submit()">
+      <option value="">Toda a equipe</option>
+      {% for s in sellers %}<option value="{{ s.id }}" {{ "selected" if seller == s.id }}>{{ s.name }}</option>{% endfor %}
+    </select>
+  </form>
 </div>
 
 <div class="kanban">
   {% for stage in stages %}
-  <div class="kanban-col" data-stage-id="{{ stage.id }}">
+  <div class="kanban-col" data-stage-id="{{ stage.id }}" id="col-{{ stage.id }}">
     <div class="kanban-col-head">
       <span class="dot" style="background: {{ stage_colors[stage.id] }}"></span>
       <h3>{{ stage.name }}</h3>
-      <span class="count">{{ leads_by_stage[stage.id]|length }}</span>
+      <span class="count">{{ totals.get(stage.id, 0) }}</span>
     </div>
     <div class="kanban-cards" data-stage-id="{{ stage.id }}">
       {% for lead in leads_by_stage[stage.id] %}
@@ -35,6 +64,10 @@
       {% else %}
       <div class="kanban-empty">Arraste leads pra cá</div>
       {% endfor %}
+      {% set total = totals.get(stage.id, 0) %}
+      {% if total > leads_by_stage[stage.id]|length %}
+      <a class="btn ghost small ver-mais" href="/?{{ qs }}&col={{ stage.id }}&n={{ leads_by_stage[stage.id]|length + col_limit }}#col-{{ stage.id }}">Ver mais ({{ total - leads_by_stage[stage.id]|length }} restantes)</a>
+      {% endif %}
     </div>
   </div>
   {% endfor %}

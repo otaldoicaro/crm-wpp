@@ -142,6 +142,9 @@ class Lead(Base):
     avatar_checked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+    # arquivado = some do Pipeline (continua no banco, no Dashboard e em /arquivados).
+    # Automático (app/services/archiver.py) ou manual; volta sozinho se o cliente mandar mensagem.
+    archived_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="leads")
     stage: Mapped[Optional["PipelineStage"]] = relationship()
@@ -220,6 +223,9 @@ class ClickBridge(Base):
     utm_content: Mapped[str] = mapped_column(String(160), default="")
     utm_term: Mapped[str] = mapped_column(String(160), default="")
     destination_phone: Mapped[str] = mapped_column(String(30), default="")
+    # telefone que a pessoa digitou no formulário da LP (só dígitos, com 55). Plano B pra
+    # casar a origem se ela apagar o código de rastreio da mensagem antes de enviar.
+    lead_phone: Mapped[str] = mapped_column(String(30), default="", index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
     consumed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
 

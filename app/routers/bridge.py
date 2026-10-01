@@ -5,6 +5,10 @@ Instagram etc. Cada clique abre o WhatsApp de um vendedor diferente (rodízio).
 
 /go/{tenant_id}/{whatsapp_number_id}: sempre o mesmo número.
 
+Parâmetros aceitos na URL: texto (mensagem pré-preenchida, ex: lista de peças da LP),
+tel (telefone que a pessoa digitou no formulário — plano B pra casar a origem),
+utm_*, gclid, fbclid.
+
 Nos dois casos: recebe o clique de um anúncio do Google Ads, guarda o
 gclid + UTMs, e redireciona pro WhatsApp já com a mensagem pré-preenchida
 contendo o código de rastreio (ex: "Quero saber mais! #A1B2C3D4").
@@ -23,7 +27,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import ClickBridge, WhatsAppNumber
-from app.services.attribution import build_whatsapp_bridge_link, generate_tracking_code
+from app.services.attribution import build_whatsapp_bridge_link, generate_tracking_code, normalize_br_phone
 from app.services.distribution import pick_number_for_click
 
 router = APIRouter()
@@ -85,6 +89,7 @@ def _redirect_with_tracking(
         utm_content=params.get("utm_content", ""),
         utm_term=params.get("utm_term", ""),
         destination_phone=number.phone_number,
+        lead_phone=normalize_br_phone(params.get("tel", "")),
     )
     db.add(bridge)
     db.commit()

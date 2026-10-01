@@ -81,8 +81,11 @@ def ingest_inbound(
             attribution.attribution_from_click_bridge(db, lead, body)
 
         assign_lead(db, lead, number)
-    elif profile_name and not lead.name:
-        lead.name = profile_name
+    else:
+        if profile_name and not lead.name:
+            lead.name = profile_name
+        if lead.archived_at:
+            lead.archived_at = None  # cliente voltou a falar: volta pro Pipeline
         db.add(lead)
 
     conversation = _get_or_create_conversation(db, number, lead)

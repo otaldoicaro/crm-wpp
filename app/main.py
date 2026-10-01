@@ -8,7 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
 
 from app.db import SessionLocal, sync_schema
-from app.services import media_store
+from app.services import archiver, media_store
 from app.routers import (
     admin_setup,
     auth_router,
@@ -28,6 +28,7 @@ app = FastAPI(title="CRM Multi-Tenant WhatsApp + Site")
 
 sync_schema()
 media_store.setup()
+archiver.schedule()
 
 
 @app.middleware("http")

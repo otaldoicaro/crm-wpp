@@ -46,3 +46,7 @@ MEDIA_S3_SECRET_KEY = os.getenv("MEDIA_S3_SECRET_KEY", "")
 MEDIA_S3_BUCKET = os.getenv("MEDIA_S3_BUCKET", "crm-midias")
 # por quantos dias guardar foto/áudio/vídeo/documento (texto e dados do lead ficam pra sempre)
 MEDIA_RETENTION_DAYS = int(os.getenv("MEDIA_RETENTION_DAYS", "90"))
+
+# Arquivamento automático do Pipeline (app/services/archiver.py)
+ARCHIVE_DONE_DAYS = int(os.getenv("ARCHIVE_DONE_DAYS", "30"))  # Ganho/Perdido parados há X dias
+ARCHIVE_IDLE_DAYS = int(os.getenv("ARCHIVE_IDLE_DAYS", "60"))  # em aberto e sem nenhuma atividade há X dias

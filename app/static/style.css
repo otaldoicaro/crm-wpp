@@ -313,3 +313,8 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 }
 .inbox-side .inbox-list { min-height: 0; }
 @media (max-width: 860px) { .inbox-side .inbox-list { border-radius: 0; border-left: 0; border-right: 0; } }
+.pipeline-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 14px; }
+.pipeline-filter-form { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0; }
+.pipeline-filter-form input[type=date] { width: auto; padding: 6px 8px; font-size: .78rem; }
+.pipeline-filter-form select { width: auto; padding: 6px 10px; font-size: .8rem; }
+.ver-mais { display: block; text-align: center; margin-top: 4px; }
