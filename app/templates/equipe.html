@@ -39,13 +39,13 @@
 <div class="card">
   <div style="overflow-x:auto;">
   <table class="table-simple">
-    <thead><tr><th>Nome</th><th>E-mail</th><th>Nível</th><th>WhatsApp</th><th>Rodízio</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th class="hide-sm">E-mail</th><th>Nível</th><th>WhatsApp</th><th>Rodízio</th><th></th></tr></thead>
     <tbody>
     {% for u in users %}
       {% set n = numbers_by_owner.get(u.id) %}
       <tr style="{{ 'opacity:.5' if not u.is_active }}">
-        <td><b>{{ u.name }}</b></td>
-        <td>{{ u.email }}</td>
+        <td><b>{{ u.name }}</b><div class="muted show-sm">{{ u.email }}</div></td>
+        <td class="hide-sm">{{ u.email }}</td>
         <td>
           {% if u.id != user.id %}
           <form method="post" action="/equipe/{{ u.id }}/nivel" style="margin:0" onsubmit="return confirm('{{ 'Tornar ' ~ u.name ~ ' vendedor? Deixa de ver todas as conversas e de gerenciar a equipe.' if u.role == 'admin' else 'Tornar ' ~ u.name ~ ' admin? Passa a ver todas as conversas e gerenciar equipe e WhatsApps.' }}')">

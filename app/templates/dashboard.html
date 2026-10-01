@@ -10,7 +10,7 @@
       <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if date_range == key }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&platform_filter={{ platform_filter }}&q={{ q }}&date_range={{ key }}">{{ label }}</a>
       {% endif %}
     {% endfor %}
-    <form method="get" action="/dashboard" style="display:flex; align-items:center; gap:4px;">
+    <form method="get" action="/dashboard" style="display:flex; flex-wrap:wrap; align-items:center; gap:4px;">
       <input type="hidden" name="card" value="{{ card }}">
       <input type="hidden" name="stage_filter" value="{{ stage_filter }}">
       <input type="hidden" name="platform_filter" value="{{ platform_filter }}">

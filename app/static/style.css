@@ -202,7 +202,7 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 
 @media (max-width: 860px) {
   main:has(.inbox-layout) { padding: 0; max-width: none; }
-  .inbox-layout { grid-template-columns: 1fr; height: 100vh; gap: 0; }
+  .inbox-layout { grid-template-columns: 1fr; height: calc(100vh - 60px); height: calc(100dvh - 60px); gap: 0; }
   .inbox-layout > .inbox-list, .inbox-layout > .inbox-thread { border-radius: 0; border-left: 0; border-right: 0; }
   .inbox-list { max-height: none; }
   /* no mobile so mostra lista OU conversa, nunca as duas - igual o WhatsApp */
@@ -228,11 +228,17 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .login-card .logo-img { height: 34px; margin-bottom: 18px; }
 
 @media (max-width: 640px) {
-  .topbar { gap: 12px; padding: 0 12px; }
+  /* celular: linha 1 = logo + Sair; linha 2 = menu, rolando de lado se não couber */
+  .topbar { flex-wrap: wrap; height: auto; gap: 6px 12px; padding: 8px 12px 0; }
   .topbar .nv-logo b { font-size: 1.1rem; }
   .topbar .nv-logo small { font-size: .34rem; }
-  .topbar nav a { padding: 7px 10px; font-size: .85rem; }
+  .topbar .logo-img { height: 22px; }
+  .topbar .user { margin-left: auto; }
   .topbar .user span { display: none; }
+  .topbar nav { order: 3; flex: 0 0 100%; overflow-x: auto; scrollbar-width: none; padding-bottom: 8px; }
+  .topbar nav::-webkit-scrollbar { display: none; }
+  .topbar nav a { padding: 7px 11px; font-size: .85rem; white-space: nowrap; flex-shrink: 0; }
+  .hide-sm { display: none; }
 }
 
 /* ---------- tela WhatsApp (conexão por QR code) ---------- */
@@ -267,3 +273,13 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .pending-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .pending-actions { display: flex; gap: 6px; }
 .pending-actions form { margin: 0; }
+@media (max-width: 640px) {
+  .inbox-layout { height: calc(100vh - 96px); height: calc(100dvh - 96px); }
+}
+.show-sm { display: none; }
+@media (max-width: 640px) { .show-sm { display: block; } }
+@media (max-width: 640px) {
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .stat-card { padding: 12px 14px; }
+  .stat-card .stat-value { font-size: 1.7rem; }
+}
