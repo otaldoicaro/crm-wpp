@@ -25,7 +25,6 @@
   </div>
 </div>
 
-{% if user.role == "admin" %}
 <form method="get" action="/dashboard" class="seller-filter">
   <input type="hidden" name="date_range" value="{{ date_range }}">
   <input type="hidden" name="date_from" value="{{ date_from }}">
@@ -37,7 +36,6 @@
     </select>
   </label>
 </form>
-{% endif %}
 
 <div class="stat-grid">
   <a class="stat-card c-gold {{ 'accent' if card == 'all' }}" href="/dashboard?card=all&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
@@ -88,7 +86,7 @@
   {% endfor %}
 </div>
 
-{% if user.role == "admin" and not seller %}
+{% if not seller %}
 <div class="section-title"><h3 style="margin:0">Funil por vendedor</h3></div>
 <div class="card">
   <div style="overflow-x:auto;">

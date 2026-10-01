@@ -408,8 +408,6 @@ def dashboard_view(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    if user.role != "admin":
-        seller = user.id  # vendedor só vê os próprios números
     sellers = (
         db.query(User).filter(User.tenant_id == tenant.id, User.pending_approval.is_(False)).order_by(User.name).all()
     )
