@@ -196,7 +196,7 @@
     <tbody>
       {% for lead in table_leads %}
       <tr style="cursor:pointer" onclick="window.location='{{ '/inbox/' if lead.source == 'whatsapp' else '/leads/' }}{{ lead.id }}'">
-        <td>{{ lead.created_at.strftime("%d/%m %H:%M") }}</td>
+        <td>{{ lead.created_at|hora("%d/%m %H:%M") }}</td>
         <td>{{ m.platform_badge(lead_platforms[lead.id], platform_labels[lead_platforms[lead.id]]) }}</td>
         <td class="muted">{{ (lead.attribution.utm_campaign if lead.attribution else "") or "—" }}</td>
         <td>{{ lead.name or "(sem nome)" }}</td>

@@ -12,6 +12,7 @@ import os
 from fastapi.templating import Jinja2Templates
 
 from app.themes import theme_css, theme_for
+from app.timeutil import fmt_local
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -26,3 +27,4 @@ def _asset_version() -> str:
 templates.env.globals["asset_version"] = _asset_version()
 templates.env.globals["theme_for"] = theme_for
 templates.env.globals["theme_css"] = theme_css
+templates.env.filters["hora"] = fmt_local

@@ -178,3 +178,10 @@ def fetch_media(instance: str, message_id: str) -> tuple[Optional[bytes], Option
     if not data:
         return None, None
     return base64.b64decode(data), body.get("mimetype") or "application/octet-stream"
+
+
+def profile_picture_url(instance: str, phone_digits: str) -> str:
+    """URL da foto de perfil do contato ('' se não tem foto ou é privada).
+    A URL é do servidor do WhatsApp e expira em alguns dias."""
+    body = _request("POST", f"/chat/fetchProfilePictureUrl/{instance}", json={"number": phone_digits})
+    return body.get("profilePictureUrl") or ""

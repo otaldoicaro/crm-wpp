@@ -34,3 +34,7 @@
 </span>
 {% endif %}
 {%- endmacro %}
+
+{% macro avatar(lead) -%}
+<span class="avatar">{{ (lead.name or lead.phone or "?")[0]|upper }}<img src="/leads/{{ lead.id }}/avatar" alt="" loading="lazy" onerror="this.remove()"></span>
+{%- endmacro %}

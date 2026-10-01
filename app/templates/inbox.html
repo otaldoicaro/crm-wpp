@@ -3,28 +3,15 @@
 {% block title %}Inbox{% endblock %}
 {% block content %}
 <div class="inbox-layout {{ 'with-detail' if selected_lead else '' }}">
-  <div class="inbox-list">
-    {% for conv in conversations %}
-      {% set lead = conv.lead %}
-      {% set last = conv.messages[-1] if conv.messages else None %}
-      <a class="inbox-list-item {{ 'active' if selected_lead and selected_lead.id == lead.id }}" href="/inbox/{{ lead.id }}">
-        <span class="avatar">{{ (lead.name or lead.phone or "?")[0]|upper }}</span>
-        <div class="inbox-list-item-body">
-          <div class="row1"><span class="name">{{ lead.name or lead.phone }}</span><span class="time">{{ conv.last_message_at.strftime("%d/%m %H:%M") }}</span></div>
-          <div class="preview">{{ last.body if last else "Sem mensagens ainda" }}</div>
-          <div class="preview" style="opacity:.7">{{ lead.assigned_user.name if lead.assigned_user else "sem atendente" }}</div>
-        </div>
-      </a>
-    {% else %}
-      <div class="kanban-empty" style="padding:24px">Nenhuma conversa de WhatsApp ainda.<br>Assim que um lead chamar no número conectado, aparece aqui.</div>
-    {% endfor %}
+  <div class="inbox-list" id="inboxList">
+    {% include "_inbox_list.html" %}
   </div>
 
   {% if selected_lead %}
   <div class="inbox-thread">
     <div class="inbox-thread-head">
       <a href="/inbox" class="back-btn" aria-label="Voltar">←</a>
-      <span class="avatar">{{ (selected_lead.name or selected_lead.phone or "?")[0]|upper }}</span>
+      {{ m.avatar(selected_lead) }}
       <div class="info">
         <div class="name">{{ selected_lead.name or selected_lead.phone }}</div>
         <span class="muted">{{ selected_lead.phone }} · atendente: {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "não atribuído" }}</span>
@@ -44,30 +31,10 @@
         {% endif %}
       </div>
       {{ m.platform_badge(platform, platform_label) }}
-      <a class="btn ghost small" href="/leads/{{ selected_lead.id }}">Ver ficha</a>
+      <a class="btn ghost small" href="/leads/{{ selected_lead.id }}?voltar=inbox">Atualizar status do lead</a>
     </div>
     <div class="inbox-messages" id="inboxMessages">
-      {% for msg in messages %}
-        <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}">
-          {% if msg.media_type == "audio" %}
-            {% if msg.body and not msg.body.startswith("🎤") %}<div>{{ msg.body }}</div>{% endif %}
-            <audio controls preload="none" style="max-width:220px; margin-top:4px;"><source src="/media/{{ msg.id }}"></audio>
-          {% elif msg.media_type == "image" or msg.media_type == "sticker" %}
-            <img src="/media/{{ msg.id }}" style="max-width:240px; border-radius:8px; display:block;">
-            {% if msg.body and not msg.body.startswith("📷") %}<div style="margin-top:4px;">{{ msg.body }}</div>{% endif %}
-          {% elif msg.media_type == "video" %}
-            <video controls preload="none" style="max-width:240px; border-radius:8px; display:block;"><source src="/media/{{ msg.id }}"></video>
-            {% if msg.body and not msg.body.startswith("🎥") %}<div style="margin-top:4px;">{{ msg.body }}</div>{% endif %}
-          {% elif msg.media_type == "document" %}
-            <a href="/media/{{ msg.id }}" target="_blank" style="color:inherit; text-decoration:underline;">{{ msg.body }}</a>
-          {% else %}
-            {{ msg.body }}
-          {% endif %}
-        </div>
-        <span class="msg-time">{{ msg.created_at.strftime("%d/%m %H:%M") }}</span>
-      {% else %}
-        <p class="muted">Sem mensagens ainda.</p>
-      {% endfor %}
+      {% include "_inbox_messages.html" %}
     </div>
     <form class="reply-box" method="post" action="/leads/{{ selected_lead.id }}/reply" style="position:relative;">
       <button type="button" class="btn ghost small" id="attachToggle" title="Anexar" style="flex:0 0 auto;">📎</button>
@@ -150,4 +117,42 @@
   </div>
   {% endif %}
 </div>
+<script>
+// atualização automática: a cada 3s busca mensagens novas (do cliente ou enviadas
+// pelo celular) e redesenha só a lista/conversa — o que está sendo digitado não se perde
+(function () {
+  var lead = {{ (selected_lead.id if selected_lead else "")|tojson }};
+  var listEl = document.getElementById("inboxList");
+  var msgEl = document.getElementById("inboxMessages");
+  var listSig = {{ list_sig|tojson }};
+  var msgSig = {{ msg_sig|tojson }};
+  var busy = false;
+  function nearBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 120; }
+  function tick() {
+    if (busy || document.hidden) return;
+    busy = true;
+    fetch("/inbox-atualizar?lead=" + encodeURIComponent(lead), { headers: { accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        if (d.list_sig !== listSig) {
+          var top = listEl.scrollTop;
+          listEl.innerHTML = d.list_html;
+          listEl.scrollTop = top;
+          listSig = d.list_sig;
+        }
+        if (msgEl && lead && d.msg_sig !== msgSig) {
+          var stick = nearBottom(msgEl);
+          msgEl.innerHTML = d.msg_html;
+          if (stick) msgEl.scrollTop = msgEl.scrollHeight;
+          msgSig = d.msg_sig;
+        }
+      })
+      .catch(function () {})
+      .then(function () { busy = false; });
+  }
+  setInterval(tick, 3000);
+  document.addEventListener("visibilitychange", tick);
+})();
+</script>
 {% endblock %}

@@ -1,0 +1,22 @@
+{% import "_macros.html" as m %}
+{% for msg in messages %}
+  <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}">
+    {% if msg.media_type == "audio" %}
+      {% if msg.body and not msg.body.startswith("🎤") %}<div>{{ msg.body }}</div>{% endif %}
+      <audio controls preload="none" style="max-width:220px; margin-top:4px;"><source src="/media/{{ msg.id }}"></audio>
+    {% elif msg.media_type == "image" or msg.media_type == "sticker" %}
+      <img src="/media/{{ msg.id }}" style="max-width:240px; border-radius:8px; display:block;">
+      {% if msg.body and not msg.body.startswith("📷") %}<div style="margin-top:4px;">{{ msg.body }}</div>{% endif %}
+    {% elif msg.media_type == "video" %}
+      <video controls preload="none" style="max-width:240px; border-radius:8px; display:block;"><source src="/media/{{ msg.id }}"></video>
+      {% if msg.body and not msg.body.startswith("🎥") %}<div style="margin-top:4px;">{{ msg.body }}</div>{% endif %}
+    {% elif msg.media_type == "document" %}
+      <a href="/media/{{ msg.id }}" target="_blank" style="color:inherit; text-decoration:underline;">{{ msg.body }}</a>
+    {% else %}
+      {{ msg.body }}
+    {% endif %}
+  </div>
+  <span class="msg-time">{{ msg.created_at|hora("%d/%m %H:%M") }}</span>
+{% else %}
+  <p class="muted">Sem mensagens ainda.</p>
+{% endfor %}

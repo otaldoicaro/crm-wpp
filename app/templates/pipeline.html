@@ -28,7 +28,7 @@
           <div class="campaign" title="{{ lead.attribution.utm_campaign }}">{{ lead.attribution.utm_campaign }}</div>
         {% endif %}
         <div class="foot">
-          <span>{{ lead.created_at.strftime("%d/%m") }}</span>
+          <span>{{ lead.created_at|hora("%d/%m") }}</span>
           {% if lead.assigned_user %}<span>{{ lead.assigned_user.name }}</span>{% endif %}
         </div>
       </div>

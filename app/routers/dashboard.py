@@ -1,6 +1,7 @@
 import datetime
 from typing import Optional
 
+import requests
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -8,11 +9,12 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
+from app.services import evolution_client, media_store, messaging
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.services.platform import PLATFORM_LABEL, resolve_platform
-from app.services import media_store, messaging
 from app.services.messaging import media_kind_for_mime
 from app.templating import templates
+from app.timeutil import local_to_utc, to_local
 
 router = APIRouter()
 
@@ -79,6 +81,9 @@ def lead_detail(
             "active_nav": "pipeline",
             "lead": lead,
             "stages": stages,
+            "won_stage_ids": [s.id for s in stages if s.is_won],
+            "won_stage_name": next((s.name for s in stages if s.is_won), "Ganho"),
+            "voltar": request.query_params.get("voltar", ""),
             "platform": resolve_platform(lead.attribution),
             "platform_label": PLATFORM_LABEL[resolve_platform(lead.attribution)],
         },
@@ -94,6 +99,7 @@ def update_lead(
     stage_id: str = Form(...),
     deal_value: str = Form(""),
     loss_reason: str = Form(""),
+    voltar: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -120,7 +126,8 @@ def update_lead(
     if stage_changed and stage.conversion_event_name:
         dispatch_stage_conversion(db, lead, stage.conversion_event_name)
 
-    return RedirectResponse(url=f"/leads/{lead_id}", status_code=302)
+    back = f"/inbox/{lead_id}" if voltar == "inbox" else f"/leads/{lead_id}"
+    return RedirectResponse(url=f"{back}?salvo=1", status_code=302)
 
 
 @router.post("/leads/{lead_id}/stage")
@@ -167,7 +174,7 @@ def inbox_thread(
     return _render_inbox(request, db, tenant, user, lead_id)
 
 
-def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]):
+def _inbox_context(db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]) -> dict:
     query = db.query(Conversation).filter(Conversation.tenant_id == tenant.id)
     if user.role != "admin":
         # no rodízio cada vendedor só enxerga os leads que caíram pra ele; admin vê tudo
@@ -198,10 +205,9 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
                 and (n.provider != "evolution" or n.connection_state == "open")
             ]
 
-    return templates.TemplateResponse(
-        request,
-        "inbox.html",
-        {
+    return {
+            "list_sig": "|".join(f"{c.id}:{c.last_message_at.isoformat()}:{len(c.messages)}" for c in conversations),
+            "msg_sig": f"{len(messages)}:{messages[-1].id}:{messages[-1].body}" if messages else "0",
             "tenant": tenant,
             "user": user,
             "active_nav": "inbox",
@@ -212,8 +218,78 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
             "other_numbers": other_numbers,
             "platform": resolve_platform(selected_lead.attribution) if selected_lead else None,
             "platform_label": PLATFORM_LABEL[resolve_platform(selected_lead.attribution)] if selected_lead else None,
-        },
+    }
+
+
+def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]):
+    return templates.TemplateResponse(request, "inbox.html", _inbox_context(db, tenant, user, selected_lead_id))
+
+
+@router.get("/inbox-atualizar")
+def inbox_refresh(
+    lead: str = "",
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Chamado a cada poucos segundos pela tela do Inbox: devolve a lista e a
+    conversa aberta já desenhadas, com uma "assinatura" pra tela só trocar o
+    que mudou (mensagem nova do cliente ou enviada pelo celular)."""
+    ctx = _inbox_context(db, tenant, user, lead or None)
+    return JSONResponse(
+        {
+            "list_sig": ctx["list_sig"],
+            "list_html": templates.get_template("_inbox_list.html").render(ctx),
+            "msg_sig": ctx["msg_sig"],
+            "msg_html": templates.get_template("_inbox_messages.html").render(ctx) if lead else "",
+        }
     )
+
+
+AVATAR_TTL = datetime.timedelta(hours=24)
+
+
+@router.get("/leads/{lead_id}/avatar")
+def lead_avatar(
+    lead_id: str,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Foto de perfil do WhatsApp do lead. 404 = sem foto (a tela mostra a inicial)."""
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    conversation = lead.active_conversation if lead else None
+    number = conversation.whatsapp_number if conversation else None
+    if not lead or not number or number.provider != "evolution":
+        raise HTTPException(status_code=404)
+
+    def refresh_url() -> str:
+        try:
+            lead.avatar_url = evolution_client.profile_picture_url(number.evolution_instance, lead.phone)
+        except evolution_client.EvolutionError:
+            lead.avatar_url = ""
+        lead.avatar_checked_at = datetime.datetime.utcnow()
+        db.add(lead)
+        db.commit()
+        return lead.avatar_url
+
+    now = datetime.datetime.utcnow()
+    url = lead.avatar_url if lead.avatar_checked_at and now - lead.avatar_checked_at < AVATAR_TTL else refresh_url()
+    for attempt in range(2):
+        if not url:
+            break
+        try:
+            resp = requests.get(url, timeout=8)
+        except requests.RequestException:
+            resp = None
+        if resp is not None and resp.ok:
+            return Response(
+                content=resp.content,
+                media_type=resp.headers.get("content-type", "image/jpeg"),
+                headers={"Cache-Control": "private, max-age=86400"},
+            )
+        url = refresh_url() if attempt == 0 else ""  # URL do WhatsApp expirou: pega uma nova
+    raise HTTPException(status_code=404)
 
 
 @router.get("/media/{message_id}")
@@ -375,14 +451,16 @@ DATE_RANGE_LABELS = [
 
 
 def _range_from(now: datetime.datetime, date_range: str) -> Optional[datetime.datetime]:
+    """`now` em UTC; "Hoje"/"Este mês" começam à meia-noite de Brasília."""
+    local_now = to_local(now)
     if date_range == "today":
-        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return local_to_utc(local_now.replace(hour=0, minute=0, second=0, microsecond=0))
     if date_range == "7d":
         return now - datetime.timedelta(days=7)
     if date_range == "30d":
         return now - datetime.timedelta(days=30)
     if date_range == "month":
-        return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        return local_to_utc(local_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0))
     return None
 
 
@@ -418,8 +496,8 @@ def dashboard_view(
     if date_range == "custom":
         parsed_from = _parse_date(date_from)
         parsed_to = _parse_date(date_to)
-        range_from = datetime.datetime.combine(parsed_from, datetime.time.min) if parsed_from else None
-        range_to = datetime.datetime.combine(parsed_to, datetime.time.max) if parsed_to else None
+        range_from = local_to_utc(datetime.datetime.combine(parsed_from, datetime.time.min)) if parsed_from else None
+        range_to = local_to_utc(datetime.datetime.combine(parsed_to, datetime.time.max)) if parsed_to else None
     else:
         range_from = _range_from(now, date_range)
 

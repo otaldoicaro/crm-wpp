@@ -36,5 +36,13 @@
   <main>
     {% block content %}{% endblock %}
   </main>
+  {% if request and request.query_params.get("salvo") %}
+  <div class="toast" role="status">✅ Informações salvas com sucesso</div>
+  <script>
+    // tira o ?salvo=1 da barra de endereço pra não repetir o aviso ao recarregar
+    history.replaceState(null, "", location.pathname);
+    setTimeout(function () { var t = document.querySelector(".toast"); if (t) t.remove(); }, 4500);
+  </script>
+  {% endif %}
 </body>
 </html>

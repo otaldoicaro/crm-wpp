@@ -14,7 +14,7 @@
   <p class="muted" style="margin:4px 0 10px">Pessoas que pediram acesso pela tela de entrar. Aprove só quem é da equipe.</p>
   {% for p in pending %}
   <div class="pending-row">
-    <div><b>{{ p.name }}</b><br><span class="muted">{{ p.email }} · pediu em {{ p.created_at.strftime("%d/%m %H:%M") }}</span></div>
+    <div><b>{{ p.name }}</b><br><span class="muted">{{ p.email }} · pediu em {{ p.created_at|hora("%d/%m %H:%M") }}</span></div>
     <div class="pending-actions">
       <form method="post" action="/equipe/{{ p.id }}/aprovar"><button class="btn small" type="submit">Aprovar</button></form>
       <form method="post" action="/equipe/{{ p.id }}/recusar" onsubmit="return confirm('Recusar o pedido de {{ p.name }}?')"><button class="btn ghost small" type="submit">Recusar</button></form>

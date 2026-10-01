@@ -2,7 +2,7 @@
 {% import "_macros.html" as m %}
 {% block title %}{{ lead.name or lead.phone }}{% endblock %}
 {% block content %}
-<p><a href="/">&larr; voltar ao pipeline</a></p>
+<p>{% if voltar == "inbox" %}<a href="/inbox/{{ lead.id }}">&larr; voltar pra conversa</a>{% else %}<a href="/">&larr; voltar ao pipeline</a>{% endif %}</p>
 <div style="display:flex; gap:20px; flex-wrap:wrap;">
   <div class="card" style="flex:2; min-width:320px;">
     <h2 style="display:flex; align-items:center; gap:10px;">
@@ -10,21 +10,49 @@
       {{ m.platform_badge(platform, platform_label) }}
     </h2>
 
-    <form method="post" action="/leads/{{ lead.id }}/update">
+    <form method="post" action="/leads/{{ lead.id }}/update" id="leadForm">
+      <input type="hidden" name="voltar" value="{{ voltar }}">
       <p><label>Nome<br><input type="text" name="name" value="{{ lead.name }}"></label></p>
       <p><label>Telefone<br><input type="text" name="phone" value="{{ lead.phone }}"></label></p>
       <p><label>E-mail<br><input type="text" name="email" value="{{ lead.email }}"></label></p>
       <p><label>Etapa<br>
-        <select name="stage_id">
+        <select name="stage_id" id="stageSelect">
           {% for stage in stages %}
             <option value="{{ stage.id }}" {% if lead.stage_id == stage.id %}selected{% endif %}>{{ stage.name }}</option>
           {% endfor %}
         </select>
       </label></p>
-      <p><label>Valor fechado (R$)<br><input type="number" step="0.01" name="deal_value" value="{{ lead.deal_value or '' }}" placeholder="preencher quando ganhar"></label></p>
+      <p><label>Valor fechado (R$)<br><input type="number" step="0.01" name="deal_value" id="dealValue" value="{{ lead.deal_value or '' }}" placeholder="preencher quando ganhar"></label></p>
+      <div class="stage-warning" id="stageWarning" hidden>
+        <span>⚠️ Você colocou um <b>valor fechado</b>, mas a etapa ainda não está como <b>{{ won_stage_name }}</b>. Sem isso a venda não conta no Dashboard.</span>
+        <button type="button" class="btn small" id="setWon">Mudar etapa para {{ won_stage_name }}</button>
+      </div>
       <p><label>Motivo de perda<br><input type="text" name="loss_reason" value="{{ lead.loss_reason }}" placeholder="preencher quando perder"></label></p>
       <button class="btn" type="submit">Salvar alterações</button>
     </form>
+    <script>
+    (function () {
+      var WON = {{ won_stage_ids|tojson }};
+      var stage = document.getElementById("stageSelect");
+      var value = document.getElementById("dealValue");
+      var warning = document.getElementById("stageWarning");
+      function inconsistent() { return value.value.trim() !== "" && Number(value.value) > 0 && WON.indexOf(stage.value) === -1; }
+      function refresh() { warning.hidden = !inconsistent(); }
+      value.addEventListener("input", refresh);
+      stage.addEventListener("change", refresh);
+      document.getElementById("setWon").addEventListener("click", function () {
+        if (WON.length) { stage.value = WON[0]; refresh(); }
+      });
+      document.getElementById("leadForm").addEventListener("submit", function (e) {
+        if (inconsistent() && !confirm("Você colocou um valor fechado, mas a etapa não está como {{ won_stage_name }}.\n\nOK = salvar mesmo assim\nCancelar = voltar e mudar a etapa")) {
+          e.preventDefault();
+          warning.hidden = false;
+          warning.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
+      refresh();
+    })();
+    </script>
   </div>
 
   <div class="card attribution-box" style="flex:1; min-width:260px;">
