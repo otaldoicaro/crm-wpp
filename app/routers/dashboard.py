@@ -4,6 +4,7 @@ from typing import Optional
 import requests
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -174,15 +175,25 @@ def inbox_thread(
     return _render_inbox(request, db, tenant, user, lead_id)
 
 
-def _inbox_context(db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]) -> dict:
-    query = db.query(Conversation).filter(Conversation.tenant_id == tenant.id)
+INBOX_LIST_LIMIT = 60  # com milhares de leads/mês a lista inteira pesaria; o resto se acha pela busca
+
+
+def _inbox_context(db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str], busca: str = "") -> dict:
+    query = db.query(Conversation).join(Lead, Lead.id == Conversation.lead_id).filter(Conversation.tenant_id == tenant.id)
     if user.role != "admin":
         # no rodízio cada vendedor só enxerga os leads que caíram pra ele; admin vê tudo
-        query = query.join(Lead, Lead.id == Conversation.lead_id).filter(Lead.assigned_user_id == user.id)
+        query = query.filter(Lead.assigned_user_id == user.id)
+    busca = busca.strip()
+    if busca:
+        digits = "".join(ch for ch in busca if ch.isdigit())
+        conditions = [Lead.name.ilike(f"%{busca}%")]
+        if digits:
+            conditions.append(Lead.phone.like(f"%{digits}%"))
+        query = query.filter(or_(*conditions))
     # um item por lead (um lead pode ter conversa em mais de um número), o mais recente primeiro
     conversations, seen = [], set()
-    for conv in query.order_by(Conversation.last_message_at.desc()).all():
-        if conv.lead_id not in seen:
+    for conv in query.order_by(Conversation.last_message_at.desc()).limit(INBOX_LIST_LIMIT * 2):
+        if conv.lead_id not in seen and len(conversations) < INBOX_LIST_LIMIT:
             seen.add(conv.lead_id)
             conversations.append(conv)
 
@@ -206,7 +217,9 @@ def _inbox_context(db: Session, tenant: Tenant, user: User, selected_lead_id: Op
             ]
 
     return {
-            "list_sig": "|".join(f"{c.id}:{c.last_message_at.isoformat()}:{len(c.messages)}" for c in conversations),
+            "list_sig": "|".join(f"{c.id}:{c.last_message_at.isoformat()}" for c in conversations),
+            "list_truncated": len(conversations) >= INBOX_LIST_LIMIT,
+            "busca": busca,
             "msg_sig": f"{len(messages)}:{messages[-1].id}:{messages[-1].body}" if messages else "0",
             "tenant": tenant,
             "user": user,
@@ -222,12 +235,16 @@ def _inbox_context(db: Session, tenant: Tenant, user: User, selected_lead_id: Op
 
 
 def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]):
-    return templates.TemplateResponse(request, "inbox.html", _inbox_context(db, tenant, user, selected_lead_id))
+    ctx = _inbox_context(db, tenant, user, selected_lead_id, request.query_params.get("busca", ""))
+    return templates.TemplateResponse(request, "inbox.html", ctx)
 
 
 @router.get("/inbox-atualizar")
 def inbox_refresh(
     lead: str = "",
+    busca: str = "",
+    ls: str = "",
+    ms: str = "",
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -235,7 +252,9 @@ def inbox_refresh(
     """Chamado a cada poucos segundos pela tela do Inbox: devolve a lista e a
     conversa aberta já desenhadas, com uma "assinatura" pra tela só trocar o
     que mudou (mensagem nova do cliente ou enviada pelo celular)."""
-    ctx = _inbox_context(db, tenant, user, lead or None)
+    ctx = _inbox_context(db, tenant, user, lead or None, busca)
+    if ctx["list_sig"] == ls and ctx["msg_sig"] == ms:
+        return JSONResponse({"changed": False})  # nada novo: resposta mínima, sem desenhar nada
     return JSONResponse(
         {
             "list_sig": ctx["list_sig"],
@@ -434,6 +453,7 @@ def _record_outbound(
     message.media_id = media_id or message.media_id
     message.media_type = media_type or message.media_type
     conversation.last_message_at = datetime.datetime.utcnow()
+    conversation.last_preview = body[:200]
     db.add(message)
     db.add(conversation)
     db.commit()

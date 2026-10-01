@@ -1,15 +1,21 @@
 {% import "_macros.html" as m %}
 {% for conv in conversations %}
   {% set lead = conv.lead %}
-  {% set last = conv.messages[-1] if conv.messages else None %}
   <a class="inbox-list-item {{ 'active' if selected_lead and selected_lead.id == lead.id }}" href="/inbox/{{ lead.id }}">
     {{ m.avatar(lead) }}
     <div class="inbox-list-item-body">
       <div class="row1"><span class="name">{{ lead.name or lead.phone }}</span><span class="time">{{ conv.last_message_at|hora("%d/%m %H:%M") }}</span></div>
-      <div class="preview">{{ last.body if last else "Sem mensagens ainda" }}</div>
+      <div class="preview">{{ conv.last_preview or ((conv.messages[-1].body if conv.messages else "") if not conv.last_preview else "") or "Sem mensagens ainda" }}</div>
       <div class="preview" style="opacity:.7">{{ lead.assigned_user.name if lead.assigned_user else "sem atendente" }}</div>
     </div>
   </a>
 {% else %}
+  {% if busca %}
+  <div class="kanban-empty" style="padding:24px">Nenhuma conversa encontrada pra "{{ busca }}".</div>
+  {% else %}
   <div class="kanban-empty" style="padding:24px">Nenhuma conversa de WhatsApp ainda.<br>Assim que um lead chamar no número conectado, aparece aqui.</div>
+  {% endif %}
 {% endfor %}
+{% if list_truncated %}
+  <div class="kanban-empty" style="padding:14px">Mostrando as {{ conversations|length }} conversas mais recentes. Use a busca acima pra achar conversas antigas.</div>
+{% endif %}

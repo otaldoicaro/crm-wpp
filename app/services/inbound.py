@@ -95,6 +95,7 @@ def ingest_inbound(
         media_type=media_type,
     )
     conversation.last_message_at = datetime.datetime.utcnow()
+    conversation.last_preview = body[:200]
     db.add(message)
     db.add(conversation)
     db.commit()
@@ -130,6 +131,7 @@ def record_outbound_from_phone(
         media_type=media_type,
     )
     conversation.last_message_at = datetime.datetime.utcnow()
+    conversation.last_preview = body[:200]
     db.add(message)
     db.add(conversation)
     db.commit()

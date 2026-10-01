@@ -235,6 +235,8 @@ class Conversation(Base):
     status: Mapped[str] = mapped_column(String(20), default="open")  # open | closed
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
     last_message_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+    # texto da última mensagem, pra lista do Inbox não precisar abrir todas as mensagens
+    last_preview: Mapped[str] = mapped_column(String(200), default="")
 
     lead: Mapped["Lead"] = relationship(back_populates="conversations")
     whatsapp_number: Mapped["WhatsAppNumber"] = relationship()

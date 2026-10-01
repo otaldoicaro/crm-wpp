@@ -3,8 +3,13 @@
 {% block title %}Inbox{% endblock %}
 {% block content %}
 <div class="inbox-layout {{ 'with-detail' if selected_lead else '' }}">
+  <div class="inbox-side">
+  <form class="inbox-search" method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
+    <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone..." autocomplete="off">
+  </form>
   <div class="inbox-list" id="inboxList">
     {% include "_inbox_list.html" %}
+  </div>
   </div>
 
   {% if selected_lead %}
@@ -126,15 +131,18 @@
   var msgEl = document.getElementById("inboxMessages");
   var listSig = {{ list_sig|tojson }};
   var msgSig = {{ msg_sig|tojson }};
+  var busca = {{ busca|tojson }};
   var busy = false;
   function nearBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 120; }
   function tick() {
     if (busy || document.hidden) return;
     busy = true;
-    fetch("/inbox-atualizar?lead=" + encodeURIComponent(lead), { headers: { accept: "application/json" } })
+    var url = "/inbox-atualizar?lead=" + encodeURIComponent(lead) + "&busca=" + encodeURIComponent(busca) +
+      "&ls=" + encodeURIComponent(listSig) + "&ms=" + encodeURIComponent(msgSig);
+    fetch(url, { headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
-        if (!d) return;
+        if (!d || d.changed === false) return;
         if (d.list_sig !== listSig) {
           var top = listEl.scrollTop;
           listEl.innerHTML = d.list_html;
