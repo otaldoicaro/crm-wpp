@@ -21,7 +21,10 @@
       <a href="/" class="{{ 'active' if active_nav == 'pipeline' else '' }}">Pipeline</a>
       <a href="/inbox" class="{{ 'active' if active_nav == 'inbox' else '' }}">Inbox</a>
       <a href="/dashboard" class="{{ 'active' if active_nav == 'dashboard' else '' }}">Dashboard</a>
-      {% if user.role == "admin" %}<a href="/equipe" class="{{ 'active' if active_nav == 'equipe' else '' }}">Equipe</a>{% endif %}
+      {% if user.role == "admin" %}
+      {% set pending_access = tenant.users|selectattr("pending_approval")|list %}
+      <a href="/equipe" class="{{ 'active' if active_nav == 'equipe' else '' }}" {% if pending_access %}title="Pedidos de acesso esperando aprovação"{% endif %}>Equipe{% if pending_access %}<span class="nav-dot"></span>{% endif %}</a>
+      {% endif %}
       <a href="/whatsapp" class="{{ 'active' if active_nav == 'whatsapp' else '' }}" {% if wa_down %}title="WhatsApp desconectado"{% endif %}>{{ "WhatsApp" if user.role == "admin" else "Meu WhatsApp" }}{% if wa_down or (user.role != "admin" and not my_numbers) %}<span class="nav-dot"></span>{% endif %}</a>
     </nav>
     <div class="user">

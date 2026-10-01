@@ -1,7 +1,8 @@
 """Equipe do cliente.
 
-- /equipe (admin): lista vendedores, link de convite, pausa/volta alguém no
-  rodízio e desativa quem saiu da empresa.
+- /equipe (admin): aprova pedidos de acesso (feitos em /solicitar-acesso),
+  muda o nível (vendedor/admin), pausa/volta alguém no rodízio, desativa quem
+  saiu da empresa e tem o link de convite (atalho que dispensa aprovação).
 - /convite/{token} (público): o vendedor abre o link, cria o próprio login e
   cai direto na tela "Meu WhatsApp" pra conectar o celular. O token identifica
   o cliente, então funciona mesmo sem subdomínio próprio.
@@ -45,7 +46,9 @@ def team_page(
     user: User = Depends(current_user_required),
 ):
     _require_admin(user)
-    users = db.query(User).filter(User.tenant_id == tenant.id).order_by(User.is_active.desc(), User.name).all()
+    everyone = db.query(User).filter(User.tenant_id == tenant.id).order_by(User.is_active.desc(), User.name).all()
+    pending = [u for u in everyone if u.pending_approval]
+    users = [u for u in everyone if not u.pending_approval]
     numbers_by_owner = {
         n.owner_user_id: n
         for n in db.query(WhatsAppNumber).filter(
@@ -60,6 +63,7 @@ def team_page(
             "user": user,
             "active_nav": "equipe",
             "users": users,
+            "pending": pending,
             "numbers_by_owner": numbers_by_owner,
             "invite_link": f"{PUBLIC_BASE_URL}/convite/{_ensure_invite_token(db, tenant)}",
         },
@@ -91,10 +95,19 @@ def team_action(
     member = db.get(User, user_id)
     if not member or member.tenant_id != tenant.id:
         raise HTTPException(status_code=404, detail="Pessoa não encontrada")
-    if action == "rodizio":
+    if action == "aprovar" and member.pending_approval:
+        member.pending_approval = False
+        member.is_active = True
+    elif action == "recusar" and member.pending_approval:
+        db.delete(member)
+        db.commit()
+        return RedirectResponse(url="/equipe", status_code=302)
+    elif action == "rodizio":
         member.accepting_leads = not member.accepting_leads
     elif action == "ativo" and member.id != user.id:
         member.is_active = not member.is_active
+    elif action == "nivel" and member.id != user.id:  # ninguém tira o próprio admin (evita ficar sem nenhum)
+        member.role = "agent" if member.role == "admin" else "admin"
     db.add(member)
     db.commit()
     return RedirectResponse(url="/equipe", status_code=302)

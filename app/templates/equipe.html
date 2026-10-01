@@ -8,9 +8,25 @@
   </div>
 </div>
 
+{% if pending %}
+<div class="card pending-card">
+  <div class="wa-label">Pedidos de acesso ({{ pending|length }})</div>
+  <p class="muted" style="margin:4px 0 10px">Pessoas que pediram acesso pela tela de entrar. Aprove só quem é da equipe.</p>
+  {% for p in pending %}
+  <div class="pending-row">
+    <div><b>{{ p.name }}</b><br><span class="muted">{{ p.email }} · pediu em {{ p.created_at.strftime("%d/%m %H:%M") }}</span></div>
+    <div class="pending-actions">
+      <form method="post" action="/equipe/{{ p.id }}/aprovar"><button class="btn small" type="submit">Aprovar</button></form>
+      <form method="post" action="/equipe/{{ p.id }}/recusar" onsubmit="return confirm('Recusar o pedido de {{ p.name }}?')"><button class="btn ghost small" type="submit">Recusar</button></form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="card wa-link">
-  <div class="wa-label">Link de convite pra vendedores</div>
-  <p class="muted" style="margin:4px 0 10px">Mande este link no grupo da equipe. Cada vendedor abre, cria o próprio login e já conecta o WhatsApp do celular.</p>
+  <div class="wa-label">Link de convite (opcional)</div>
+  <p class="muted" style="margin:4px 0 10px">Os vendedores também podem pedir acesso direto na tela de entrar ("Solicitar acesso") e você aprova acima. Este link é um atalho: quem abre já entra aprovado — mande só pra equipe.</p>
   <div class="wa-link-row">
     <input type="text" readonly value="{{ invite_link }}" id="inviteLink" onclick="this.select()">
     <button class="btn small" type="button" onclick="navigator.clipboard.writeText(document.getElementById('inviteLink').value); this.textContent='Copiado!'">Copiar</button>
@@ -23,13 +39,20 @@
 <div class="card">
   <div style="overflow-x:auto;">
   <table class="table-simple">
-    <thead><tr><th>Nome</th><th>E-mail</th><th>WhatsApp</th><th>Rodízio</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th>E-mail</th><th>Nível</th><th>WhatsApp</th><th>Rodízio</th><th></th></tr></thead>
     <tbody>
     {% for u in users %}
       {% set n = numbers_by_owner.get(u.id) %}
       <tr style="{{ 'opacity:.5' if not u.is_active }}">
-        <td><b>{{ u.name }}</b>{% if u.role == "admin" %} <span class="pill">admin</span>{% endif %}</td>
+        <td><b>{{ u.name }}</b></td>
         <td>{{ u.email }}</td>
+        <td>
+          {% if u.id != user.id %}
+          <form method="post" action="/equipe/{{ u.id }}/nivel" style="margin:0" onsubmit="return confirm('{{ 'Tornar ' ~ u.name ~ ' vendedor? Deixa de ver todas as conversas e de gerenciar a equipe.' if u.role == 'admin' else 'Tornar ' ~ u.name ~ ' admin? Passa a ver todas as conversas e gerenciar equipe e WhatsApps.' }}')">
+            <button class="btn ghost small" type="submit" title="Clique pra trocar">{{ "Admin" if u.role == "admin" else "Vendedor" }} ⇄</button>
+          </form>
+          {% else %}<span class="pill">{{ "Admin" if u.role == "admin" else "Vendedor" }} (você)</span>{% endif %}
+        </td>
         <td>
           {% if n %}<span class="wa-status {{ 'on' if n.connection_state == 'open' else 'off' }}">{{ "Conectado" if n.connection_state == "open" else "Desconectado" }}</span>
           {% else %}<span class="muted">não conectou</span>{% endif %}

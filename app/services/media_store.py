@@ -58,7 +58,16 @@ def _s3():
 def setup() -> None:
     """Cria o bucket (se faltar) e aplica a regra de expiração. Roda no start."""
     if not is_enabled():
-        logger.info("media_store desligado (MEDIA_S3_* não configurado)")
+        missing = [
+            name
+            for name, value in (
+                ("MEDIA_S3_ENDPOINT", MEDIA_S3_ENDPOINT),
+                ("MEDIA_S3_ACCESS_KEY", MEDIA_S3_ACCESS_KEY),
+                ("MEDIA_S3_SECRET_KEY", MEDIA_S3_SECRET_KEY),
+            )
+            if not value
+        ]
+        logger.info("media_store desligado: falta configurar %s", ", ".join(missing))
         return
     try:
         s3 = _s3()

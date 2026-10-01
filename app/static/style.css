@@ -263,3 +263,7 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .via-number form { margin: 0; }
 .via-number select { width: auto; padding: 4px 8px; font-size: .76rem; border-radius: 8px; }
 .via-down { color: var(--danger); font-weight: 800; }
+.pending-card { margin-bottom: 14px; border-left: 4px solid var(--y); }
+.pending-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.pending-actions { display: flex; gap: 6px; }
+.pending-actions form { margin: 0; }

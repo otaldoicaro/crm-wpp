@@ -62,6 +62,8 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20), default="agent")  # admin | agent
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # pediu acesso pela tela de login e ainda espera um admin aprovar (fica is_active=False até lá)
+    pending_approval: Mapped[bool] = mapped_column(Boolean, default=False)
     accepting_leads: Mapped[bool] = mapped_column(Boolean, default=True)  # pausa individual na fila
     max_open_leads: Mapped[int] = mapped_column(Integer, default=0)  # 0 = sem limite
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
