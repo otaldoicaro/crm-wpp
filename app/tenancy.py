@@ -45,8 +45,32 @@ def resolve_subdomain(request: Request) -> str | None:
     return None
 
 
+def request_host(request: Request) -> str:
+    return request.headers.get("host", "").split(":")[0].lower()
+
+
 def get_tenant(request: Request, db: Session) -> Tenant | None:
+    # domínio próprio do cliente (ex: crm.novaviseu.com.br) tem prioridade
+    host = request_host(request)
+    if host:
+        tenant = db.query(Tenant).filter(Tenant.custom_domain == host).first()
+        if tenant:
+            return tenant
     subdomain = resolve_subdomain(request)
     if not subdomain:
         return None
     return db.query(Tenant).filter(Tenant.subdomain == subdomain).first()
+
+
+def is_known_host(db: Session, host: str) -> bool:
+    """Usado pelo Caddy antes de emitir certificado HTTPS pra um domínio:
+    só emite pra domínio de cliente cadastrado (evita abuso)."""
+    host = (host or "").lower()
+    if not host:
+        return False
+    if db.query(Tenant.id).filter(Tenant.custom_domain == host).first():
+        return True
+    if BASE_DOMAIN and host.endswith("." + BASE_DOMAIN):
+        sub = host[: -(len(BASE_DOMAIN) + 1)]
+        return db.query(Tenant.id).filter(Tenant.subdomain == sub).first() is not None
+    return False

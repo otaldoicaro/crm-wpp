@@ -1,0 +1,15 @@
+# HTTPS automático (Let's Encrypt) pra qualquer domínio de cliente cadastrado
+# no CRM (tenant.custom_domain ou subdomínio). Antes de emitir o certificado,
+# o Caddy pergunta pro CRM se o domínio é nosso (/internal/caddy-ask).
+{
+	on_demand_tls {
+		ask http://app:8000/internal/caddy-ask
+	}
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+	reverse_proxy app:8000
+}

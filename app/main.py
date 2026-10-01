@@ -1,9 +1,9 @@
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.db import sync_schema
+from app.db import SessionLocal, sync_schema
 from app.services import media_store
 from app.routers import (
     admin_setup,
@@ -16,7 +16,7 @@ from app.routers import (
     webhooks_whatsapp,
     whatsapp_connect,
 )
-from app.tenancy import DEBUG
+from app.tenancy import DEBUG, is_known_host
 
 logging.basicConfig(level=logging.INFO)
 
@@ -57,3 +57,15 @@ app.include_router(team.router)
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/internal/caddy-ask")
+def caddy_ask(domain: str = ""):
+    """O Caddy (HTTPS automático no VPS) pergunta aqui se pode emitir
+    certificado pra `domain`. 200 = é domínio de cliente nosso."""
+    db = SessionLocal()
+    try:
+        ok = is_known_host(db, domain)
+    finally:
+        db.close()
+    return Response(status_code=200 if ok else 404)

@@ -37,6 +37,7 @@ class BootstrapIn(BaseModel):
     tenant_name: str
     admin_email: str
     admin_password: str
+    custom_domain: str = ""  # ex: crm.novaviseu.com.br; vazio = não muda
     theme: str = ""  # chave de app/themes.py (ex: "junta", "novaviseu"); vazio = não muda
     whatsapp: Optional[WhatsAppNumberIn] = None
 
@@ -79,6 +80,11 @@ def bootstrap_tenant(payload: BootstrapIn, x_setup_token: Optional[str] = Header
                         is_lost=is_lost,
                     )
                 )
+            db.commit()
+
+        if payload.custom_domain:
+            tenant.custom_domain = payload.custom_domain.strip().lower()
+            db.add(tenant)
             db.commit()
 
         if payload.theme:

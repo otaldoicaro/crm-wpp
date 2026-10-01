@@ -1,0 +1,45 @@
+# CRM no VPS da Hostinger (ao lado do Evolution API e do armazenamento de mídias).
+# Instalação/atualização: deploy/vps/instalar.sh (não rode este arquivo direto).
+name: crm
+
+services:
+  db:
+    image: postgres:18
+    container_name: crm-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crm
+      POSTGRES_DB: crm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - /opt/crm-data/postgres:/var/lib/postgresql  # a partir do Postgres 18 o volume é a pasta pai
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm -d crm"]
+      interval: 5s
+      retries: 20
+
+  app:
+    build: ../..
+    container_name: crm-app
+    restart: unless-stopped
+    env_file: /opt/crm-config/crm.env
+    environment:
+      PORT: "8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Evolution (8080) e mídias (8333) rodam no próprio VPS
+    depends_on:
+      db:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2
+    container_name: crm-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /opt/crm-data/caddy:/data
+    depends_on:
+      - app

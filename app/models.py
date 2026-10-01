@@ -35,6 +35,8 @@ class Tenant(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(120))
     subdomain: Mapped[str] = mapped_column(String(63), unique=True, index=True)
+    # domínio próprio do cliente (ex: crm.novaviseu.com.br), apontado pro nosso servidor; vazio = só subdomínio
+    custom_domain: Mapped[str] = mapped_column(String(253), default="", index=True)
     # identidade visual do painel (chave de app/themes.py, ex: "junta", "novaviseu")
     theme: Mapped[str] = mapped_column(String(40), default="junta")
     # segredo do link de convite (/convite/{token}) pra vendedor criar o próprio login; vazio = sem link
