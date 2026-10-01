@@ -35,6 +35,9 @@ EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "")  # apikey global do Evolu
 EVOLUTION_WEBHOOK_TOKEN = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "")
 # endereço público deste CRM, usado pra montar a URL do webhook ao criar instâncias
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
+# endereço que o Evolution usa pra entregar mensagens ao CRM. No VPS é a rede
+# interna do Docker (http://crm-app:8000): não depende de DNS/HTTPS do cliente.
+WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", PUBLIC_BASE_URL).rstrip("/")
 
 # Cópia própria das mídias das conversas (S3/MinIO/R2) — ver app/services/media_store.py
 MEDIA_S3_ENDPOINT = os.getenv("MEDIA_S3_ENDPOINT", "")  # ex: http://179.236.226.37:8333 (SeaweedFS no VPS)

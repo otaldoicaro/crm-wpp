@@ -17,7 +17,7 @@ from typing import Optional
 
 import requests
 
-from app.config import EVOLUTION_API_KEY, EVOLUTION_API_URL, EVOLUTION_WEBHOOK_TOKEN, PUBLIC_BASE_URL
+from app.config import EVOLUTION_API_KEY, EVOLUTION_API_URL, EVOLUTION_WEBHOOK_TOKEN, WEBHOOK_BASE_URL
 
 logger = logging.getLogger("evolution_client")
 
@@ -50,7 +50,7 @@ def _request(method: str, path: str, timeout: int = 15, **kwargs) -> dict:
 
 
 def webhook_url() -> str:
-    url = f"{PUBLIC_BASE_URL}/webhooks/evolution"
+    url = f"{WEBHOOK_BASE_URL}/webhooks/evolution"
     if EVOLUTION_WEBHOOK_TOKEN:
         url += f"?token={EVOLUTION_WEBHOOK_TOKEN}"
     return url

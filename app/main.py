@@ -1,6 +1,10 @@
 import logging
 
-from fastapi import FastAPI, Response
+import html
+
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
 
 from app.db import SessionLocal, sync_schema
@@ -42,6 +46,24 @@ async def debug_tenant_cookie_middleware(request, call_next):
 
 # serve app/static em /static — é aqui que fica o whatsapp-bridge.js pro site do cliente
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+@app.exception_handler(StarletteHTTPException)
+async def friendly_http_errors(request: Request, exc: StarletteHTTPException):
+    """Quem abre uma página do painel pelo navegador (ex: link no WhatsApp)
+    sem estar logado vai pra tela de login, em vez de ver um JSON técnico."""
+    wants_html = request.method == "GET" and "text/html" in request.headers.get("accept", "")
+    if wants_html and exc.status_code == 401:
+        return RedirectResponse(url="/login", status_code=302)
+    if wants_html and exc.status_code in (403, 404):
+        message = html.escape(str(exc.detail or "Página não encontrada"))
+        return HTMLResponse(
+            "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>"
+            "<div style='font-family:sans-serif;max-width:420px;margin:15vh auto;padding:0 20px;text-align:center'>"
+            f"<p style='font-size:1.1rem'>{message}</p><p><a href='/'>Voltar pro início</a></p></div>",
+            status_code=exc.status_code,
+        )
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, media_type="application/json; charset=utf-8")
+
 
 app.include_router(admin_setup.router)
 app.include_router(webhooks_whatsapp.router)

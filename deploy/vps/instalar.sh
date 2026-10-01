@@ -49,6 +49,9 @@ done
 say "Baixando o código do CRM"
 if [ -d $CODE_DIR/.git ]; then git -C $CODE_DIR pull -q --ff-only; else git clone -q $REPO $CODE_DIR; fi
 
+EVO=$(docker ps --format '{{.Names}} {{.Image}}' | awk '/evolution-api/ && !/manager/ {print $1; exit}')
+[ -n "$EVO" ] || fail "container do Evolution API não encontrado"
+
 # ---------- configuração (só na 1ª vez) ----------
 FIRST_RUN=0
 if [ ! -f $ENV_FILE ]; then
@@ -57,8 +60,6 @@ if [ ! -f $ENV_FILE ]; then
   DOMAIN=$(ask "Endereço do CRM deste cliente" "crm.novaviseu.com.br")
   TENANT=$(ask "Identificador do cliente no CRM" "novaviseu")
 
-  EVO=$(docker ps --format '{{.Names}} {{.Image}}' | awk '/evolution-api/ && !/manager/ {print $1; exit}')
-  [ -n "$EVO" ] || fail "container do Evolution API não encontrado"
   EVO_KEY=$(docker inspect "$EVO" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^AUTHENTICATION_API_KEY=//p')
   [ -n "$EVO_KEY" ] || fail "não achei a apikey do Evolution no container $EVO"
   MEDIA_SECRET=$(docker inspect crm-midias --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^AWS_SECRET_ACCESS_KEY=//p' || true)
@@ -89,6 +90,8 @@ CFG
   echo "DATABASE_URL=postgresql://crm:$PGPASS@db:5432/crm" >> $ENV_FILE
   chmod 600 $ENV_FILE
 fi
+# instalações antigas: o Evolution entrega as mensagens pela rede interna do Docker
+grep -q '^WEBHOOK_BASE_URL=' $ENV_FILE || echo "WEBHOOK_BASE_URL=http://crm-app:8000" >> $ENV_FILE
 set -a; . $ENV_FILE; set +a
 cd $COMPOSE_DIR
 
@@ -124,6 +127,8 @@ fi
 # ---------- CRM + HTTPS ----------
 say "Subindo o CRM e o HTTPS (a primeira vez demora uns minutos)"
 $DC up -d --build app caddy
+# coloca o Evolution na mesma rede interna do CRM (webhook direto em http://crm-app:8000)
+docker network connect crm_default "$EVO" 2>/dev/null || true
 for _ in $(seq 1 60); do
   docker exec crm-app python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)" >/dev/null 2>&1 && break
   sleep 3
