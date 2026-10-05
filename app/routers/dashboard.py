@@ -182,6 +182,30 @@ def delete_lead(
     return RedirectResponse(url="/?excluido=1", status_code=302)
 
 
+@router.post("/leads/excluir-em-massa")
+def bulk_delete_leads(
+    lead_ids: list[str] = Form(default=[]),
+    voltar: str = Form("/dashboard"),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Admin: manda vários leads pra Lixeira de uma vez (cada um registra quem/quando)."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Só o admin pode excluir em massa")
+    now = datetime.datetime.utcnow()
+    count = (
+        db.query(Lead)
+        .filter(Lead.tenant_id == tenant.id, Lead.id.in_(lead_ids), Lead.deleted_at.is_(None))
+        .update({Lead.deleted_at: now, Lead.deleted_by_user_id: user.id}, synchronize_session=False)
+        if lead_ids
+        else 0
+    )
+    db.commit()
+    back = voltar if voltar.startswith("/") else "/dashboard"
+    return RedirectResponse(url=f"{back}{'&' if '?' in back else '?'}excluidos={count}", status_code=302)
+
+
 @router.get("/lixeira", response_class=HTMLResponse)
 def trash_view(
     request: Request,
@@ -352,7 +376,15 @@ def inbox_thread(
 INBOX_LIST_LIMIT = 60  # com milhares de leads/mês a lista inteira pesaria; o resto se acha pela busca
 
 
-def _inbox_context(db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str], busca: str = "") -> dict:
+def _inbox_context(
+    db: Session,
+    tenant: Tenant,
+    user: User,
+    selected_lead_id: Optional[str],
+    busca: str = "",
+    numero: str = "",
+    vendedor: str = "",
+) -> dict:
     query = (
         db.query(Conversation)
         .join(Lead, Lead.id == Conversation.lead_id)
@@ -361,6 +393,13 @@ def _inbox_context(db: Session, tenant: Tenant, user: User, selected_lead_id: Op
     if user.role != "admin":
         # no rodízio cada vendedor só enxerga os leads que caíram pra ele; admin vê tudo
         query = query.filter(Lead.assigned_user_id == user.id)
+        numero = vendedor = ""
+    if numero:
+        query = query.filter(Conversation.whatsapp_number_id == numero)
+    if vendedor == "sem":
+        query = query.filter(Lead.assigned_user_id.is_(None))
+    elif vendedor:
+        query = query.filter(Lead.assigned_user_id == vendedor)
     busca = busca.strip()
     if busca:
         digits = "".join(ch for ch in busca if ch.isdigit())
@@ -398,6 +437,20 @@ def _inbox_context(db: Session, tenant: Tenant, user: User, selected_lead_id: Op
             "list_sig": "|".join(f"{c.id}:{c.last_message_at.isoformat()}" for c in conversations),
             "list_truncated": len(conversations) >= INBOX_LIST_LIMIT,
             "busca": busca,
+            "numero": numero,
+            "vendedor": vendedor,
+            "filter_numbers": db.query(WhatsAppNumber)
+            .filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
+            .order_by(WhatsAppNumber.label)
+            .all()
+            if user.role == "admin"
+            else [],
+            "filter_sellers": db.query(User)
+            .filter(User.tenant_id == tenant.id, User.pending_approval.is_(False))
+            .order_by(User.name)
+            .all()
+            if user.role == "admin"
+            else [],
             "msg_sig": f"{len(messages)}:{messages[-1].id}:{messages[-1].body}" if messages else "0",
             "tenant": tenant,
             "user": user,
@@ -412,15 +465,30 @@ def _inbox_context(db: Session, tenant: Tenant, user: User, selected_lead_id: Op
     }
 
 
+INBOX_FILTER_COOKIE = "inbox_filtro"
+
+
 def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]):
-    ctx = _inbox_context(db, tenant, user, selected_lead_id, request.query_params.get("busca", ""))
-    return templates.TemplateResponse(request, "inbox.html", ctx)
+    # filtros de número/vendedor ficam lembrados (cookie) ao abrir conversa, responder, etc.
+    qp = request.query_params
+    changed = "numero" in qp or "vendedor" in qp
+    if changed:
+        numero, vendedor = qp.get("numero", ""), qp.get("vendedor", "")
+    else:
+        numero, _, vendedor = request.cookies.get(INBOX_FILTER_COOKIE, "|").partition("|")
+    ctx = _inbox_context(db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor)
+    response = templates.TemplateResponse(request, "inbox.html", ctx)
+    if changed:
+        response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}", httponly=True, samesite="lax")
+    return response
 
 
 @router.get("/inbox-atualizar")
 def inbox_refresh(
     lead: str = "",
     busca: str = "",
+    numero: str = "",
+    vendedor: str = "",
     ls: str = "",
     ms: str = "",
     db: Session = Depends(get_db),
@@ -430,7 +498,7 @@ def inbox_refresh(
     """Chamado a cada poucos segundos pela tela do Inbox: devolve a lista e a
     conversa aberta já desenhadas, com uma "assinatura" pra tela só trocar o
     que mudou (mensagem nova do cliente ou enviada pelo celular)."""
-    ctx = _inbox_context(db, tenant, user, lead or None, busca)
+    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor)
     if ctx["list_sig"] == ls and ctx["msg_sig"] == ms:
         return JSONResponse({"changed": False})  # nada novo: resposta mínima, sem desenhar nada
     return JSONResponse(

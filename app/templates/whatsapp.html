@@ -73,6 +73,11 @@
       {% else %}
         <button class="btn small wa-connect-btn" type="button">Conectar agora</button>
       {% endif %}
+      {% if is_admin %}
+        <form method="post" action="/whatsapp/{{ n.id }}/remover" onsubmit="return confirm('Remover {{ n.label|e }} do CRM?\n\nO número é desconectado e sai da lista e do rodízio. As conversas antigas continuam salvas no CRM.')">
+          <button class="btn ghost small" type="submit">Remover número</button>
+        </form>
+      {% endif %}
     </div>
   </div>
   {% endfor %}

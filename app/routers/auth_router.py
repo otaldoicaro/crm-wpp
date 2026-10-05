@@ -46,7 +46,11 @@ def login_submit(
 
     token = create_session_token(user.id, tenant.id)
     # vendedor que ainda não conectou o WhatsApp cai direto na tela de conectar
-    has_number = db.query(WhatsAppNumber.id).filter(WhatsAppNumber.owner_user_id == user.id).first()
+    has_number = (
+        db.query(WhatsAppNumber.id)
+        .filter(WhatsAppNumber.owner_user_id == user.id, WhatsAppNumber.is_active.is_(True))
+        .first()
+    )
     response = RedirectResponse(url="/" if user.role == "admin" or has_number else "/whatsapp", status_code=302)
     response.set_cookie(SESSION_COOKIE_NAME, token, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 14)
     return response

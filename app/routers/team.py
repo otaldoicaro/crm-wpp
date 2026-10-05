@@ -52,7 +52,9 @@ def team_page(
     numbers_by_owner = {
         n.owner_user_id: n
         for n in db.query(WhatsAppNumber).filter(
-            WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.owner_user_id.isnot(None)
+            WhatsAppNumber.tenant_id == tenant.id,
+            WhatsAppNumber.owner_user_id.isnot(None),
+            WhatsAppNumber.is_active.is_(True),
         )
     }
     return templates.TemplateResponse(

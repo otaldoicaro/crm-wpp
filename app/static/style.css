@@ -321,3 +321,15 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .toolbar-links { display: flex; gap: 6px; flex-wrap: wrap; }
 .lead-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .lead-actions form { margin: 0; }
+.wa-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.check-col { width: 34px; }
+.check-col input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--ink); }
+.bulk-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 10px; border-radius: 10px; background: var(--y-soft); border: 1px solid var(--y); }
+.bulk-bar[hidden] { display: none; }
+.confirm-dialog { border: 0; border-radius: var(--radius); padding: 22px; max-width: 440px; width: calc(100% - 32px); background: var(--panel); color: var(--text); box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
+.confirm-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+.confirm-dialog h3 { margin-top: 0; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.inbox-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
+.inbox-filters select { flex: 1 1 140px; width: auto; padding: 7px 10px; font-size: .8rem; border-radius: 999px; }
+.inbox-filters-clear { font-size: .78rem; }

@@ -191,11 +191,22 @@
     {% endfor %}
   </div>
 
+  {% set is_admin = user.role == "admin" %}
+  {% if is_admin %}
+  <form method="post" action="/leads/excluir-em-massa" id="bulkForm">
+    <input type="hidden" name="voltar" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query else '' }}">
+    <div class="bulk-bar" id="bulkBar" hidden>
+      <span><b id="bulkCount">0</b> selecionado(s)</span>
+      <button type="button" class="btn danger small" id="bulkOpen">Excluir selecionados</button>
+      <button type="button" class="btn ghost small" id="bulkClear">Limpar seleção</button>
+    </div>
+  {% endif %}
   <table class="table-simple">
-    <thead><tr><th>Data</th><th>Origem</th><th>Campanha</th><th>Nome</th><th>Telefone</th><th>Etapa</th></tr></thead>
+    <thead><tr>{% if is_admin %}<th class="check-col"><input type="checkbox" id="checkAll" title="Selecionar todos"></th>{% endif %}<th>Data</th><th>Origem</th><th>Campanha</th><th>Nome</th><th>Telefone</th><th>Etapa</th></tr></thead>
     <tbody>
       {% for lead in table_leads %}
       <tr style="cursor:pointer" onclick="window.location='{{ '/inbox/' if lead.source == 'whatsapp' else '/leads/' }}{{ lead.id }}'">
+        {% if is_admin %}<td class="check-col" onclick="event.stopPropagation()"><input type="checkbox" class="lead-check" name="lead_ids" value="{{ lead.id }}" data-name="{{ lead.name or lead.phone or '(sem nome)' }}"></td>{% endif %}
         <td>{{ lead.created_at|hora("%d/%m %H:%M") }}</td>
         <td>{{ m.platform_badge(lead_platforms[lead.id], platform_labels[lead_platforms[lead.id]]) }}</td>
         <td class="muted">{{ (lead.attribution.utm_campaign if lead.attribution else "") or "—" }}</td>
@@ -204,9 +215,49 @@
         <td>{{ stage_by_id[lead.stage_id].name if lead.stage_id in stage_by_id else "—" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="muted">Nenhum lead encontrado com esses filtros.</td></tr>
+      <tr><td colspan="7" class="muted">Nenhum lead encontrado com esses filtros.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  {% if is_admin %}
+    <dialog class="confirm-dialog" id="bulkDialog">
+      <h3>Excluir <span id="dlgCount"></span> lead(s)?</h3>
+      <p id="dlgNames" class="muted"></p>
+      <p>Eles somem do Pipeline, Inbox e Dashboard e vão pra <b>Lixeira</b>, com registro de quem excluiu e quando. Dá pra restaurar depois.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="bulkCancel">Cancelar</button>
+        <button type="submit" class="btn danger" id="bulkConfirm">Sim, excluir</button>
+      </div>
+    </dialog>
+  </form>
+  <script>
+  (function () {
+    var checks = Array.prototype.slice.call(document.querySelectorAll(".lead-check"));
+    var all = document.getElementById("checkAll");
+    var bar = document.getElementById("bulkBar");
+    var dialog = document.getElementById("bulkDialog");
+    function selected() { return checks.filter(function (c) { return c.checked; }); }
+    function refresh() {
+      var n = selected().length;
+      bar.hidden = n === 0;
+      document.getElementById("bulkCount").textContent = n;
+      all.checked = n > 0 && n === checks.length;
+      all.indeterminate = n > 0 && n < checks.length;
+    }
+    checks.forEach(function (c) { c.addEventListener("change", refresh); });
+    all.addEventListener("change", function () { checks.forEach(function (c) { c.checked = all.checked; }); refresh(); });
+    document.getElementById("bulkClear").addEventListener("click", function () { checks.forEach(function (c) { c.checked = false; }); refresh(); });
+    document.getElementById("bulkOpen").addEventListener("click", function () {
+      var sel = selected();
+      var names = sel.slice(0, 5).map(function (c) { return c.dataset.name; }).join(", ");
+      document.getElementById("dlgCount").textContent = sel.length;
+      document.getElementById("dlgNames").textContent = names + (sel.length > 5 ? " e mais " + (sel.length - 5) : "");
+      document.getElementById("bulkConfirm").textContent = "Sim, excluir " + sel.length + " lead(s)";
+      dialog.showModal();
+    });
+    document.getElementById("bulkCancel").addEventListener("click", function () { dialog.close(); });
+  })();
+  </script>
+  {% endif %}
 </div>
 {% endblock %}

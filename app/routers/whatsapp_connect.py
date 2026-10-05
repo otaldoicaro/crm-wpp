@@ -61,7 +61,9 @@ def whatsapp_page(
     user: User = Depends(current_user_required),
 ):
     query = db.query(WhatsAppNumber).filter(
-        WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.provider == "evolution"
+        WhatsAppNumber.tenant_id == tenant.id,
+        WhatsAppNumber.provider == "evolution",
+        WhatsAppNumber.is_active.is_(True),
     )
     if user.role != "admin":
         query = query.filter(WhatsAppNumber.owner_user_id == user.id)
@@ -96,7 +98,11 @@ def add_number(
         # vendedor só conecta o próprio WhatsApp, e um só
         existing = (
             db.query(WhatsAppNumber)
-            .filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.owner_user_id == user.id)
+            .filter(
+                WhatsAppNumber.tenant_id == tenant.id,
+                WhatsAppNumber.owner_user_id == user.id,
+                WhatsAppNumber.is_active.is_(True),
+            )
             .first()
         )
         if existing:
@@ -205,3 +211,26 @@ def set_owner(
     db.add(number)
     db.commit()
     return RedirectResponse(url="/whatsapp", status_code=302)
+
+
+@router.post("/whatsapp/{number_id}/remover")
+def remove_number(
+    number_id: str,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Tira o número do CRM de vez (ex: número de teste, vendedor que saiu, número
+    bloqueado). Desconecta e apaga no Evolution; as conversas antigas continuam no CRM."""
+    _require_admin(user)
+    number = _get_number(db, tenant, user, number_id)
+    for action in (evolution_client.logout, evolution_client.delete_instance):
+        try:
+            action(number.evolution_instance)
+        except evolution_client.EvolutionError:
+            pass  # já desconectado/apagado
+    number.is_active = False
+    number.connection_state = "close"
+    db.add(number)
+    db.commit()
+    return RedirectResponse(url="/whatsapp?salvo=1", status_code=302)

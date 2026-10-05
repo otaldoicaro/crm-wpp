@@ -4,6 +4,20 @@
 {% block content %}
 <div class="inbox-layout {{ 'with-detail' if selected_lead else '' }}">
   <div class="inbox-side">
+  {% if user.role == "admin" %}
+  <form class="inbox-filters" method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
+    <select name="numero" onchange="this.form.submit()" title="Filtrar por número">
+      <option value="">Todos os números</option>
+      {% for n in filter_numbers %}<option value="{{ n.id }}" {{ "selected" if numero == n.id }}>{{ n.label }}{{ " (desconectado)" if n.provider == "evolution" and n.connection_state != "open" }}</option>{% endfor %}
+    </select>
+    <select name="vendedor" onchange="this.form.submit()" title="Filtrar por vendedor">
+      <option value="">Toda a equipe</option>
+      {% for s in filter_sellers %}<option value="{{ s.id }}" {{ "selected" if vendedor == s.id }}>{{ s.name }}</option>{% endfor %}
+      <option value="sem" {{ "selected" if vendedor == "sem" }}>Sem vendedor</option>
+    </select>
+    {% if numero or vendedor %}<a class="inbox-filters-clear" href="{{ request.url.path }}?numero=&vendedor=">Limpar filtros</a>{% endif %}
+  </form>
+  {% endif %}
   <form class="inbox-search" method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
     <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone..." autocomplete="off">
   </form>
@@ -132,12 +146,15 @@
   var listSig = {{ list_sig|tojson }};
   var msgSig = {{ msg_sig|tojson }};
   var busca = {{ busca|tojson }};
+  var numero = {{ numero|tojson }};
+  var vendedor = {{ vendedor|tojson }};
   var busy = false;
   function nearBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 120; }
   function tick() {
     if (busy || document.hidden) return;
     busy = true;
     var url = "/inbox-atualizar?lead=" + encodeURIComponent(lead) + "&busca=" + encodeURIComponent(busca) +
+      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) +
       "&ls=" + encodeURIComponent(listSig) + "&ms=" + encodeURIComponent(msgSig);
     fetch(url, { headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })

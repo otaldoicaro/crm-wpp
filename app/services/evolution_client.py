@@ -185,3 +185,8 @@ def profile_picture_url(instance: str, phone_digits: str) -> str:
     A URL é do servidor do WhatsApp e expira em alguns dias."""
     body = _request("POST", f"/chat/fetchProfilePictureUrl/{instance}", json={"number": phone_digits})
     return body.get("profilePictureUrl") or ""
+
+
+def delete_instance(instance: str) -> None:
+    """Apaga a instância no Evolution (o número some de lá; o histórico fica no CRM)."""
+    _request("DELETE", f"/instance/delete/{instance}")
