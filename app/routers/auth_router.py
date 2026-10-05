@@ -88,6 +88,13 @@ def request_access_submit(
     if len(password) < 6:
         return render("A senha precisa ter pelo menos 6 caracteres.", status_code=400)
     existing = db.query(User).filter(User.tenant_id == tenant.id, User.email == email).first()
+    if existing and existing.removed_at:
+        # já foi da equipe e foi removido: vira um pedido novo, que o admin aprova de novo
+        existing.name, existing.password_hash = name.strip(), hash_password(password)
+        existing.removed_at, existing.pending_approval, existing.is_active, existing.role = None, True, False, "agent"
+        db.add(existing)
+        db.commit()
+        return render(sent=True)
     if existing:
         if existing.pending_approval:
             return render(sent=True)  # já pediu antes; só reforça a mensagem

@@ -8,17 +8,21 @@
   o cliente, então funciona mesmo sem subdomínio próprio.
 """
 
+import datetime
 import secrets
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import create_session_token, hash_password
 from app.config import PUBLIC_BASE_URL, SESSION_COOKIE_NAME
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
-from app.models import Tenant, User, WhatsAppNumber
+from app.models import Lead, PipelineStage, Tenant, User, WhatsAppNumber
+from app.services import evolution_client
+from app.services.distribution import assign_lead
 from app.tenancy import DEBUG
 from app.templating import templates
 
@@ -47,8 +51,16 @@ def team_page(
 ):
     _require_admin(user)
     everyone = db.query(User).filter(User.tenant_id == tenant.id).order_by(User.is_active.desc(), User.name).all()
-    pending = [u for u in everyone if u.pending_approval]
-    users = [u for u in everyone if not u.pending_approval]
+    pending = [u for u in everyone if u.pending_approval and not u.removed_at]
+    removed = [u for u in everyone if u.removed_at]
+    users = [u for u in everyone if not u.pending_approval and not u.removed_at]
+    terminal = [s.id for s in db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id) if s.is_won or s.is_lost]
+    open_leads = dict(
+        db.query(Lead.assigned_user_id, func.count(Lead.id))
+        .filter(Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.stage_id.notin_(terminal))
+        .group_by(Lead.assigned_user_id)
+        .all()
+    )
     numbers_by_owner = {
         n.owner_user_id: n
         for n in db.query(WhatsAppNumber).filter(
@@ -66,6 +78,8 @@ def team_page(
             "active_nav": "equipe",
             "users": users,
             "pending": pending,
+            "removed": removed,
+            "open_leads": open_leads,
             "numbers_by_owner": numbers_by_owner,
             "invite_link": f"{PUBLIC_BASE_URL}/convite/{_ensure_invite_token(db, tenant)}",
         },
@@ -85,10 +99,32 @@ def new_invite_link(
     return RedirectResponse(url="/equipe", status_code=302)
 
 
+@router.post("/equipe/niveis")
+async def save_roles(
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Salva os níveis escolhidos na tabela (campo role_<id> = agent | admin).
+    O próprio nível não muda por aqui (evita o último admin se rebaixar)."""
+    _require_admin(user)
+    form = await request.form()
+    for member in db.query(User).filter(User.tenant_id == tenant.id, User.id != user.id):
+        role = form.get(f"role_{member.id}")
+        if role in ("agent", "admin") and role != member.role:
+            member.role = role
+            db.add(member)
+    db.commit()
+    return RedirectResponse(url="/equipe?salvo=1", status_code=302)
+
+
 @router.post("/equipe/{user_id}/{action}")
 def team_action(
     user_id: str,
     action: str,
+    repassar_leads: str = Form(""),
+    remover_whatsapp: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -108,11 +144,48 @@ def team_action(
         member.accepting_leads = not member.accepting_leads
     elif action == "ativo" and member.id != user.id:
         member.is_active = not member.is_active
-    elif action == "nivel" and member.id != user.id:  # ninguém tira o próprio admin (evita ficar sem nenhum)
-        member.role = "agent" if member.role == "admin" else "admin"
+    elif action == "remover" and member.id != user.id:
+        _remove_member(db, tenant, member, bool(repassar_leads), bool(remover_whatsapp))
+        return RedirectResponse(url="/equipe?salvo=1", status_code=302)
+    elif action == "restaurar" and member.removed_at:
+        member.removed_at = None
+        member.is_active = True
+        member.accepting_leads = True
     db.add(member)
     db.commit()
     return RedirectResponse(url="/equipe", status_code=302)
+
+
+def _remove_member(db: Session, tenant: Tenant, member: User, reassign: bool, drop_whatsapp: bool) -> None:
+    member.removed_at = datetime.datetime.utcnow()
+    member.is_active = False  # não entra mais e sai do rodízio
+    member.accepting_leads = False
+    member.pending_approval = False
+    db.add(member)
+    db.commit()
+
+    if reassign:
+        terminal = {s.id for s in db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id) if s.is_won or s.is_lost}
+        for lead in db.query(Lead).filter(
+            Lead.tenant_id == tenant.id, Lead.assigned_user_id == member.id, Lead.deleted_at.is_(None)
+        ):
+            if lead.stage_id not in terminal:
+                assign_lead(db, lead)  # rodízio entre quem continua ativo
+
+    if drop_whatsapp:
+        for number in db.query(WhatsAppNumber).filter(
+            WhatsAppNumber.owner_user_id == member.id, WhatsAppNumber.is_active.is_(True)
+        ):
+            if number.provider == "evolution":
+                for call in (evolution_client.logout, evolution_client.delete_instance):
+                    try:
+                        call(number.evolution_instance)
+                    except evolution_client.EvolutionError:
+                        pass
+            number.is_active = False
+            number.connection_state = "close"
+            db.add(number)
+        db.commit()
 
 
 def _tenant_by_invite(db: Session, token: str) -> Tenant:
@@ -147,16 +220,13 @@ def invite_submit(
 
     if len(password) < 6:
         return error("A senha precisa ter pelo menos 6 caracteres.")
-    if db.query(User).filter(User.tenant_id == tenant.id, User.email == email).first():
+    member = db.query(User).filter(User.tenant_id == tenant.id, User.email == email).first()
+    if member and not member.removed_at:
         return error("Já existe um login com esse e-mail. Use a tela de entrar.")
-
-    member = User(
-        tenant_id=tenant.id,
-        name=name.strip(),
-        email=email,
-        password_hash=hash_password(password),
-        role="agent",
-    )
+    if member is None:
+        member = User(tenant_id=tenant.id, email=email)
+    member.name, member.password_hash, member.role = name.strip(), hash_password(password), "agent"
+    member.removed_at, member.is_active, member.pending_approval, member.accepting_leads = None, True, False, True
     db.add(member)
     db.commit()
     db.refresh(member)

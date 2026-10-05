@@ -66,6 +66,9 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # pediu acesso pela tela de login e ainda espera um admin aprovar (fica is_active=False até lá)
     pending_approval: Mapped[bool] = mapped_column(Boolean, default=False)
+    # removido da equipe (saiu da empresa): some da tela Equipe, não entra, sai do rodízio.
+    # O cadastro fica (histórico de quem atendeu/enviou), e dá pra restaurar em "Removidos".
+    removed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     accepting_leads: Mapped[bool] = mapped_column(Boolean, default=True)  # pausa individual na fila
     max_open_leads: Mapped[int] = mapped_column(Integer, default=0)  # 0 = sem limite
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)

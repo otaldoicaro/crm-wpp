@@ -333,3 +333,16 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .inbox-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
 .inbox-filters select { flex: 1 1 140px; width: auto; padding: 7px 10px; font-size: .8rem; border-radius: 999px; }
 .inbox-filters-clear { font-size: .78rem; }
+.role-select { width: auto; padding: 6px 10px; font-size: .82rem; }
+.role-select.role-changed { border-color: var(--y); box-shadow: 0 0 0 3px var(--y-soft); font-weight: 800; }
+.roles-save { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--y-soft); border: 1px solid var(--y); }
+.roles-save[hidden] { display: none; }
+.roles-save span { margin-right: auto; font-weight: 700; font-size: .88rem; }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.row-actions form { margin: 0; }
+.removed-card { margin-top: 14px; }
+.removed-card summary { cursor: pointer; }
+.check-line { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0; color: var(--text); font-weight: 500; }
+.check-line[hidden] { display: none; }
+.check-line input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--ink); }
+#rolesList { padding-left: 20px; }
