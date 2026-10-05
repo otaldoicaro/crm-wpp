@@ -1,12 +1,16 @@
 """Mostra os logins de um cliente e define uma senha nova pra um deles.
 
 Rodar no terminal do VPS (Web console da Hostinger):
-    docker exec -it crm-app python scripts/redefinir_senha.py
+    docker exec -it crm-app python -m scripts.redefinir_senha
 
 A senha é digitada escondida (não aparece na tela) e nunca fica salva em texto.
 """
 
 import getpass
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # pasta do CRM, pra achar "app"
 
 from app.auth import hash_password
 from app.db import SessionLocal
