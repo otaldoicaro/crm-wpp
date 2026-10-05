@@ -45,7 +45,7 @@ def main() -> None:
             data = json.load(resp)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
-            print("❌ Token errado (ou ADMIN_SETUP_TOKEN não configurado no Render).")
+            print("❌ Token errado (confira em /opt/crm-config/crm.env no VPS).")
         else:
             print(f"❌ Erro {exc.code}: {exc.read().decode()[:300]}")
         return
