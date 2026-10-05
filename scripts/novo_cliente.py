@@ -12,7 +12,7 @@ import json
 import urllib.error
 import urllib.request
 
-CRM_URL = "https://crm-junta.onrender.com"
+CRM_URL = "https://crm.novaviseu.com.br"  # qualquer endereço do nosso VPS serve (o cliente vem do "identificador")
 THEMES = ["junta", "novaviseu"]
 
 
@@ -28,7 +28,7 @@ def main() -> None:
     theme = ask(f"Tema visual {THEMES}", "novaviseu")
     email = ask("E-mail do gestor (login de admin)")
     password = getpass.getpass("Senha pra esse gestor (não aparece ao digitar): ")
-    token = getpass.getpass("ADMIN_SETUP_TOKEN (copie do Render > Environment; não aparece ao colar): ")
+    token = getpass.getpass("ADMIN_SETUP_TOKEN (no VPS: grep ADMIN_SETUP_TOKEN /opt/crm-config/crm.env; não aparece ao colar): ")
 
     payload = json.dumps(
         {"subdomain": subdomain, "tenant_name": name, "theme": theme, "admin_email": email, "admin_password": password}
@@ -53,7 +53,7 @@ def main() -> None:
     print("\n✅ Pronto!")
     print(f"   Cliente: {name} ({'criado agora' if data.get('created_tenant') else 'já existia, atualizado'})")
     print(f"   Tema: {data.get('theme')}")
-    print(f"   Login do gestor: {CRM_URL}/login?tenant={data.get('subdomain')}")
+    print(f"   Login do gestor: https://{data.get('subdomain')}.<IP-com-traços>.sslip.io/login (ou o domínio próprio do cliente)")
     print("   Depois de entrar: menu Equipe > copie o link de convite e mande pros vendedores.\n")
 
 
