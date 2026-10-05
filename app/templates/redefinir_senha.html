@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Criar senha nova{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <div class="card login-card">
+    {{ theme_for(tenant).logo_login }}
+    {% if not valid %}
+      <h2>Link inválido ou expirado</h2>
+      <p>Esse link já foi usado ou passou de 1 hora. Peça um novo.</p>
+      <a class="btn" href="/esqueci-senha" style="display:block; text-align:center">Pedir link novo</a>
+    {% else %}
+      <h2>Criar senha nova</h2>
+      {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+      <form method="post" action="/redefinir-senha/{{ token }}">
+        <p><label>Senha nova (mínimo 6 caracteres)<br><input type="password" name="password" required minlength="6" autocomplete="new-password"></label></p>
+        <p><label>Repita a senha nova<br><input type="password" name="password2" required minlength="6" autocomplete="new-password"></label></p>
+        <button class="btn" type="submit" style="width:100%">Salvar senha nova</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

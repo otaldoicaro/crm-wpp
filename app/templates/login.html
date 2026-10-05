@@ -5,12 +5,14 @@
   <div class="card login-card">
     {{ theme_for(tenant).logo_login }}
     <h2>Entrar</h2>
+    {% if request.query_params.get("senha") %}<div class="ok-box">✅ Senha alterada. Entre com a senha nova.</div>{% endif %}
     {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
     <form method="post" action="/login">
       <p><label>E-mail<br><input type="email" name="email" required></label></p>
       <p><label>Senha<br><input type="password" name="password" required></label></p>
       <button class="btn" type="submit" style="width:100%">Entrar</button>
     </form>
+    <p style="text-align:center; margin:12px 0 0"><a href="/esqueci-senha">Esqueceu a senha?</a></p>
     <p class="muted" style="text-align:center; margin:16px 0 0">Não tem acesso? <a href="/solicitar-acesso">Solicitar acesso</a></p>
   </div>
 </div>

@@ -50,3 +50,11 @@ MEDIA_RETENTION_DAYS = int(os.getenv("MEDIA_RETENTION_DAYS", "90"))
 # Arquivamento automático do Pipeline (app/services/archiver.py)
 ARCHIVE_DONE_DAYS = int(os.getenv("ARCHIVE_DONE_DAYS", "30"))  # Ganho/Perdido parados há X dias
 ARCHIVE_IDLE_DAYS = int(os.getenv("ARCHIVE_IDLE_DAYS", "60"))  # em aberto e sem nenhuma atividade há X dias
+
+# E-mail (só pro "Esqueceu a senha?"). Ex: Google Workspace com senha de app:
+# SMTP_HOST=smtp.gmail.com SMTP_PORT=587 SMTP_USER=nao-responda@agenciajunta.com.br
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM = os.getenv("SMTP_FROM", "") or SMTP_USER

@@ -208,6 +208,7 @@ def invite_submit(
     name: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
+    password2: str = Form(""),
     db: Session = Depends(get_db),
 ):
     tenant = _tenant_by_invite(db, token)
@@ -220,6 +221,8 @@ def invite_submit(
 
     if len(password) < 6:
         return error("A senha precisa ter pelo menos 6 caracteres.")
+    if password != password2:
+        return error("As duas senhas não são iguais. Digite de novo.")
     member = db.query(User).filter(User.tenant_id == tenant.id, User.email == email).first()
     if member and not member.removed_at:
         return error("Já existe um login com esse e-mail. Use a tela de entrar.")

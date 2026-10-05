@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Esqueceu a senha{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <div class="card login-card">
+    {{ theme_for(tenant).logo_login }}
+    {% if sent %}
+      <h2>Confira seu e-mail 📬</h2>
+      <p>Se esse e-mail tiver cadastro no CRM, mandamos agora um link pra criar uma senha nova. Ele vale por <b>1 hora</b>.</p>
+      <p class="muted">Não chegou em alguns minutos? Olhe a caixa de spam ou peça pro gestor redefinir sua senha.</p>
+      <a class="btn" href="/login" style="display:block; text-align:center">Voltar pra tela de entrar</a>
+    {% else %}
+      <h2>Esqueceu a senha?</h2>
+      <p class="muted" style="margin-top:-4px">Digite o e-mail do seu login. Vamos mandar um link pra você criar uma senha nova.</p>
+      {% if not email_ready %}<div class="error-box">O envio de e-mail ainda não foi configurado neste CRM. Peça pro gestor redefinir sua senha.</div>{% endif %}
+      <form method="post" action="/esqueci-senha">
+        <p><label>E-mail<br><input type="email" name="email" required autocomplete="email"></label></p>
+        <button class="btn" type="submit" style="width:100%">Enviar link</button>
+      </form>
+      <p class="muted" style="text-align:center; margin:16px 0 0"><a href="/login">Lembrei a senha</a></p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

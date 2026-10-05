@@ -346,3 +346,4 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .check-line[hidden] { display: none; }
 .check-line input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--ink); }
 #rolesList { padding-left: 20px; }
+.ok-box { background: var(--success-bg); border: 1px solid var(--success); color: var(--success); padding: 10px 12px; border-radius: 8px; font-size: .85rem; font-weight: 700; margin-bottom: 12px; }
