@@ -1,0 +1,27 @@
+{% import "_macros.html" as m %}
+{% for col in columns %}
+<div class="team-col">
+  <div class="team-col-head">
+    <div><b>{{ col.seller.name }}</b> <span class="role-badge {{ 'admin' if col.seller.role == 'admin' else 'agent' }}">{{ "Admin" if col.seller.role == "admin" else "Vendedor" }}</span></div>
+    <div class="team-col-stats">
+      <span class="rt-tag {{ 'late' if col.waiting else '' }}">⏳ {{ col.waiting }} aguardando resposta</span>
+      <span class="rt-tag">💬 {{ col.today }} conversas hoje</span>
+    </div>
+  </div>
+  <div class="team-col-list">
+    {% for conv in col.convs %}
+      {% set lead = conv.lead %}
+      <a class="inbox-list-item" href="/inbox/{{ lead.id }}?vendedor={{ col.seller.id }}&numero=">
+        {{ m.avatar(lead) }}
+        <div class="inbox-list-item-body">
+          <div class="row1"><span class="name">{{ lead.name or lead.phone }}{% if lead.tag %} <span class="tag-badge {{ lead.tag }}">{{ "Cliente" if lead.tag == "cliente" else "Outro" }}</span>{% endif %}</span><span class="time">{{ conv.last_message_at|hora("%d/%m %H:%M") }}</span></div>
+          <div class="preview">{{ conv.last_preview or "—" }}</div>
+          {{ m.tempo_atendimento(lead, closed=lead.stage and (lead.stage.is_won or lead.stage.is_lost)) }}
+        </div>
+      </a>
+    {% else %}
+      <div class="kanban-empty" style="padding:20px">Sem conversas ainda.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}

@@ -8,13 +8,13 @@ from typing import Optional
 import requests
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app.services import evolution_client, media_store, messaging, response_times
+from app.services import evolution_client, inbox_state, media_store, messaging, response_times
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.services.people import removed_user_ids, team_members
 from app.services.platform import PLATFORM_LABEL, resolve_platform
@@ -66,7 +66,9 @@ def pipeline_view(
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
     range_from, range_to = _period_bounds(date_range, date_from, date_to)
 
-    base = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.archived_at.is_(None), Lead.deleted_at.is_(None))
+    base = db.query(Lead).filter(
+        Lead.tenant_id == tenant.id, Lead.archived_at.is_(None), Lead.deleted_at.is_(None), Lead.tag != "outro"
+    )
     if range_from:
         base = base.filter(Lead.created_at >= range_from)
     if range_to:
@@ -385,7 +387,7 @@ def inbox_thread(
 INBOX_LIST_LIMIT = 60  # com milhares de leads/mês a lista inteira pesaria; o resto se acha pela busca
 
 
-def _inbox_query(db: Session, tenant: Tenant, user: User, busca: str, numero: str, vendedor: str):
+def _inbox_query(db: Session, tenant: Tenant, user: User, busca: str, numero: str, vendedor: str, tipo: str = ""):
     """Conversas visíveis no Inbox com os filtros aplicados. Devolve (query, removed_ids)."""
     query = (
         db.query(Conversation)
@@ -406,6 +408,10 @@ def _inbox_query(db: Session, tenant: Tenant, user: User, busca: str, numero: st
         query = query.filter(Lead.assigned_user_id == vendedor)
     elif removed_ids:  # "Toda a equipe" = só quem está na equipe hoje (e leads sem vendedor)
         query = query.filter(or_(Lead.assigned_user_id.is_(None), Lead.assigned_user_id.notin_(removed_ids)))
+    if tipo == "leads":
+        query = query.filter(Lead.tag == "")
+    elif tipo in ("cliente", "outro"):
+        query = query.filter(Lead.tag == tipo)
     busca = busca.strip()
     if busca:
         digits = "".join(ch for ch in busca if ch.isdigit())
@@ -451,10 +457,11 @@ def _inbox_context(
     busca: str = "",
     numero: str = "",
     vendedor: str = "",
+    tipo: str = "",
 ) -> dict:
     if user.role != "admin":
         numero = vendedor = ""
-    query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor)
+    query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo)
     conversations = _first_per_lead(
         query.options(joinedload(Conversation.lead).joinedload(Lead.assigned_user))  # sem 1 consulta por item
         .order_by(Conversation.last_message_at.desc())
@@ -482,6 +489,10 @@ def _inbox_context(
 
     return {
             "list_sig": _list_sig(conversations),
+            "unread": inbox_state.unread_map(db, user, [c.lead_id for c in conversations]),
+            "tipo": tipo,
+            "tags": inbox_state.TAGS,
+            "tag_label": inbox_state.TAG_LABEL,
             "list_truncated": len(conversations) >= INBOX_LIST_LIMIT,
             "busca": busca,
             "numero": numero,
@@ -514,16 +525,63 @@ INBOX_FILTER_COOKIE = "inbox_filtro"
 def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]):
     # filtros de número/vendedor ficam lembrados (cookie) ao abrir conversa, responder, etc.
     qp = request.query_params
-    changed = "numero" in qp or "vendedor" in qp
-    if changed:
-        numero, vendedor = qp.get("numero", ""), qp.get("vendedor", "")
-    else:
-        numero, _, vendedor = request.cookies.get(INBOX_FILTER_COOKIE, "|").partition("|")
-    ctx = _inbox_context(db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor)
+    saved = (request.cookies.get(INBOX_FILTER_COOKIE, "") + "||").split("|")
+    numero = qp.get("numero", saved[0]) if "numero" in qp or "vendedor" in qp else saved[0]
+    vendedor = qp.get("vendedor", saved[1]) if "numero" in qp or "vendedor" in qp else saved[1]
+    tipo = qp.get("tipo", saved[2])
+    inbox_state.ensure_baseline(db, user)
+    if selected_lead_id:
+        inbox_state.mark_read(db, user.id, selected_lead_id)
+    ctx = _inbox_context(db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo)
     response = templates.TemplateResponse(request, "inbox.html", ctx)
-    if changed:
-        response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}", httponly=True, samesite="lax")
+    response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}", httponly=True, samesite="lax")
     return response
+
+
+@router.post("/inbox/{lead_id}/lida")
+def inbox_mark_read(
+    lead_id: str,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    if db.query(Lead.id).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first():
+        inbox_state.mark_read(db, user.id, lead_id)
+    return JSONResponse({"ok": True})
+
+
+@router.post("/inbox/{lead_id}/nao-lida")
+def inbox_mark_unread(
+    lead_id: str,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    if db.query(Lead.id).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first():
+        inbox_state.mark_unread(db, user.id, lead_id)
+    return JSONResponse({"ok": True})
+
+
+@router.post("/leads/{lead_id}/tag")
+def set_lead_tag(
+    lead_id: str,
+    tag: str = Form(""),
+    voltar: str = Form(""),
+    ajax: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Etiqueta do contato: Lead / Cliente / Outro (qualquer pessoa da equipe pode mudar)."""
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    if not lead or tag not in inbox_state.TAG_LABEL:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    lead.tag = tag
+    db.add(lead)
+    db.commit()
+    if ajax:
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url=voltar if voltar.startswith("/") else f"/inbox/{lead_id}", status_code=302)
 
 
 @router.get("/inbox-atualizar")
@@ -532,6 +590,7 @@ def inbox_refresh(
     busca: str = "",
     numero: str = "",
     vendedor: str = "",
+    tipo: str = "",
     ls: str = "",
     ms: str = "",
     db: Session = Depends(get_db),
@@ -544,15 +603,18 @@ def inbox_refresh(
     # checagem rápida (2 consultas leves): só monta a tela se algo mudou
     if user.role != "admin":
         numero = vendedor = ""
-    query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor)
+    query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo)
     rows = _first_per_lead(
         query.with_entities(Conversation.id, Conversation.lead_id, Conversation.last_message_at)
         .order_by(Conversation.last_message_at.desc())
         .limit(INBOX_LIST_LIMIT * 2)
     )
-    if _list_sig(rows) == ls and _msg_sig(db, lead or None) == ms:
+    current_msg_sig = _msg_sig(db, lead or None)
+    if _list_sig(rows) == ls and current_msg_sig == ms:
         return JSONResponse({"changed": False})  # nada novo: resposta mínima, sem desenhar nada
-    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor)
+    if lead and current_msg_sig != ms:
+        inbox_state.mark_read(db, user.id, lead)  # chegou mensagem na conversa que está aberta: já foi vista
+    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo)
     return JSONResponse(
         {
             "list_sig": ctx["list_sig"],
@@ -561,6 +623,106 @@ def inbox_refresh(
             "msg_html": templates.get_template("_inbox_messages.html").render(ctx) if lead else "",
         }
     )
+
+
+# ---------- Visão da equipe: até 4 vendedores lado a lado (só admin) ----------
+TEAM_VIEW_MAX = 4
+TEAM_VIEW_PER_COLUMN = 30
+TEAM_VIEW_COOKIE = "inbox_equipe"
+
+
+def _team_columns(db: Session, tenant: Tenant, user: User, seller_ids: list) -> list:
+    people = {p.id: p for p in team_members(db, tenant.id)}
+    now = datetime.datetime.utcnow()
+    today = local_to_utc(to_local(now).replace(hour=0, minute=0, second=0, microsecond=0))
+    columns = []
+    for seller_id in [s for s in seller_ids if s in people][:TEAM_VIEW_MAX]:
+        query, _ = _inbox_query(db, tenant, user, "", "", seller_id)
+        convs = _first_per_lead(
+            query.options(joinedload(Conversation.lead))
+            .order_by(Conversation.last_message_at.desc())
+            .limit(TEAM_VIEW_PER_COLUMN * 2)
+        )
+        open_leads = db.query(Lead).filter(
+            Lead.tenant_id == tenant.id, Lead.assigned_user_id == seller_id, Lead.deleted_at.is_(None),
+            Lead.archived_at.is_(None), Lead.tag != "outro",
+        )
+        waiting = open_leads.filter(
+            or_(
+                Lead.first_response_at.is_(None),
+                and_(Lead.last_inbound_at.isnot(None), or_(Lead.last_outbound_at.is_(None), Lead.last_inbound_at > Lead.last_outbound_at)),
+            ),
+            Lead.last_inbound_at.isnot(None),
+        ).count()
+        today_count = query.filter(Conversation.last_message_at >= today).count()
+        columns.append({"seller": people[seller_id], "convs": convs[:TEAM_VIEW_PER_COLUMN], "waiting": waiting, "today": today_count})
+    return columns
+
+
+def _team_sig(db: Session, tenant: Tenant, user: User, seller_ids: list) -> str:
+    parts = []
+    for seller_id in seller_ids[:TEAM_VIEW_MAX]:
+        query, _ = _inbox_query(db, tenant, user, "", "", seller_id)
+        row = query.with_entities(func.count(Conversation.id), func.max(Conversation.last_message_at)).one()
+        parts.append(f"{seller_id}:{row[0]}:{row[1].isoformat() if row[1] else ''}")
+    return "|".join(parts)
+
+
+def _team_selection(request: Request) -> list:
+    chosen = request.query_params.getlist("v") if "v" in request.query_params else (
+        [v for v in request.cookies.get(TEAM_VIEW_COOKIE, "").split(",") if v]
+    )
+    return list(dict.fromkeys(chosen))[:TEAM_VIEW_MAX]
+
+
+@router.get("/inbox-equipe", response_class=HTMLResponse)
+def team_inbox(
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Admin escolhe até 4 vendedores e vê as conversas de cada um lado a lado."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Só o admin vê a visão da equipe")
+    selected = _team_selection(request)
+    columns = _team_columns(db, tenant, user, selected)
+    response = templates.TemplateResponse(
+        request,
+        "inbox_equipe.html",
+        {
+            "tenant": tenant,
+            "user": user,
+            "active_nav": "inbox",
+            "people": team_members(db, tenant.id),
+            "selected": selected,
+            "columns": columns,
+            "sig": _team_sig(db, tenant, user, selected),
+            "max": TEAM_VIEW_MAX,
+        },
+    )
+    response.set_cookie(TEAM_VIEW_COOKIE, ",".join(selected), httponly=True, samesite="lax")
+    return response
+
+
+@router.get("/inbox-equipe/atualizar")
+def team_inbox_refresh(
+    request: Request,
+    sig: str = "",
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403)
+    selected = _team_selection(request)
+    current = _team_sig(db, tenant, user, selected)
+    if current == sig:
+        return JSONResponse({"changed": False})
+    html = templates.get_template("_inbox_equipe_cols.html").render(
+        {"columns": _team_columns(db, tenant, user, selected), "request": request}
+    )
+    return JSONResponse({"sig": current, "html": html})
 
 
 AVATAR_TTL = 24 * 60 * 60
@@ -846,7 +1008,7 @@ def dashboard_view(
     else:
         range_from = _range_from(now, date_range)
 
-    leads_query = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None))
+    leads_query = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag != "outro")
     if range_from:
         leads_query = leads_query.filter(Lead.created_at >= range_from)
     if range_to:

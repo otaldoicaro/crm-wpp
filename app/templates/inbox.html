@@ -18,9 +18,15 @@
         {% if has_removed %}<option value="removidos" {{ "selected" if vendedor == "removidos" }}>De usuários removidos</option>{% endif %}
       </optgroup>
     </select>
+    <a class="btn ghost small team-view-btn" href="/inbox-equipe">👥 Visão da equipe</a>
     {% if numero or vendedor %}<a class="inbox-filters-clear" href="{{ request.url.path }}?numero=&vendedor=">Limpar filtros</a>{% endif %}
   </form>
   {% endif %}
+  <div class="tipo-chips">
+    {% for key, label in (("", "Todos"), ("leads", "Leads"), ("cliente", "Clientes"), ("outro", "Outros")) %}
+      <a class="pill {{ 'pill-on' if tipo == key }}" href="{{ request.url.path }}?tipo={{ key }}">{{ label }}</a>
+    {% endfor %}
+  </div>
   <form class="inbox-search" method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
     <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone..." autocomplete="off">
   </form>
@@ -37,6 +43,13 @@
       <div class="info">
         <div class="name">{{ selected_lead.name or selected_lead.phone }}</div>
         <span class="muted">{{ selected_lead.phone }} · atendente: {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "não atribuído" }}</span>
+        <form method="post" action="/leads/{{ selected_lead.id }}/tag" class="tag-form">
+          <label>Tipo
+            <select name="tag" onchange="this.form.submit()">
+              {% for key, label in tags %}<option value="{{ key }}" {{ "selected" if selected_lead.tag == key }}>{{ label }}</option>{% endfor %}
+            </select>
+          </label>
+        </form>
         {{ m.tempo_atendimento(selected_lead, closed=selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost)) }}
         {% if active_conversation %}
         {% set active_number = active_conversation.whatsapp_number %}
@@ -243,13 +256,14 @@
   var busca = {{ busca|tojson }};
   var numero = {{ numero|tojson }};
   var vendedor = {{ vendedor|tojson }};
+  var tipo = {{ tipo|tojson }};
   var busy = false;
   function nearBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 120; }
   function tick() {
     if (busy || document.hidden) return;
     busy = true;
     var url = "/inbox-atualizar?lead=" + encodeURIComponent(lead) + "&busca=" + encodeURIComponent(busca) +
-      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) +
+      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) +
       "&ls=" + encodeURIComponent(listSig) + "&ms=" + encodeURIComponent(msgSig);
     fetch(url, { headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
@@ -272,7 +286,68 @@
       .then(function () { busy = false; });
   }
   setInterval(tick, 3000);
+  window.__inboxRefreshNow = function () { listSig = ""; tick(); };
   document.addEventListener("visibilitychange", tick);
+})();
+</script>
+<div class="ctx-menu" id="ctxMenu" hidden>
+  <button type="button" data-action="nao-lida">Marcar como não lida</button>
+  <button type="button" data-action="lida">Marcar como lida</button>
+  <hr>
+  <button type="button" data-tag="cliente">🏷️ É cliente</button>
+  <button type="button" data-tag="outro">🏷️ É outro (não é venda)</button>
+  <button type="button" data-tag="">🏷️ Voltar pra lead</button>
+</div>
+<script>
+// botão direito (computador) ou segurar o dedo (celular) numa conversa: marcar lida/não lida
+(function () {
+  var list = document.getElementById("inboxList");
+  var menu = document.getElementById("ctxMenu");
+  var target = null, pressTimer = null, longPressed = false;
+  function openMenu(item, x, y) {
+    target = item.dataset.lead;
+    var unread = item.dataset.unread === "1";
+    menu.querySelectorAll("[data-tag]").forEach(function (b) { b.hidden = b.dataset.tag === (item.dataset.tag || ""); });
+    menu.querySelector('[data-action="nao-lida"]').hidden = unread;
+    menu.querySelector('[data-action="lida"]').hidden = !unread;
+    menu.hidden = false;
+    menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
+  }
+  list.addEventListener("contextmenu", function (e) {
+    var item = e.target.closest(".inbox-list-item");
+    if (!item) return;
+    e.preventDefault();
+    openMenu(item, e.clientX, e.clientY);
+  });
+  list.addEventListener("touchstart", function (e) {
+    var item = e.target.closest(".inbox-list-item");
+    if (!item) return;
+    longPressed = false;
+    var t = e.touches[0];
+    pressTimer = setTimeout(function () { longPressed = true; openMenu(item, t.clientX, t.clientY); }, 550);
+  }, { passive: true });
+  ["touchend", "touchmove", "touchcancel"].forEach(function (ev) {
+    list.addEventListener(ev, function () { clearTimeout(pressTimer); }, { passive: true });
+  });
+  list.addEventListener("click", function (e) { if (longPressed) { e.preventDefault(); longPressed = false; } }, true);
+  document.addEventListener("click", function (e) { if (!menu.contains(e.target)) menu.hidden = true; });
+  menu.addEventListener("click", function (e) {
+    var action = e.target.dataset.action;
+    if (e.target.dataset.tag !== undefined && target) {
+      menu.hidden = true;
+      var body = new URLSearchParams({ tag: e.target.dataset.tag, ajax: "1" });
+      fetch("/leads/" + target + "/tag", { method: "POST", body: body }).then(function () {
+        if (window.__inboxRefreshNow) window.__inboxRefreshNow();
+      });
+      return;
+    }
+    if (!action || !target) return;
+    menu.hidden = true;
+    fetch("/inbox/" + target + "/" + action, { method: "POST" }).then(function () {
+      if (window.__inboxRefreshNow) window.__inboxRefreshNow();
+    });
+  });
 })();
 </script>
 {% endblock %}

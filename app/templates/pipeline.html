@@ -58,6 +58,7 @@
         <span class="phone">{{ lead.phone or lead.email }}</span>
         <div class="meta-row">
           {{ m.platform_badge(lead_platforms[lead.id], platform_labels[lead_platforms[lead.id]]) }}
+          {% if lead.tag == "cliente" %}<span class="tag-badge cliente">Cliente</span>{% endif %}
           {% if lead.form_details %}<span class="form-badge" title="Preencheu o formulário da LP">📝 Formulário</span>{% endif %}
           {% if lead.deal_value %}<span class="value-badge">R$ {{ "%.0f"|format(lead.deal_value) }}</span>{% endif %}
         </div>

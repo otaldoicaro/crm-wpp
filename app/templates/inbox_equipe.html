@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Visão da equipe{% endblock %}
+{% block content %}
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">Visão da equipe</h2>
+    <span class="muted">Escolha até {{ max }} pessoas pra ver as conversas delas lado a lado. Atualiza sozinho a cada 10 segundos. Clique numa conversa pra abrir.</span>
+  </div>
+  <a class="btn ghost small" href="/inbox">← Voltar pro Inbox</a>
+</div>
+
+<form method="get" action="/inbox-equipe" class="card team-picker" id="teamPicker">
+  <div class="team-picker-list">
+    {% for p in people %}
+    <label class="team-chip"><input type="checkbox" name="v" value="{{ p.id }}" {{ "checked" if p.id in selected }}> {{ p.name }}</label>
+    {% endfor %}
+  </div>
+  <div class="team-picker-actions">
+    <span class="muted" id="pickCount"></span>
+    <button class="btn small" type="submit">Ver</button>
+  </div>
+</form>
+
+{% if columns %}
+<div class="team-grid" id="teamGrid" style="--cols: {{ columns|length }}">
+  {% include "_inbox_equipe_cols.html" %}
+</div>
+{% else %}
+<p class="muted">Marque de 1 a {{ max }} pessoas acima e clique em <b>Ver</b>.</p>
+{% endif %}
+
+<script>
+(function () {
+  var MAX = {{ max }};
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('#teamPicker input[type=checkbox]'));
+  function refresh() {
+    var n = boxes.filter(function (b) { return b.checked; }).length;
+    boxes.forEach(function (b) { b.disabled = !b.checked && n >= MAX; b.parentNode.classList.toggle("on", b.checked); });
+    document.getElementById("pickCount").textContent = n + " de " + MAX + " selecionados";
+  }
+  boxes.forEach(function (b) { b.addEventListener("change", refresh); });
+  refresh();
+
+  var grid = document.getElementById("teamGrid");
+  if (!grid) return;
+  var sig = {{ sig|tojson }};
+  var qs = boxes.filter(function (b) { return b.checked; }).map(function (b) { return "v=" + encodeURIComponent(b.value); }).join("&");
+  setInterval(function () {
+    if (document.hidden) return;
+    fetch("/inbox-equipe/atualizar?" + qs + "&sig=" + encodeURIComponent(sig), { headers: { accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d && d.changed !== false) { grid.innerHTML = d.html; sig = d.sig; } })
+      .catch(function () {});
+  }, 10000);
+})();
+</script>
+{% endblock %}

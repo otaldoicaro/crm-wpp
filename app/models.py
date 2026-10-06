@@ -66,6 +66,8 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # pediu acesso pela tela de login e ainda espera um admin aprovar (fica is_active=False até lá)
     pending_approval: Mapped[bool] = mapped_column(Boolean, default=False)
+    # a partir de quando contam as "não lidas" desta pessoa (1ª vez que abriu o Inbox com essa função)
+    inbox_seen_from: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # removido da equipe (saiu da empresa): some da tela Equipe, não entra, sai do rodízio.
     # O cadastro fica (histórico de quem atendeu/enviou), e dá pra restaurar em "Removidos".
     removed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
@@ -140,6 +142,9 @@ class Lead(Base):
     whatsapp_number_id: Mapped[Optional[str]] = mapped_column(ForeignKey("whatsapp_numbers.id"), nullable=True)
     deal_value: Mapped[Optional[float]] = mapped_column(nullable=True)  # valor fechado, preenchido na etapa "Ganho"
     loss_reason: Mapped[str] = mapped_column(String(255), default="")  # motivo, preenchido na etapa "Perdido"
+    # etiqueta do contato: "" = lead normal | "cliente" = já é cliente | "outro" = não é venda
+    # (fornecedor, conhecido...): "outro" sai do Pipeline e das métricas, a conversa continua no Inbox
+    tag: Mapped[str] = mapped_column(String(20), default="", index=True)
     # tempos de atendimento (preenchidos a cada mensagem; leads antigos calculados no start):
     # 1º atendimento = first_response_at - created_at; "sem interação" = agora - last_outbound_at
     first_response_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
@@ -330,3 +335,16 @@ class CampaignSpend(Base):
     clicks: Mapped[int] = mapped_column(Integer, default=0)
     source: Mapped[str] = mapped_column(String(40), default="manual")  # manual | windsor_ai | meta_api | google_ads_api
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+
+
+class InboxRead(Base):
+    """Até quando cada pessoa já leu cada conversa (não lidas são por pessoa)."""
+
+    __tablename__ = "inbox_reads"
+    __table_args__ = (UniqueConstraint("user_id", "lead_id", name="uq_inbox_read_user_lead"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    lead_id: Mapped[str] = mapped_column(ForeignKey("leads.id"), index=True)
+    last_read_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    manual_unread: Mapped[bool] = mapped_column(Boolean, default=False)  # "Marcar como não lida"

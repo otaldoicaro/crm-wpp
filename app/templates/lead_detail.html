@@ -98,6 +98,16 @@
 
 <div class="card" style="margin-top:16px;">
   <h3 style="margin-top:0">Atendimento</h3>
+  <form method="post" action="/leads/{{ lead.id }}/tag" class="tag-form" style="margin-bottom:12px">
+    <input type="hidden" name="voltar" value="/leads/{{ lead.id }}?salvo=1">
+    <label>Tipo de contato
+      <select name="tag" onchange="this.form.submit()">
+        <option value="" {{ "selected" if not lead.tag }}>Lead</option>
+        <option value="cliente" {{ "selected" if lead.tag == "cliente" }}>Cliente</option>
+        <option value="outro" {{ "selected" if lead.tag == "outro" }}>Outro (não é venda — sai do Pipeline e das métricas)</option>
+      </select>
+    </label>
+  </form>
   <p class="muted" style="margin:0">Atendente responsável</p>
   <p style="margin:4px 0 0; font-weight:700;">{{ lead.assigned_user.name if lead.assigned_user else "Ninguém atribuído ainda" }}</p>
   {% if not lead.archived_at %}
