@@ -10,6 +10,7 @@ A URL (com ?token=) é configurada automaticamente em cada instância quando o
 número é adicionado pela tela WhatsApp do CRM (ver evolution_client.set_webhook).
 """
 
+import datetime
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Request
@@ -19,8 +20,9 @@ from sqlalchemy.orm import Session
 
 from app.config import EVOLUTION_WEBHOOK_TOKEN
 from app.db import SessionLocal
-from app.models import Message, WhatsAppNumber
-from app.services.inbound import ingest_inbound, record_outbound_from_phone
+from app.models import Conversation, Lead, Message, WhatsAppNumber
+from app.services import evolution_client
+from app.services.inbound import ingest_inbound, message_exists, record_outbound_from_phone
 from app.services.msgsecret import decrypt_edit, secret_b64, text_from_message, to_bytes
 from app.services.media_store import backup_message_media
 
@@ -241,8 +243,11 @@ def _process_event_db(db: Session, payload: dict) -> list:
 def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
     key = item.get("key") or {}
     jid = key.get("remoteJid", "")
-    if not jid or jid.endswith("@g.us") or jid.endswith("@broadcast") or jid.endswith("@newsletter"):
-        return None  # grupos, status e canais não viram lead
+    if not jid or jid.endswith("@broadcast") or jid.endswith("@newsletter"):
+        return None  # status e canais não entram
+    if jid.endswith("@g.us"):
+        _handle_group_message(db, number, item)
+        return None  # grupo: sem cópia de mídia (grupo movimentado encheria o armazenamento)
 
     if _apply_edit_or_delete(db, number, item):
         return None
@@ -297,3 +302,64 @@ def clean_legacy_placeholders() -> int:
         return fixed
     finally:
         db.close()
+
+
+def _handle_group_message(db: Session, number: WhatsAppNumber, item: dict) -> None:
+    """Mensagem de grupo: vai pro Inbox do dono do número, com o nome de quem falou.
+    Grupo não é lead: não passa por atribuição, rodízio, Pipeline nem métricas."""
+    if _apply_edit_or_delete(db, number, item):
+        return
+    key = item.get("key") or {}
+    jid, wa_message_id = key.get("remoteJid", ""), key.get("id", "")
+    body, media_type, _ = _parse_content(item.get("message") or {})
+    if (not body and not media_type) or message_exists(db, wa_message_id):
+        return
+
+    group = (
+        db.query(Lead)
+        .filter(Lead.tenant_id == number.tenant_id, Lead.phone == jid, Lead.is_group.is_(True))
+        .first()
+    )
+    if group is None:
+        group = Lead(
+            tenant_id=number.tenant_id,
+            name=evolution_client.group_subject(number.evolution_instance, jid) or "Grupo de WhatsApp",
+            phone=jid,
+            source="whatsapp_group",
+            is_group=True,
+            whatsapp_number_id=number.id,
+            assigned_user_id=number.owner_user_id,
+        )
+        db.add(group)
+        db.commit()
+        db.refresh(group)
+
+    from_me = bool(key.get("fromMe"))
+    sender = "" if from_me else (item.get("pushName") or (key.get("participant") or "").split("@")[0])
+    conversation = (
+        db.query(Conversation)
+        .filter(Conversation.lead_id == group.id, Conversation.whatsapp_number_id == number.id)
+        .first()
+    )
+    if conversation is None:
+        conversation = Conversation(tenant_id=number.tenant_id, lead_id=group.id, whatsapp_number_id=number.id)
+        db.add(conversation)
+        db.flush()
+    now = datetime.datetime.utcnow()
+    if from_me:
+        group.last_outbound_at = now
+    else:
+        group.last_inbound_at = now
+    conversation.last_message_at = now
+    conversation.last_preview = (f"{sender}: {body}" if sender else body)[:200]
+    db.add(Message(
+        conversation_id=conversation.id,
+        direction="out" if from_me else "in",
+        wa_message_id=wa_message_id,
+        body=body,
+        media_id=wa_message_id if media_type else "",
+        media_type=media_type,
+        sender_name=sender[:120],
+        secret=secret_b64(item.get("message") or {}),
+    ))
+    db.commit()

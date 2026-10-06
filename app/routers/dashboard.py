@@ -67,7 +67,8 @@ def pipeline_view(
     range_from, range_to = _period_bounds(date_range, date_from, date_to)
 
     base = db.query(Lead).filter(
-        Lead.tenant_id == tenant.id, Lead.archived_at.is_(None), Lead.deleted_at.is_(None), Lead.tag != "outro"
+        Lead.tenant_id == tenant.id, Lead.archived_at.is_(None), Lead.deleted_at.is_(None), Lead.tag != "outro",
+        Lead.is_group.is_(False),
     )
     if range_from:
         base = base.filter(Lead.created_at >= range_from)
@@ -412,8 +413,14 @@ def _inbox_query(
         query = query.filter(or_(Lead.assigned_user_id.is_(None), Lead.assigned_user_id.notin_(removed_ids)))
     if lidas == "nao":
         query = inbox_state.unanswered_filter(query)
-    if tipo == "leads":
-        query = query.filter(Lead.tag == "")
+    if tipo == "naolidas":
+        query = inbox_state.unread_filter(query, user)
+    elif tipo == "favoritas":
+        query = inbox_state.favorite_filter(query, user)
+    elif tipo == "grupos":
+        query = query.filter(Lead.is_group.is_(True))
+    elif tipo == "leads":
+        query = query.filter(Lead.tag == "", Lead.is_group.is_(False))
     elif tipo in ("cliente", "outro"):
         query = query.filter(Lead.tag == tipo)
     busca = busca.strip()
@@ -470,6 +477,8 @@ def _inbox_context(
     # quantas conversas esperam resposta com os filtros atuais (pro botão "Não respondidas (N)")
     unread_query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, "nao")
     unread_total = unread_query.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
+    naolidas_query, _ = _inbox_query(db, tenant, user, "", numero, vendedor, "naolidas")
+    naolidas_total = naolidas_query.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
     conversations = _first_per_lead(
         query.options(joinedload(Conversation.lead).joinedload(Lead.assigned_user))  # sem 1 consulta por item
         .order_by(Conversation.last_message_at.desc())
@@ -501,6 +510,8 @@ def _inbox_context(
             "tipo": tipo,
             "lidas": lidas,
             "unread_total": unread_total,
+            "naolidas_total": naolidas_total,
+            "favorites": inbox_state.favorite_ids(db, user, [c.lead_id for c in conversations]),
             "tags": inbox_state.TAGS,
             "tag_label": inbox_state.TAG_LABEL,
             "list_truncated": len(conversations) >= INBOX_LIST_LIMIT,
@@ -558,6 +569,19 @@ def inbox_mark_read(
 ):
     if db.query(Lead.id).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first():
         inbox_state.mark_read(db, user.id, lead_id)
+    return JSONResponse({"ok": True})
+
+
+@router.post("/inbox/{lead_id}/favorita")
+def inbox_favorite(
+    lead_id: str,
+    valor: str = Form("1"),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    if db.query(Lead.id).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first():
+        inbox_state.set_favorite(db, user.id, lead_id, valor == "1")
     return JSONResponse({"ok": True})
 
 
@@ -639,7 +663,7 @@ def inbox_refresh(
 
 
 # ---------- Visão da equipe: até 4 vendedores lado a lado (só admin) ----------
-TEAM_VIEW_MAX = 4
+TEAM_VIEW_MAX = 50  # na prática: a equipe toda (a tela rola de lado)
 TEAM_VIEW_PER_COLUMN = 30
 TEAM_VIEW_COOKIE = "inbox_equipe"
 
@@ -658,7 +682,7 @@ def _team_columns(db: Session, tenant: Tenant, user: User, seller_ids: list) -> 
         )
         open_leads = db.query(Lead).filter(
             Lead.tenant_id == tenant.id, Lead.assigned_user_id == seller_id, Lead.deleted_at.is_(None),
-            Lead.archived_at.is_(None), Lead.tag != "outro",
+            Lead.archived_at.is_(None), Lead.tag != "outro", Lead.is_group.is_(False),
         )
         waiting = open_leads.filter(
             or_(
@@ -670,19 +694,28 @@ def _team_columns(db: Session, tenant: Tenant, user: User, seller_ids: list) -> 
         today_count = query.filter(Conversation.last_message_at >= today).count()
         columns.append({"seller": people[seller_id], "convs": convs[:TEAM_VIEW_PER_COLUMN], "waiting": waiting, "today": today_count})
     # não lidas (de quem está olhando) de todas as colunas numa consulta só
-    unread = inbox_state.unread_map(db, user, [c.lead_id for col in columns for c in col["convs"]])
+    all_ids = [c.lead_id for col in columns for c in col["convs"]]
+    unread, favorites = inbox_state.unread_map(db, user, all_ids), inbox_state.favorite_ids(db, user, all_ids)
     for col in columns:
-        col["unread"] = unread
+        col["unread"], col["favorites"] = unread, favorites
     return columns
 
 
 def _team_sig(db: Session, tenant: Tenant, user: User, seller_ids: list) -> str:
-    parts = []
-    for seller_id in seller_ids[:TEAM_VIEW_MAX]:
-        query, _ = _inbox_query(db, tenant, user, "", "", seller_id)
-        row = query.with_entities(func.count(Conversation.id), func.max(Conversation.last_message_at)).one()
-        parts.append(f"{seller_id}:{row[0]}:{row[1].isoformat() if row[1] else ''}")
-    return "|".join(parts)
+    """Uma consulta só pra todas as colunas (dá pra ter a equipe inteira aberta sem pesar)."""
+    seller_ids = seller_ids[:TEAM_VIEW_MAX]
+    if not seller_ids:
+        return ""
+    query, _ = _inbox_query(db, tenant, user, "", "", "")
+    rows = dict(
+        (seller, (n, last))
+        for seller, n, last in query.filter(Lead.assigned_user_id.in_(seller_ids))
+        .with_entities(Lead.assigned_user_id, func.count(Conversation.id), func.max(Conversation.last_message_at))
+        .group_by(Lead.assigned_user_id)
+    )
+    return "|".join(
+        f"{s}:{rows.get(s, (0, None))[0]}:{rows[s][1].isoformat() if s in rows and rows[s][1] else ''}" for s in seller_ids
+    )
 
 
 def _team_selection(request: Request) -> list:
@@ -1056,7 +1089,9 @@ def dashboard_view(
     else:
         range_from = _range_from(now, date_range)
 
-    leads_query = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag != "outro")
+    leads_query = db.query(Lead).filter(
+        Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag != "outro", Lead.is_group.is_(False)
+    )
     if range_from:
         leads_query = leads_query.filter(Lead.created_at >= range_from)
     if range_to:

@@ -23,8 +23,8 @@
   </form>
   {% endif %}
   <div class="tipo-chips">
-    {% for key, label in (("", "Todos"), ("leads", "Leads"), ("cliente", "Clientes"), ("outro", "Outros")) %}
-      <a class="pill {{ 'pill-on' if tipo == key }}" href="{{ request.url.path }}?tipo={{ key }}">{{ label }}</a>
+    {% for key, label in (("", "Todos"), ("naolidas", "Não lidas"), ("favoritas", "★ Favoritas"), ("grupos", "👥 Grupos"), ("leads", "Leads"), ("cliente", "Clientes"), ("outro", "Outros")) %}
+      <a class="pill {{ 'pill-on' if tipo == key }}" href="{{ request.url.path }}?tipo={{ key }}">{{ label }}{% if key == "naolidas" and naolidas_total %} <span class="unread-total">{{ naolidas_total }}</span>{% endif %}</a>
     {% endfor %}
     <a class="pill unread-chip {{ 'pill-on' if lidas == 'nao' }}" href="{{ request.url.path }}?lidas={{ '' if lidas == 'nao' else 'nao' }}" title="{{ 'Mostrar todas' if lidas == 'nao' else 'Conversas em que o cliente mandou mensagem e ninguém respondeu ainda (mesmo que alguém tenha aberto), inclusive antigas' }}">
       {{ "✕ " if lidas == "nao" }}Não respondidas <span id="unreadTotal" class="unread-total {{ 'zero' if not unread_total }}">{{ unread_total }}</span>
@@ -46,6 +46,7 @@
       <div class="info">
         <div class="name">{{ selected_lead.name or selected_lead.phone }}</div>
         <span class="muted">{{ selected_lead.phone }} · atendente: {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "não atribuído" }}</span>
+        {% if selected_lead.is_group %}<div class="muted" style="font-size:.76rem">👥 Grupo de WhatsApp — não conta como lead</div>{% else %}
         <form method="post" action="/leads/{{ selected_lead.id }}/tag" class="tag-form">
           <label>Tipo
             <select name="tag" onchange="this.form.submit()">
@@ -53,7 +54,7 @@
             </select>
           </label>
         </form>
-        {{ m.tempo_atendimento(selected_lead, closed=selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost)) }}
+        {{ m.tempo_atendimento(selected_lead, closed=selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost)) }}{% endif %}
         {% if active_conversation %}
         {% set active_number = active_conversation.whatsapp_number %}
         <div class="via-number">
@@ -70,7 +71,7 @@
         {% endif %}
       </div>
       {{ m.platform_badge(platform, platform_label) }}
-      <a class="btn ghost small" href="/leads/{{ selected_lead.id }}?voltar=inbox">Atualizar status do lead</a>
+      {% if not selected_lead.is_group %}<a class="btn ghost small" href="/leads/{{ selected_lead.id }}?voltar=inbox">Atualizar status do lead</a>{% endif %}
     </div>
     {% if selected_lead.form_details %}
     <details class="inbox-form-details">
@@ -302,7 +303,9 @@
 <div class="ctx-menu" id="ctxMenu" hidden>
   <button type="button" data-action="nao-lida">Marcar como não lida</button>
   <button type="button" data-action="lida">Marcar como lida</button>
-  <hr>
+  <button type="button" data-fav="1">⭐ Favoritar</button>
+  <button type="button" data-fav="0">☆ Remover dos favoritos</button>
+  <hr class="tag-sep">
   <button type="button" data-tag="cliente">🏷️ É cliente</button>
   <button type="button" data-tag="outro">🏷️ É outro (não é venda)</button>
   <button type="button" data-tag="">🏷️ Voltar pra lead</button>
@@ -316,7 +319,11 @@
   function openMenu(item, x, y) {
     target = item.dataset.lead;
     var unread = item.dataset.unread === "1";
-    menu.querySelectorAll("[data-tag]").forEach(function (b) { b.hidden = b.dataset.tag === (item.dataset.tag || ""); });
+    var isGroup = item.dataset.group === "1";
+    menu.querySelectorAll("[data-tag]").forEach(function (b) { b.hidden = isGroup || b.dataset.tag === (item.dataset.tag || ""); });
+    menu.querySelector(".tag-sep").hidden = isGroup;
+    menu.querySelector('[data-fav="1"]').hidden = item.dataset.fav === "1";
+    menu.querySelector('[data-fav="0"]').hidden = item.dataset.fav !== "1";
     menu.querySelector('[data-action="nao-lida"]').hidden = unread;
     menu.querySelector('[data-action="lida"]').hidden = !unread;
     menu.hidden = false;
@@ -343,6 +350,12 @@
   document.addEventListener("click", function (e) { if (!menu.contains(e.target)) menu.hidden = true; });
   menu.addEventListener("click", function (e) {
     var action = e.target.dataset.action;
+    if (e.target.dataset.fav !== undefined && target) {
+      menu.hidden = true;
+      fetch("/inbox/" + target + "/favorita", { method: "POST", body: new URLSearchParams({ valor: e.target.dataset.fav }) })
+        .then(function () { if (window.__inboxRefreshNow) window.__inboxRefreshNow(); });
+      return;
+    }
     if (e.target.dataset.tag !== undefined && target) {
       menu.hidden = true;
       var body = new URLSearchParams({ tag: e.target.dataset.tag, ajax: "1" });

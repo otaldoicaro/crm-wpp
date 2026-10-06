@@ -12,10 +12,10 @@
     {% for conv in col.convs %}
       {% set lead = conv.lead %}
       {% set n_unread = col.unread.get(lead.id) %}
-      <a class="inbox-list-item {{ 'unread' if n_unread is not none }}" href="/inbox/{{ lead.id }}?vendedor={{ col.seller.id }}&numero=" data-lead="{{ lead.id }}" data-unread="{{ 1 if n_unread is not none else 0 }}" data-tag="{{ lead.tag }}">
+      <a class="inbox-list-item {{ 'unread' if n_unread is not none }}" href="/inbox/{{ lead.id }}?vendedor={{ col.seller.id }}&numero=" data-lead="{{ lead.id }}" data-unread="{{ 1 if n_unread is not none else 0 }}" data-tag="{{ lead.tag }}" data-fav="{{ 1 if lead.id in col.favorites else 0 }}" data-group="{{ 1 if lead.is_group else 0 }}">
         {{ m.avatar(lead) }}
         <div class="inbox-list-item-body">
-          <div class="row1"><span class="name">{{ lead.name or lead.phone }}{% if lead.tag %} <span class="tag-badge {{ lead.tag }}">{{ "Cliente" if lead.tag == "cliente" else "Outro" }}</span>{% endif %}</span><span class="time">{{ conv.last_message_at|hora("%d/%m %H:%M") }}</span></div>
+          <div class="row1"><span class="name">{% if lead.is_group %}👥 {% endif %}{% if lead.id in col.favorites %}<span class="fav-star">★</span> {% endif %}{{ lead.name or lead.phone }}{% if lead.tag %} <span class="tag-badge {{ lead.tag }}">{{ "Cliente" if lead.tag == "cliente" else "Outro" }}</span>{% endif %}</span><span class="time">{{ conv.last_message_at|hora("%d/%m %H:%M") }}</span></div>
           <div class="row2"><div class="preview">{{ conv.last_preview or "—" }}</div>{% if n_unread %}<span class="unread-count">{{ n_unread }}</span>{% elif n_unread is not none %}<span class="unread-dot"></span>{% endif %}</div>
           {{ m.tempo_atendimento(lead, closed=lead.stage and (lead.stage.is_won or lead.stage.is_lost)) }}
         </div>

@@ -76,8 +76,47 @@ def unread_map(db: Session, user: User, lead_ids: list) -> dict:
 
 def unanswered_filter(query):
     """Conversas em que a última mensagem é do cliente e ninguém da equipe respondeu depois
-    (aberta ou não). Usa as colunas do lead: rápido, sem varrer mensagens."""
+    (aberta ou não). Usa as colunas do lead: rápido, sem varrer mensagens. Grupos ficam de fora."""
     return query.filter(
+        Lead.is_group.is_(False),
         Lead.last_inbound_at.isnot(None),
         or_(Lead.last_outbound_at.is_(None), Lead.last_inbound_at > Lead.last_outbound_at),
     )
+
+
+def unread_filter(query, user: User):
+    """Só as conversas não lidas por esta pessoa (mesma regra do contador verde)."""
+    baseline = user.inbox_seen_from or datetime.datetime.utcnow()
+    read = InboxRead.__table__.alias("rf")
+    return query.outerjoin(read, and_(read.c.lead_id == Lead.id, read.c.user_id == user.id)).filter(
+        or_(
+            read.c.manual_unread.is_(True),
+            and_(
+                Lead.last_inbound_at > baseline,
+                or_(read.c.last_read_at.is_(None), Lead.last_inbound_at > read.c.last_read_at),
+                or_(Lead.last_outbound_at.is_(None), Lead.last_inbound_at > Lead.last_outbound_at),
+            ),
+        )
+    )
+
+
+def favorite_filter(query, user: User):
+    read = InboxRead.__table__.alias("ff")
+    return query.join(read, and_(read.c.lead_id == Lead.id, read.c.user_id == user.id)).filter(read.c.favorite.is_(True))
+
+
+def set_favorite(db: Session, user_id: str, lead_id: str, value: bool) -> None:
+    row = _read_row(db, user_id, lead_id)
+    row.favorite = value
+    db.commit()
+
+
+def favorite_ids(db: Session, user: User, lead_ids: list) -> set:
+    if not lead_ids:
+        return set()
+    return {
+        lead_id
+        for (lead_id,) in db.query(InboxRead.lead_id).filter(
+            InboxRead.user_id == user.id, InboxRead.lead_id.in_(lead_ids), InboxRead.favorite.is_(True)
+        )
+    }

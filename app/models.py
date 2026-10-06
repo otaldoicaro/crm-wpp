@@ -145,6 +145,9 @@ class Lead(Base):
     # etiqueta do contato: "" = lead normal | "cliente" = já é cliente | "outro" = não é venda
     # (fornecedor, conhecido...): "outro" sai do Pipeline e das métricas, a conversa continua no Inbox
     tag: Mapped[str] = mapped_column(String(20), default="", index=True)
+    # grupo de WhatsApp (phone = "<id>@g.us"): só aparece no Inbox — não é lead, não entra
+    # no Pipeline, Dashboard, rodízio nem em "Não respondidas"
+    is_group: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     # tempos de atendimento (preenchidos a cada mensagem; leads antigos calculados no start):
     # 1º atendimento = first_response_at - created_at; "sem interação" = agora - last_outbound_at
     first_response_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
@@ -287,6 +290,8 @@ class Message(Base):
     media_stored_key: Mapped[str] = mapped_column(String(160), default="")
     # messageSecret do WhatsApp (base64): necessário pra abrir uma edição futura desta mensagem
     secret: Mapped[str] = mapped_column(String(100), default="")
+    # em grupo: quem mandou (nome no WhatsApp)
+    sender_name: Mapped[str] = mapped_column(String(120), default="")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
@@ -348,3 +353,4 @@ class InboxRead(Base):
     lead_id: Mapped[str] = mapped_column(ForeignKey("leads.id"), index=True)
     last_read_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     manual_unread: Mapped[bool] = mapped_column(Boolean, default=False)  # "Marcar como não lida"
+    favorite: Mapped[bool] = mapped_column(Boolean, default=False)  # ⭐ favoritas (de cada pessoa)

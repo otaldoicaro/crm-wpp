@@ -433,3 +433,16 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .unread-chip { font-weight: 800; }
 .unread-total { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 3px; border-radius: 999px; background: var(--success); color: #fff; font-size: .66rem; }
 .unread-total.zero { background: var(--panel-3); color: var(--muted); }
+.fav-star { color: #E9A400; }
+.msg-sender { font-size: .7rem; font-weight: 800; color: var(--info); margin-bottom: 2px; }
+.ctx-menu hr[hidden] { display: none; }
+.tipo-chips .pill { white-space: nowrap; }
+/* visão da equipe: colunas de largura fixa; cabem quantas a tela permitir, o resto rola pro lado */
+.team-grid { display: grid; grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: minmax(300px, 340px);
+  gap: 12px; overflow-x: auto; padding-bottom: 10px; scroll-snap-type: x proximity; scrollbar-width: auto; }
+.team-grid .team-col { scroll-snap-align: start; }
+.team-grid::-webkit-scrollbar { height: 12px; }
+.team-grid::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
+.team-scroll-hint { margin: -4px 0 8px; font-size: .78rem; }
+.team-scroll-hint[hidden] { display: none; }
+@media (max-width: 860px) { .team-grid { grid-auto-columns: 88vw; } }

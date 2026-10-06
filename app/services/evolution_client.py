@@ -193,3 +193,12 @@ def profile_picture_url(instance: str, phone_digits: str) -> str:
 def delete_instance(instance: str) -> None:
     """Apaga a instância no Evolution (o número some de lá; o histórico fica no CRM)."""
     _request("DELETE", f"/instance/delete/{instance}")
+
+
+def group_subject(instance: str, group_jid: str) -> str:
+    """Nome do grupo no WhatsApp ('' se não conseguir)."""
+    try:
+        body = _request("GET", f"/group/findGroupInfos/{instance}", params={"groupJid": group_jid})
+    except EvolutionError:
+        return ""
+    return body.get("subject", "") if isinstance(body, dict) else ""

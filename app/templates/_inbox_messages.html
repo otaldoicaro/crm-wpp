@@ -1,6 +1,7 @@
 {% import "_macros.html" as m %}
 {% for msg in messages %}
   <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}">
+    {% if msg.sender_name and msg.direction == 'in' %}<div class="msg-sender">{{ msg.sender_name }}</div>{% endif %}
     {% if msg.media_type == "audio" %}
       {% if msg.body and not msg.body.startswith("🎤") %}<div>{{ msg.body }}</div>{% endif %}
       <audio controls preload="none" style="max-width:220px; margin-top:4px;"><source src="/media/{{ msg.id }}"></audio>

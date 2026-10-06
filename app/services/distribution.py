@@ -24,7 +24,7 @@ def assign_next_agent(db: Session, tenant_id: str) -> User | None:
     open_counts = (
         db.query(Lead.assigned_user_id, func.count(Lead.id).label("n"))
         .outerjoin(PipelineStage, PipelineStage.id == Lead.stage_id)
-        .filter(Lead.tenant_id == tenant_id, Lead.assigned_user_id.isnot(None), Lead.deleted_at.is_(None))
+        .filter(Lead.tenant_id == tenant_id, Lead.assigned_user_id.isnot(None), Lead.deleted_at.is_(None), Lead.is_group.is_(False))
         .filter(
             or_(
                 Lead.stage_id.is_(None),
@@ -74,7 +74,7 @@ def _open_leads_by_user(db: Session, tenant_id: str) -> dict:
     rows = (
         db.query(Lead.assigned_user_id, func.count(Lead.id))
         .outerjoin(PipelineStage, PipelineStage.id == Lead.stage_id)
-        .filter(Lead.tenant_id == tenant_id, Lead.assigned_user_id.isnot(None), Lead.deleted_at.is_(None))
+        .filter(Lead.tenant_id == tenant_id, Lead.assigned_user_id.isnot(None), Lead.deleted_at.is_(None), Lead.is_group.is_(False))
         .filter(or_(Lead.stage_id.is_(None), (PipelineStage.is_won.is_(False)) & (PipelineStage.is_lost.is_(False))))
         .group_by(Lead.assigned_user_id)
         .all()
