@@ -7,7 +7,7 @@
     <h2>Criar meu acesso</h2>
     <p class="muted" style="margin-top:-4px">{{ tenant.name }} · depois disso você conecta o WhatsApp do seu celular.</p>
     {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
-    <form method="post" action="/convite/{{ token }}">
+    <form method="post" action="/convite/{{ token }}" onsubmit="this.querySelector('button[type=submit]').disabled = true">
       <p><label>Seu nome<br><input type="text" name="name" required autocomplete="name"></label></p>
       <p><label>E-mail<br><input type="email" name="email" required autocomplete="email"></label></p>
       <p><label>Crie uma senha (mínimo 6 caracteres)<br><input type="password" name="password" required minlength="6" autocomplete="new-password"></label></p>

@@ -14,7 +14,9 @@
   <p class="muted" style="margin:4px 0 10px">Pessoas que pediram acesso pela tela de entrar. Aprove só quem é da equipe.</p>
   {% for p in pending %}
   <div class="pending-row">
-    <div><b>{{ p.name }}</b><br><span class="muted">{{ p.email }} · pediu em {{ p.created_at|hora("%d/%m %H:%M") }}</span></div>
+    <div><b>{{ p.name }}</b><br><span class="muted">{{ p.email }} · pediu em {{ p.created_at|hora("%d/%m %H:%M") }}</span>
+      {% if duplicates.get(p.id) %}<div class="dup-warning">⚠️ Já existe cadastro com esse nome: {% for d in duplicates[p.id] %}{{ d.email }}{{ ", " if not loop.last }}{% endfor %}. Se for a mesma pessoa, recuse este pedido.</div>{% endif %}
+    </div>
     <div class="pending-actions">
       <form method="post" action="/equipe/{{ p.id }}/aprovar"><button class="btn small" type="submit">Aprovar</button></form>
       <form method="post" action="/equipe/{{ p.id }}/recusar" onsubmit="return confirm('Recusar o pedido de {{ p.name }}?')"><button class="btn ghost small" type="submit">Recusar</button></form>
@@ -45,7 +47,11 @@
     {% for u in users %}
       {% set n = numbers_by_owner.get(u.id) %}
       <tr style="{{ 'opacity:.5' if not u.is_active }}">
-        <td><b>{{ u.name }}</b><div class="muted show-sm">{{ u.email }}</div></td>
+        <td>
+          <b>{{ u.name }}</b> <span class="role-badge {{ 'admin' if u.role == 'admin' else 'agent' }}">{{ "Admin" if u.role == "admin" else "Vendedor" }}</span>
+          <div class="muted show-sm">{{ u.email }}</div>
+          {% if duplicates.get(u.id) %}<div class="dup-warning">⚠️ Possível cadastro duplicado: também existe {% for d in duplicates[u.id] %}{{ d.email }}{{ " (pendente)" if d.pending_approval }}{{ ", " if not loop.last }}{% endfor %}</div>{% endif %}
+        </td>
         <td class="hide-sm">{{ u.email }}</td>
         <td>
           {% if u.id != user.id %}
@@ -97,7 +103,12 @@
       <tr>
         <td><b>{{ u.name }}</b><div class="muted">{{ u.email }}</div></td>
         <td class="muted">removido em {{ u.removed_at|hora("%d/%m/%Y") }}</td>
-        <td><form method="post" action="/equipe/{{ u.id }}/restaurar" style="margin:0" onsubmit="return confirm('Restaurar {{ u.name|e }}? Ele volta a entrar e ao rodízio.')"><button class="btn ghost small" type="submit">Restaurar</button></form></td>
+        <td>
+          <div class="row-actions">
+            <form method="post" action="/equipe/{{ u.id }}/restaurar" onsubmit="return confirm('Restaurar {{ u.name|e }}? Ele volta a entrar e ao rodízio.')"><button class="btn ghost small" type="submit">Restaurar</button></form>
+            <form method="post" action="/equipe/{{ u.id }}/excluir" onsubmit="return confirm('Excluir {{ u.name|e }} DEFINITIVAMENTE?\n\nNão dá pra desfazer. O cadastro some de vez; os leads e conversas que estavam com ele continuam no CRM, mas ficam sem vendedor.')"><button class="btn danger small" type="submit">Excluir definitivamente</button></form>
+          </div>
+        </td>
       </tr>
     {% endfor %}
     </tbody>

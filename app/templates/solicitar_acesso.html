@@ -13,14 +13,14 @@
       <h2>Solicitar acesso</h2>
       <p class="muted" style="margin-top:-4px">{{ tenant.name }} · o gestor aprova e você recebe acesso.</p>
       {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
-      <form method="post" action="/solicitar-acesso">
+      <form method="post" action="/solicitar-acesso" onsubmit="this.querySelector('button[type=submit]').disabled = true">
         <p><label>Seu nome<br><input type="text" name="name" required autocomplete="name"></label></p>
         <p><label>E-mail<br><input type="email" name="email" required autocomplete="email"></label></p>
         <p><label>Crie uma senha (mínimo 6 caracteres)<br><input type="password" name="password" required minlength="6" autocomplete="new-password"></label></p>
         <p><label>Repita a senha<br><input type="password" name="password2" required minlength="6" autocomplete="new-password"></label></p>
         <button class="btn" type="submit" style="width:100%">Pedir acesso</button>
       </form>
-      <p class="muted" style="text-align:center; margin:16px 0 0"><a href="/login">Já tenho acesso</a></p>
+      <p class="muted" style="text-align:center; margin:16px 0 0">Já pediu antes ou já tem login? Não peça de novo: <a href="/login">entre aqui</a> ou use "Esqueceu a senha?".</p>
     {% endif %}
   </div>
 </div>

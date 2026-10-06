@@ -28,3 +28,5 @@ templates.env.globals["asset_version"] = _asset_version()
 templates.env.globals["theme_for"] = theme_for
 templates.env.globals["theme_css"] = theme_css
 templates.env.filters["hora"] = fmt_local
+# "Carlos  Vendedor" e "carlos vendedor" contam como o mesmo nome
+templates.env.filters["chave_nome"] = lambda s: " ".join((s or "").lower().split())

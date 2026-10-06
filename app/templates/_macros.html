@@ -38,3 +38,16 @@
 {% macro avatar(lead) -%}
 <span class="avatar">{{ (lead.name or lead.phone or "?")[0]|upper }}<img src="/leads/{{ lead.id }}/avatar" alt="" loading="lazy" onerror="this.remove()"></span>
 {%- endmacro %}
+
+{% macro seller_options(people, selected) -%}
+{# opções de <select> separadas em Admins / Vendedores; nome repetido mostra o e-mail pra diferenciar #}
+{% set names = people|map(attribute="name")|map("chave_nome")|list %}
+{% for group, role in (("Admins", "admin"), ("Vendedores", "agent")) %}
+  {% set members = people|selectattr("role", "equalto", role)|list %}
+  {% if members %}
+  <optgroup label="{{ group }}">
+    {% for p in members %}<option value="{{ p.id }}" {{ "selected" if selected == p.id }}>{{ p.name }}{{ " — " ~ p.email if names.count(p.name|chave_nome) > 1 }}{{ " (desativado)" if not p.is_active }}</option>{% endfor %}
+  </optgroup>
+  {% endif %}
+{% endfor %}
+{%- endmacro %}

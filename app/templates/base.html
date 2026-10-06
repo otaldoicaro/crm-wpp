@@ -29,6 +29,7 @@
     </nav>
     <div class="user">
       <span>{{ tenant.name }} · {{ user.name }}</span>
+      <span class="role-badge {{ 'admin' if user.role == 'admin' else 'agent' }}">{{ "Admin" if user.role == "admin" else "Vendedor" }}</span>
       <form method="post" action="/logout"><button class="btn ghost small" type="submit">Sair</button></form>
     </div>
   </header>

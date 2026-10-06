@@ -18,6 +18,7 @@ from app.deps import current_tenant, current_user_required
 from app.models import Tenant, User, WhatsAppNumber
 from app.config import PUBLIC_BASE_URL
 from app.services import evolution_client
+from app.services.people import team_members
 from app.templating import templates
 
 router = APIRouter()
@@ -38,7 +39,7 @@ def _get_number(db: Session, tenant: Tenant, user: User, number_id: str) -> What
 
 
 def _users(db: Session, tenant: Tenant) -> list:
-    return db.query(User).filter(User.tenant_id == tenant.id, User.is_active.is_(True)).order_by(User.name).all()
+    return team_members(db, tenant.id, only_active=True)
 
 
 def _instance_name(db: Session, tenant: Tenant) -> str:

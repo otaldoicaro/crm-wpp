@@ -32,7 +32,7 @@
   <label>Vendedor
     <select name="seller" onchange="this.form.submit()">
       <option value="">Toda a equipe</option>
-      {% for s in sellers %}<option value="{{ s.id }}" {{ "selected" if seller == s.id }}>{{ s.name }}{{ "" if s.is_active else " (inativo)" }}</option>{% endfor %}
+      {{ m.seller_options(sellers, seller) }}
     </select>
   </label>
 </form>

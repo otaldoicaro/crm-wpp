@@ -38,7 +38,7 @@
     <input type="hidden" name="date_to" value="{{ date_to }}">
     <select name="seller" onchange="this.form.submit()">
       <option value="">Toda a equipe</option>
-      {% for s in sellers %}<option value="{{ s.id }}" {{ "selected" if seller == s.id }}>{{ s.name }}</option>{% endfor %}
+      {{ m.seller_options(sellers, seller) }}
     </select>
   </form>
 </div>

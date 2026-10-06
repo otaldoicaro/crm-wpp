@@ -20,7 +20,7 @@ from app.auth import create_session_token, hash_password
 from app.config import PUBLIC_BASE_URL, SESSION_COOKIE_NAME
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
-from app.models import Lead, PipelineStage, Tenant, User, WhatsAppNumber
+from app.models import Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app.services import evolution_client
 from app.services.distribution import assign_lead
 from app.tenancy import DEBUG
@@ -53,7 +53,16 @@ def team_page(
     everyone = db.query(User).filter(User.tenant_id == tenant.id).order_by(User.is_active.desc(), User.name).all()
     pending = [u for u in everyone if u.pending_approval and not u.removed_at]
     removed = [u for u in everyone if u.removed_at]
-    users = [u for u in everyone if not u.pending_approval and not u.removed_at]
+    users = sorted(
+        (u for u in everyone if not u.pending_approval and not u.removed_at),
+        key=lambda u: (u.role != "admin", not u.is_active, u.name.lower()),
+    )
+    # mesmo nome em mais de um cadastro (ex: pediu acesso duas vezes com e-mails diferentes)
+    by_name: dict = {}
+    for u in everyone:
+        if not u.removed_at:
+            by_name.setdefault(" ".join(u.name.lower().split()), []).append(u)
+    duplicates = {u.id: [o for o in group if o.id != u.id] for group in by_name.values() if len(group) > 1 for u in group}
     terminal = [s.id for s in db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id) if s.is_won or s.is_lost]
     open_leads = dict(
         db.query(Lead.assigned_user_id, func.count(Lead.id))
@@ -79,6 +88,7 @@ def team_page(
             "users": users,
             "pending": pending,
             "removed": removed,
+            "duplicates": duplicates,
             "open_leads": open_leads,
             "numbers_by_owner": numbers_by_owner,
             "invite_link": f"{PUBLIC_BASE_URL}/convite/{_ensure_invite_token(db, tenant)}",
@@ -147,6 +157,9 @@ def team_action(
     elif action == "remover" and member.id != user.id:
         _remove_member(db, tenant, member, bool(repassar_leads), bool(remover_whatsapp))
         return RedirectResponse(url="/equipe?salvo=1", status_code=302)
+    elif action == "excluir" and member.removed_at:
+        _purge_member(db, member)
+        return RedirectResponse(url="/equipe?salvo=1", status_code=302)
     elif action == "restaurar" and member.removed_at:
         member.removed_at = None
         member.is_active = True
@@ -188,6 +201,23 @@ def _remove_member(db: Session, tenant: Tenant, member: User, reassign: bool, dr
         db.commit()
 
 
+def _purge_member(db: Session, member: User) -> None:
+    """Exclui de vez um usuário já removido. O que estava no nome dele continua no
+    CRM, só que sem dono (leads ficam "sem vendedor", mensagens sem autor)."""
+    uid = member.id
+    db.query(Lead).filter(Lead.assigned_user_id == uid).update({Lead.assigned_user_id: None}, synchronize_session=False)
+    db.query(Lead).filter(Lead.deleted_by_user_id == uid).update({Lead.deleted_by_user_id: None}, synchronize_session=False)
+    db.query(Conversation).filter(Conversation.assigned_user_id == uid).update(
+        {Conversation.assigned_user_id: None}, synchronize_session=False
+    )
+    db.query(Message).filter(Message.sender_user_id == uid).update({Message.sender_user_id: None}, synchronize_session=False)
+    db.query(WhatsAppNumber).filter(WhatsAppNumber.owner_user_id == uid).update(
+        {WhatsAppNumber.owner_user_id: None}, synchronize_session=False
+    )
+    db.delete(member)
+    db.commit()
+
+
 def _tenant_by_invite(db: Session, token: str) -> Tenant:
     tenant = db.query(Tenant).filter(Tenant.invite_token == token).first() if token else None
     if not tenant:
@@ -212,7 +242,7 @@ def invite_submit(
     db: Session = Depends(get_db),
 ):
     tenant = _tenant_by_invite(db, token)
-    email = email.lower().strip()
+    email = "".join(email.lower().split())
 
     def error(msg: str):
         return templates.TemplateResponse(

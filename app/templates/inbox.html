@@ -12,8 +12,11 @@
     </select>
     <select name="vendedor" onchange="this.form.submit()" title="Filtrar por vendedor">
       <option value="">Toda a equipe</option>
-      {% for s in filter_sellers %}<option value="{{ s.id }}" {{ "selected" if vendedor == s.id }}>{{ s.name }}</option>{% endfor %}
-      <option value="sem" {{ "selected" if vendedor == "sem" }}>Sem vendedor</option>
+      {{ m.seller_options(filter_sellers, vendedor) }}
+      <optgroup label="Outros">
+        <option value="sem" {{ "selected" if vendedor == "sem" }}>Sem vendedor</option>
+        {% if has_removed %}<option value="removidos" {{ "selected" if vendedor == "removidos" }}>De usuários removidos</option>{% endif %}
+      </optgroup>
     </select>
     {% if numero or vendedor %}<a class="inbox-filters-clear" href="{{ request.url.path }}?numero=&vendedor=">Limpar filtros</a>{% endif %}
   </form>
@@ -27,7 +30,7 @@
   </div>
 
   {% if selected_lead %}
-  <div class="inbox-thread">
+  <div class="inbox-thread" id="threadPane" data-drop-label="Solte aqui pra enviar pro cliente">
     <div class="inbox-thread-head">
       <a href="/inbox" class="back-btn" aria-label="Voltar">←</a>
       {{ m.avatar(selected_lead) }}
@@ -57,10 +60,10 @@
     </div>
     <form class="reply-box" method="post" action="/leads/{{ selected_lead.id }}/reply" style="position:relative;">
       <button type="button" class="btn ghost small" id="attachToggle" title="Anexar" style="flex:0 0 auto;">📎</button>
-      <input type="file" id="attachInput" accept="image/*,video/*,application/pdf" hidden>
+      <input type="file" id="attachInput" accept="image/*,video/*,application/pdf" multiple hidden>
       <button type="button" class="btn ghost small" id="emojiToggle" title="Emojis" style="flex:0 0 auto;">🙂</button>
       <div id="emojiPicker" hidden style="position:absolute; bottom:56px; left:14px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:8px; display:grid; grid-template-columns:repeat(8,1fr); gap:4px; z-index:10;"></div>
-      <input type="text" name="body" id="replyInput" placeholder="Responder pelo WhatsApp..." required autocomplete="off">
+      <input type="text" name="body" id="replyInput" placeholder="Responder pelo WhatsApp... (arraste ou cole fotos aqui)" required autocomplete="off">
       <button class="btn" type="submit" id="sendBtn">Enviar</button>
     </form>
     <div id="attachStatus" class="muted" style="padding:0 14px 10px; display:none;"></div>
@@ -99,33 +102,70 @@
       var sendBtn = document.getElementById("sendBtn");
       attachToggle.addEventListener("click", function () { attachInput.click(); });
       attachInput.addEventListener("change", function () {
-        var file = attachInput.files[0];
-        if (!file) return;
-        attachStatus.style.display = "block";
-        attachStatus.textContent = "Enviando " + file.name + "...";
-        attachToggle.disabled = true;
-        sendBtn.disabled = true;
+        sendFiles(Array.prototype.slice.call(attachInput.files));
+        attachInput.value = "";
+      });
 
+      var MAX_BYTES = 16 * 1024 * 1024;
+      function setBusy(busy) { attachToggle.disabled = busy; sendBtn.disabled = busy; }
+      function uploadOne(file, caption) {
         var formData = new FormData();
-        formData.append("file", file);
-        formData.append("caption", input.value || "");
-
-        fetch("/leads/{{ selected_lead.id }}/reply-media", { method: "POST", body: formData })
+        formData.append("file", file, file.name || "arquivo");
+        formData.append("caption", caption);
+        return fetch("/leads/{{ selected_lead.id }}/reply-media", { method: "POST", body: formData })
           .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (data.ok) {
-              window.location.reload();
-            } else {
-              attachStatus.textContent = "Falha ao enviar: " + (data.error || "erro desconhecido");
-              attachToggle.disabled = false;
-              sendBtn.disabled = false;
-            }
-          })
-          .catch(function () {
-            attachStatus.textContent = "Falha ao enviar (conexão).";
-            attachToggle.disabled = false;
-            sendBtn.disabled = false;
+          .catch(function () { return { ok: false, error: "conexão" }; });
+      }
+      // envia um ou vários arquivos, um de cada vez (a legenda digitada vai no primeiro)
+      function sendFiles(files) {
+        files = files.filter(function (f) { return f && f.size; });
+        if (!files.length) return;
+        var big = files.filter(function (f) { return f.size > MAX_BYTES; });
+        if (big.length) { alert("Arquivo maior que 16MB não pode ser enviado: " + big.map(function (f) { return f.name; }).join(", ")); }
+        files = files.filter(function (f) { return f.size <= MAX_BYTES; });
+        if (!files.length) return;
+        var caption = input.value || "";
+        var failed = [];
+        attachStatus.style.display = "block";
+        setBusy(true);
+        var chain = Promise.resolve();
+        files.forEach(function (file, i) {
+          chain = chain.then(function () {
+            attachStatus.textContent = "Enviando " + (files.length > 1 ? (i + 1) + " de " + files.length + ": " : "") + (file.name || "imagem colada") + "...";
+            return uploadOne(file, i === 0 ? caption : "").then(function (data) {
+              if (!data.ok) failed.push((file.name || "arquivo") + " (" + (data.error || "erro") + ")");
+            });
           });
+        });
+        chain.then(function () {
+          if (!failed.length) { input.value = ""; window.location.reload(); return; }
+          attachStatus.textContent = "Falha ao enviar: " + failed.join(", ");
+          setBusy(false);
+        });
+      }
+
+      // arrastar arquivos pra dentro da conversa
+      var pane = document.getElementById("threadPane");
+      var dragDepth = 0;
+      function hasFiles(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], "Files") !== -1; }
+      pane.addEventListener("dragenter", function (e) { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; pane.classList.add("drop-active"); });
+      pane.addEventListener("dragover", function (e) { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+      pane.addEventListener("dragleave", function () { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) pane.classList.remove("drop-active"); });
+      pane.addEventListener("drop", function (e) {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth = 0;
+        pane.classList.remove("drop-active");
+        sendFiles(Array.prototype.slice.call(e.dataTransfer.files));
+      });
+      // colar print/imagem (Ctrl+V / Cmd+V) no campo de resposta
+      input.addEventListener("paste", function (e) {
+        var items = (e.clipboardData && e.clipboardData.items) || [];
+        var files = [];
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].kind === "file") { var f = items[i].getAsFile(); if (f) files.push(f); }
+        }
+        if (files.length) { e.preventDefault(); sendFiles(files); }
       });
     })();
     </script>

@@ -4,11 +4,14 @@ conforme o `provider` do número da conversa."""
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from app.models import WhatsAppNumber
 from app.services import evolution_client, whatsapp_client
 from app.services.whatsapp_client import media_kind_for_mime  # noqa: F401  (reexportado pro Inbox)
+
+logger = logging.getLogger("messaging")
 
 
 def send_text(number: WhatsAppNumber, phone: str, body: str) -> tuple[bool, str]:
@@ -33,7 +36,7 @@ def send_media(
                 number.evolution_instance, phone, content, filename, mime_type, media_kind, caption
             )
         except evolution_client.EvolutionError as exc:
-            return False, "", "", str(exc)
+            return False, "", "", friendly_error(exc)
         # no Evolution a mídia é buscada depois pelo id da própria mensagem
         return True, wa_id, wa_id, ""
 
@@ -43,6 +46,17 @@ def send_media(
     result = whatsapp_client.send_media_message(number, phone, media_id, media_kind, caption)
     wa_id = result.get("body", {}).get("messages", [{}])[0].get("id", "") if result["ok"] else ""
     return result["ok"], wa_id, media_id, "" if result["ok"] else "Meta recusou o envio"
+
+
+def friendly_error(exc: Exception) -> str:
+    """Erro do Evolution em linguagem de vendedor (o detalhe técnico vai pro log)."""
+    text = str(exc).lower()
+    logger.warning("falha no envio pelo WhatsApp: %s", exc)
+    if "does not exist" in text or "connection closed" in text or "not connected" in text or "404" in text:
+        return "o WhatsApp deste número está desconectado. Peça pro admin reconectar em WhatsApp."
+    if "sem resposta" in text or "timeout" in text:
+        return "o servidor do WhatsApp não respondeu. Tente de novo em instantes."
+    return "o WhatsApp recusou o envio. Tente de novo; se continuar, avise o admin."
 
 
 def fetch_media(number: WhatsAppNumber, media_id: str) -> tuple[Optional[bytes], Optional[str]]:

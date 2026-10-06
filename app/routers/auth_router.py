@@ -84,7 +84,7 @@ def request_access_submit(
     tenant: Tenant = Depends(current_tenant),
 ):
     """Vendedor pede acesso; o login só funciona depois que um admin aprovar em Equipe."""
-    email = email.lower().strip()
+    email = "".join(email.lower().split())
 
     def render(error=None, sent=False, status_code=200):
         return templates.TemplateResponse(

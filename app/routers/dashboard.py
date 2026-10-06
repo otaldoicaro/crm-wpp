@@ -12,6 +12,7 @@ from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app.services import evolution_client, media_store, messaging
 from app.services.conversions.dispatcher import dispatch_stage_conversion
+from app.services.people import removed_user_ids, team_members
 from app.services.platform import PLATFORM_LABEL, resolve_platform
 from app.services.messaging import media_kind_for_mime
 from app.templating import templates
@@ -99,10 +100,7 @@ def pipeline_view(
             "date_to": date_to,
             "date_range_labels": DATE_RANGE_LABELS,
             "seller": seller,
-            "sellers": db.query(User)
-            .filter(User.tenant_id == tenant.id, User.pending_approval.is_(False))
-            .order_by(User.name)
-            .all(),
+            "sellers": team_members(db, tenant.id),
             "archived_count": archived_count,
             "just_deleted": request.query_params.get("excluido") == "1",
             "stage_colors": _stage_colors(stages),
@@ -396,10 +394,15 @@ def _inbox_context(
         numero = vendedor = ""
     if numero:
         query = query.filter(Conversation.whatsapp_number_id == numero)
+    removed_ids = removed_user_ids(db, tenant.id)
     if vendedor == "sem":
         query = query.filter(Lead.assigned_user_id.is_(None))
+    elif vendedor == "removidos":
+        query = query.filter(Lead.assigned_user_id.in_(removed_ids))
     elif vendedor:
         query = query.filter(Lead.assigned_user_id == vendedor)
+    elif removed_ids:  # "Toda a equipe" = só quem está na equipe hoje (e leads sem vendedor)
+        query = query.filter(or_(Lead.assigned_user_id.is_(None), Lead.assigned_user_id.notin_(removed_ids)))
     busca = busca.strip()
     if busca:
         digits = "".join(ch for ch in busca if ch.isdigit())
@@ -445,12 +448,8 @@ def _inbox_context(
             .all()
             if user.role == "admin"
             else [],
-            "filter_sellers": db.query(User)
-            .filter(User.tenant_id == tenant.id, User.pending_approval.is_(False))
-            .order_by(User.name)
-            .all()
-            if user.role == "admin"
-            else [],
+            "filter_sellers": team_members(db, tenant.id) if user.role == "admin" else [],
+            "has_removed": bool(removed_ids) if user.role == "admin" else False,
             "msg_sig": f"{len(messages)}:{messages[-1].id}:{messages[-1].body}" if messages else "0",
             "tenant": tenant,
             "user": user,
@@ -752,9 +751,7 @@ def dashboard_view(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    sellers = (
-        db.query(User).filter(User.tenant_id == tenant.id, User.pending_approval.is_(False)).order_by(User.name).all()
-    )
+    sellers = team_members(db, tenant.id)
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
 
     now = datetime.datetime.utcnow()

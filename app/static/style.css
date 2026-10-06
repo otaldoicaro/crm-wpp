@@ -347,3 +347,16 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .check-line input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--ink); }
 #rolesList { padding-left: 20px; }
 .ok-box { background: var(--success-bg); border: 1px solid var(--success); color: var(--success); padding: 10px 12px; border-radius: 8px; font-size: .85rem; font-weight: 700; margin-bottom: 12px; }
+.inbox-thread { position: relative; }
+.inbox-thread.drop-active::after {
+  content: attr(data-drop-label); position: absolute; inset: 8px; z-index: 30; display: flex; align-items: center; justify-content: center;
+  border: 3px dashed var(--y); border-radius: var(--radius); background: rgba(253, 184, 19, .14); backdrop-filter: blur(2px);
+  font-family: var(--title); font-weight: var(--title-weight); text-transform: var(--title-transform); font-size: 1.3rem; color: var(--text); pointer-events: none;
+}
+.role-badge { display: inline-block; vertical-align: middle; margin-left: 6px; padding: 2px 8px; border-radius: 999px; font-size: .66rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.role-badge.admin { background: var(--ink); color: var(--y); }
+.role-badge.agent { background: var(--panel-3); color: var(--muted); }
+.dup-warning { margin-top: 4px; font-size: .74rem; color: var(--danger); font-weight: 700; }
+.topbar .user .role-badge { margin-left: 0; }
+.topbar .role-badge.admin { background: var(--y); color: var(--ink); }
+.topbar .role-badge.agent { background: rgba(255, 255, 255, .12); color: var(--on-ink); }
