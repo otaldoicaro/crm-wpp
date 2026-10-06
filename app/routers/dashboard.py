@@ -668,15 +668,21 @@ TEAM_VIEW_PER_COLUMN = 30
 TEAM_VIEW_COOKIE = "inbox_equipe"
 
 
-def _team_columns(db: Session, tenant: Tenant, user: User, seller_ids: list) -> list:
+def _pending_only(query):
+    """Mesma regra do contador "aguardando resposta" do cabeçalho da coluna."""
+    return inbox_state.unanswered_filter(query).filter(Lead.archived_at.is_(None), Lead.tag != "outro")
+
+
+def _team_columns(db: Session, tenant: Tenant, user: User, seller_ids: list, pending_ids=frozenset()) -> list:
     people = {p.id: p for p in team_members(db, tenant.id)}
     now = datetime.datetime.utcnow()
     today = local_to_utc(to_local(now).replace(hour=0, minute=0, second=0, microsecond=0))
     columns = []
     for seller_id in [s for s in seller_ids if s in people][:TEAM_VIEW_MAX]:
         query, _ = _inbox_query(db, tenant, user, "", "", seller_id)
+        list_query = _pending_only(query) if seller_id in pending_ids else query
         convs = _first_per_lead(
-            query.options(joinedload(Conversation.lead))
+            list_query.options(joinedload(Conversation.lead))
             .order_by(Conversation.last_message_at.desc())
             .limit(TEAM_VIEW_PER_COLUMN * 2)
         )
@@ -692,7 +698,10 @@ def _team_columns(db: Session, tenant: Tenant, user: User, seller_ids: list) -> 
             Lead.last_inbound_at.isnot(None),
         ).count()
         today_count = query.filter(Conversation.last_message_at >= today).count()
-        columns.append({"seller": people[seller_id], "convs": convs[:TEAM_VIEW_PER_COLUMN], "waiting": waiting, "today": today_count})
+        columns.append({
+            "seller": people[seller_id], "convs": convs[:TEAM_VIEW_PER_COLUMN], "waiting": waiting,
+            "today": today_count, "pending_only": seller_id in pending_ids,
+        })
     # não lidas (de quem está olhando) de todas as colunas numa consulta só
     all_ids = [c.lead_id for col in columns for c in col["convs"]]
     unread, favorites = inbox_state.unread_map(db, user, all_ids), inbox_state.favorite_ids(db, user, all_ids)
@@ -718,6 +727,16 @@ def _team_sig(db: Session, tenant: Tenant, user: User, seller_ids: list) -> str:
     )
 
 
+TEAM_PENDING_COOKIE = "inbox_equipe_pend"
+
+
+def _team_pending(request: Request) -> frozenset:
+    """Colunas filtradas em "só aguardando resposta" (?p=<vendedor>; lembrado em cookie)."""
+    if "p" in request.query_params or "pset" in request.query_params:
+        return frozenset(v for v in request.query_params.getlist("p") if v)
+    return frozenset(v for v in request.cookies.get(TEAM_PENDING_COOKIE, "").split(",") if v)
+
+
 def _team_selection(request: Request) -> list:
     chosen = request.query_params.getlist("v") if "v" in request.query_params else (
         [v for v in request.cookies.get(TEAM_VIEW_COOKIE, "").split(",") if v]
@@ -736,7 +755,8 @@ def team_inbox(
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Só o admin vê a visão da equipe")
     selected = _team_selection(request)
-    columns = _team_columns(db, tenant, user, selected)
+    pending = _team_pending(request)
+    columns = _team_columns(db, tenant, user, selected, pending)
     response = templates.TemplateResponse(
         request,
         "inbox_equipe.html",
@@ -752,6 +772,7 @@ def team_inbox(
         },
     )
     response.set_cookie(TEAM_VIEW_COOKIE, ",".join(selected), httponly=True, samesite="lax")
+    response.set_cookie(TEAM_PENDING_COOKIE, ",".join(pending), httponly=True, samesite="lax")
     return response
 
 
@@ -795,13 +816,16 @@ def team_inbox_refresh(
     if user.role != "admin":
         raise HTTPException(status_code=403)
     selected = _team_selection(request)
+    pending = _team_pending(request)
     current = _team_sig(db, tenant, user, selected)
     if current == sig:
         return JSONResponse({"changed": False})
     html = templates.get_template("_inbox_equipe_cols.html").render(
-        {"columns": _team_columns(db, tenant, user, selected), "request": request}
+        {"columns": _team_columns(db, tenant, user, selected, pending), "request": request}
     )
-    return JSONResponse({"sig": current, "html": html})
+    response = JSONResponse({"sig": current, "html": html})
+    response.set_cookie(TEAM_PENDING_COOKIE, ",".join(pending), httponly=True, samesite="lax")
+    return response
 
 
 AVATAR_TTL = 24 * 60 * 60

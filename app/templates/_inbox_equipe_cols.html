@@ -4,7 +4,7 @@
   <div class="team-col-head">
     <div><b>{{ col.seller.name }}</b> <span class="role-badge {{ 'admin' if col.seller.role == 'admin' else 'agent' }}">{{ "Admin" if col.seller.role == "admin" else "Vendedor" }}</span></div>
     <div class="team-col-stats">
-      <span class="rt-tag {{ 'late' if col.waiting else '' }}">⏳ {{ col.waiting }} aguardando resposta</span>
+      <button type="button" class="rt-tag pend-toggle {{ 'late' if col.waiting else '' }} {{ 'on' if col.pending_only }}" data-seller="{{ col.seller.id }}" title="{{ 'Mostrar todas as conversas' if col.pending_only else 'Mostrar só quem está aguardando resposta' }}">{{ "✕ " if col.pending_only }}⏳ {{ col.waiting }} aguardando resposta</button>
       <span class="rt-tag">💬 {{ col.today }} conversas hoje</span>
     </div>
   </div>
@@ -21,7 +21,7 @@
         </div>
       </a>
     {% else %}
-      <div class="kanban-empty" style="padding:20px">Sem conversas ainda.</div>
+      <div class="kanban-empty" style="padding:20px">{{ "✅ Ninguém aguardando resposta." if col.pending_only else "Sem conversas ainda." }}</div>
     {% endfor %}
   </div>
   <div class="team-col-thread" hidden>

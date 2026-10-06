@@ -455,3 +455,6 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .team-picker-wrap > summary::-webkit-details-marker { display: none; }
 .team-picker-wrap[open] > summary { margin-bottom: 8px; }
 .team-picker-wrap .team-picker { margin-bottom: 0; }
+.pend-toggle { border: 1px solid transparent; cursor: pointer; font-family: inherit; box-shadow: none; }
+.pend-toggle:hover { border-color: currentColor; }
+.pend-toggle.on { background: var(--danger); color: #fff; }

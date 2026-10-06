@@ -72,6 +72,10 @@
   fit();
   var sig = {{ sig|tojson }};
   var qs = boxes.filter(function (b) { return b.checked; }).map(function (b) { return "v=" + encodeURIComponent(b.value); }).join("&");
+  // colunas em "só aguardando resposta" (clique no ⏳ do cabeçalho da coluna)
+  var pending = {};
+  grid.querySelectorAll(".pend-toggle.on").forEach(function (b) { pending[b.dataset.seller] = true; });
+  function pendingQs() { return "&pset=1" + Object.keys(pending).map(function (s) { return "&p=" + encodeURIComponent(s); }).join(""); }
   var open = {};  // seller -> {lead, sig}
 
   function col(seller) { return grid.querySelector('.team-col[data-seller="' + seller + '"]'); }
@@ -117,6 +121,14 @@
       return;
     }
     if (e.target.closest(".team-back")) showList(e.target.closest(".team-col").dataset.seller);
+    var pend = e.target.closest(".pend-toggle");
+    if (pend) {
+      var seller = pend.dataset.seller;
+      if (pending[seller]) delete pending[seller]; else pending[seller] = true;
+      pend.classList.toggle("on", !!pending[seller]);
+      showList(seller);
+      sig = ""; refreshLists(true);
+    }
   });
   grid.addEventListener("submit", function (e) {
     var form = e.target.closest(".team-reply"); if (!form) return;
@@ -139,7 +151,7 @@
   // listas e números de cada coluna: a cada 10s, sem fechar a conversa que estiver aberta
   function refreshLists(force) {
     if (document.hidden && !force) return;
-    fetch("/inbox-equipe/atualizar?" + qs + "&sig=" + encodeURIComponent(sig), { headers: { accept: "application/json" } })
+    fetch("/inbox-equipe/atualizar?" + qs + pendingQs() + "&sig=" + encodeURIComponent(sig), { headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d || d.changed === false) return;
