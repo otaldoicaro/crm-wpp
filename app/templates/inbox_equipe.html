@@ -9,6 +9,8 @@
   <a class="btn ghost small" href="/inbox">← Voltar pro Inbox</a>
 </div>
 
+<details class="team-picker-wrap" {{ "open" if not columns }}>
+<summary class="btn ghost small team-picker-toggle">👥 <span id="pickSummary">{{ selected|length }} selecionados</span> — trocar quem acompanhar</summary>
 <form method="get" action="/inbox-equipe" class="card team-picker" id="teamPicker">
   <div class="team-picker-list">
     {% for p in people %}
@@ -22,6 +24,7 @@
     <button class="btn small" type="submit">Ver</button>
   </div>
 </form>
+</details>
 
 {% if columns %}
 <div class="team-scroll-hint muted" id="scrollHint" hidden>↔ Role pro lado (ou use Shift + rodinha do mouse) pra ver as outras colunas</div>
@@ -40,6 +43,7 @@
     var n = boxes.filter(function (b) { return b.checked; }).length;
     boxes.forEach(function (b) { b.parentNode.classList.toggle("on", b.checked); });
     document.getElementById("pickCount").textContent = n + " de " + boxes.length + " selecionados";
+    document.getElementById("pickSummary").textContent = n + " de " + boxes.length + " selecionados";
   }
   boxes.forEach(function (b) { b.addEventListener("change", refresh); });
   // só vendedores: admins (gestores) ficam de fora, mas dá pra marcar um admin na mão
@@ -49,10 +53,23 @@
 
   var grid = document.getElementById("teamGrid");
   if (!grid) return;
+  // colunas se ajustam à tela: cabem quantas der com no mínimo 300px e esticam pra preencher
+  // a largura; altura vai até o fim da tela. Recalcula ao redimensionar ou dar zoom (Ctrl +/-).
   var hint = document.getElementById("scrollHint");
-  function checkOverflow() { hint.hidden = grid.scrollWidth <= grid.clientWidth + 4; }
-  window.addEventListener("resize", checkOverflow);
-  checkOverflow();
+  var MIN_COL = 300, GAP = 12;
+  function fit() {
+    var total = grid.querySelectorAll(".team-col").length || 1;
+    var width = grid.clientWidth;
+    var perScreen = Math.max(1, Math.min(total, Math.floor((width + GAP) / (MIN_COL + GAP))));
+    grid.style.setProperty("--colw", ((width - GAP * (perScreen - 1)) / perScreen) + "px");
+    var top = grid.getBoundingClientRect().top + window.scrollY;
+    grid.style.setProperty("--colh", Math.max(360, window.innerHeight - top - 16) + "px");
+    hint.hidden = total <= perScreen;
+  }
+  var fitTimer;
+  window.addEventListener("resize", function () { clearTimeout(fitTimer); fitTimer = setTimeout(fit, 80); });
+  document.querySelector(".team-picker-wrap").addEventListener("toggle", fit);
+  fit();
   var sig = {{ sig|tojson }};
   var qs = boxes.filter(function (b) { return b.checked; }).map(function (b) { return "v=" + encodeURIComponent(b.value); }).join("&");
   var open = {};  // seller -> {lead, sig}

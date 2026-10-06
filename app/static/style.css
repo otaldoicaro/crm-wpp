@@ -446,3 +446,12 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .team-scroll-hint { margin: -4px 0 8px; font-size: .78rem; }
 .team-scroll-hint[hidden] { display: none; }
 @media (max-width: 860px) { .team-grid { grid-auto-columns: 88vw; } }
+/* visão da equipe ocupa a tela toda (monitores grandes) e as colunas esticam pra preencher */
+main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px; }
+.team-grid { grid-auto-columns: var(--colw, 320px); }
+.team-col { height: var(--colh, calc(100vh - 250px)); }
+.team-picker-wrap { margin-bottom: 10px; }
+.team-picker-wrap > summary { list-style: none; display: inline-flex; cursor: pointer; }
+.team-picker-wrap > summary::-webkit-details-marker { display: none; }
+.team-picker-wrap[open] > summary { margin-bottom: 8px; }
+.team-picker-wrap .team-picker { margin-bottom: 0; }
