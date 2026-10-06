@@ -72,3 +72,21 @@ def unread_map(db: Session, user: User, lead_ids: list) -> dict:
     ):
         result.setdefault(lead_id, 0)
     return result
+
+
+def unread_filter(query, user: User):
+    """Restringe uma consulta (que já tem Lead no join) às conversas não lidas por esta pessoa.
+    Mesma regra do contador: mensagem do cliente depois de quando a pessoa leu, de quando ela
+    começou a usar a função e da última resposta da equipe — ou marcada como não lida."""
+    baseline = user.inbox_seen_from or datetime.datetime.utcnow()
+    read = InboxRead.__table__.alias("rf")
+    return query.outerjoin(read, and_(read.c.lead_id == Lead.id, read.c.user_id == user.id)).filter(
+        or_(
+            read.c.manual_unread.is_(True),
+            and_(
+                Lead.last_inbound_at > baseline,
+                or_(read.c.last_read_at.is_(None), Lead.last_inbound_at > read.c.last_read_at),
+                or_(Lead.last_outbound_at.is_(None), Lead.last_inbound_at > Lead.last_outbound_at),
+            ),
+        )
+    )

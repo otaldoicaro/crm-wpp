@@ -26,6 +26,9 @@
     {% for key, label in (("", "Todos"), ("leads", "Leads"), ("cliente", "Clientes"), ("outro", "Outros")) %}
       <a class="pill {{ 'pill-on' if tipo == key }}" href="{{ request.url.path }}?tipo={{ key }}">{{ label }}</a>
     {% endfor %}
+    <a class="pill unread-chip {{ 'pill-on' if lidas == 'nao' }}" href="{{ request.url.path }}?lidas={{ '' if lidas == 'nao' else 'nao' }}" title="{{ 'Mostrar todas' if lidas == 'nao' else 'Só as conversas não lidas, inclusive antigas' }}">
+      {{ "✕ " if lidas == "nao" }}Não lidas <span id="unreadTotal" class="unread-total {{ 'zero' if not unread_total }}">{{ unread_total }}</span>
+    </a>
   </div>
   <form class="inbox-search" method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
     <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone..." autocomplete="off">
@@ -257,18 +260,24 @@
   var numero = {{ numero|tojson }};
   var vendedor = {{ vendedor|tojson }};
   var tipo = {{ tipo|tojson }};
+  var lidas = {{ lidas|tojson }};
   var busy = false;
   function nearBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 120; }
   function tick() {
     if (busy || document.hidden) return;
     busy = true;
     var url = "/inbox-atualizar?lead=" + encodeURIComponent(lead) + "&busca=" + encodeURIComponent(busca) +
-      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) +
+      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) + "&lidas=" + encodeURIComponent(lidas) +
       "&ls=" + encodeURIComponent(listSig) + "&ms=" + encodeURIComponent(msgSig);
     fetch(url, { headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d || d.changed === false) return;
+        if (d.unread_total !== undefined) {
+          var tot = document.getElementById("unreadTotal");
+          tot.textContent = d.unread_total;
+          tot.classList.toggle("zero", !d.unread_total);
+        }
         if (d.list_sig !== listSig) {
           var top = listEl.scrollTop;
           listEl.innerHTML = d.list_html;

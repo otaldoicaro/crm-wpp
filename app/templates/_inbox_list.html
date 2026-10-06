@@ -11,7 +11,9 @@
     </div>
   </a>
 {% else %}
-  {% if busca %}
+  {% if lidas == "nao" %}
+  <div class="kanban-empty" style="padding:24px">✅ Nenhuma conversa não lida. Tudo em dia!</div>
+  {% elif busca %}
   <div class="kanban-empty" style="padding:24px">Nenhuma conversa encontrada pra "{{ busca }}".</div>
   {% else %}
   <div class="kanban-empty" style="padding:24px">Nenhuma conversa de WhatsApp ainda.<br>Assim que um lead chamar no número conectado, aparece aqui.</div>

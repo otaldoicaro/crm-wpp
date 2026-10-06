@@ -387,7 +387,9 @@ def inbox_thread(
 INBOX_LIST_LIMIT = 60  # com milhares de leads/mês a lista inteira pesaria; o resto se acha pela busca
 
 
-def _inbox_query(db: Session, tenant: Tenant, user: User, busca: str, numero: str, vendedor: str, tipo: str = ""):
+def _inbox_query(
+    db: Session, tenant: Tenant, user: User, busca: str, numero: str, vendedor: str, tipo: str = "", lidas: str = ""
+):
     """Conversas visíveis no Inbox com os filtros aplicados. Devolve (query, removed_ids)."""
     query = (
         db.query(Conversation)
@@ -408,6 +410,8 @@ def _inbox_query(db: Session, tenant: Tenant, user: User, busca: str, numero: st
         query = query.filter(Lead.assigned_user_id == vendedor)
     elif removed_ids:  # "Toda a equipe" = só quem está na equipe hoje (e leads sem vendedor)
         query = query.filter(or_(Lead.assigned_user_id.is_(None), Lead.assigned_user_id.notin_(removed_ids)))
+    if lidas == "nao":
+        query = inbox_state.unread_filter(query, user)
     if tipo == "leads":
         query = query.filter(Lead.tag == "")
     elif tipo in ("cliente", "outro"):
@@ -458,10 +462,14 @@ def _inbox_context(
     numero: str = "",
     vendedor: str = "",
     tipo: str = "",
+    lidas: str = "",
 ) -> dict:
     if user.role != "admin":
         numero = vendedor = ""
-    query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo)
+    query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas)
+    # quantas não lidas existem com os filtros atuais (pro botão "Não lidas (N)")
+    unread_query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, "nao")
+    unread_total = unread_query.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
     conversations = _first_per_lead(
         query.options(joinedload(Conversation.lead).joinedload(Lead.assigned_user))  # sem 1 consulta por item
         .order_by(Conversation.last_message_at.desc())
@@ -491,6 +499,8 @@ def _inbox_context(
             "list_sig": _list_sig(conversations),
             "unread": inbox_state.unread_map(db, user, [c.lead_id for c in conversations]),
             "tipo": tipo,
+            "lidas": lidas,
+            "unread_total": unread_total,
             "tags": inbox_state.TAGS,
             "tag_label": inbox_state.TAG_LABEL,
             "list_truncated": len(conversations) >= INBOX_LIST_LIMIT,
@@ -525,16 +535,17 @@ INBOX_FILTER_COOKIE = "inbox_filtro"
 def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]):
     # filtros de número/vendedor ficam lembrados (cookie) ao abrir conversa, responder, etc.
     qp = request.query_params
-    saved = (request.cookies.get(INBOX_FILTER_COOKIE, "") + "||").split("|")
+    saved = (request.cookies.get(INBOX_FILTER_COOKIE, "") + "|||").split("|")
     numero = qp.get("numero", saved[0]) if "numero" in qp or "vendedor" in qp else saved[0]
     vendedor = qp.get("vendedor", saved[1]) if "numero" in qp or "vendedor" in qp else saved[1]
     tipo = qp.get("tipo", saved[2])
+    lidas = qp.get("lidas", saved[3])
     inbox_state.ensure_baseline(db, user)
     if selected_lead_id:
         inbox_state.mark_read(db, user.id, selected_lead_id)
-    ctx = _inbox_context(db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo)
+    ctx = _inbox_context(db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas)
     response = templates.TemplateResponse(request, "inbox.html", ctx)
-    response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}", httponly=True, samesite="lax")
+    response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}", httponly=True, samesite="lax")
     return response
 
 
@@ -591,6 +602,7 @@ def inbox_refresh(
     numero: str = "",
     vendedor: str = "",
     tipo: str = "",
+    lidas: str = "",
     ls: str = "",
     ms: str = "",
     db: Session = Depends(get_db),
@@ -603,7 +615,7 @@ def inbox_refresh(
     # checagem rápida (2 consultas leves): só monta a tela se algo mudou
     if user.role != "admin":
         numero = vendedor = ""
-    query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo)
+    query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas)
     rows = _first_per_lead(
         query.with_entities(Conversation.id, Conversation.lead_id, Conversation.last_message_at)
         .order_by(Conversation.last_message_at.desc())
@@ -614,11 +626,12 @@ def inbox_refresh(
         return JSONResponse({"changed": False})  # nada novo: resposta mínima, sem desenhar nada
     if lead and current_msg_sig != ms:
         inbox_state.mark_read(db, user.id, lead)  # chegou mensagem na conversa que está aberta: já foi vista
-    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo)
+    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo, lidas)
     return JSONResponse(
         {
             "list_sig": ctx["list_sig"],
             "list_html": templates.get_template("_inbox_list.html").render(ctx),
+            "unread_total": ctx["unread_total"],
             "msg_sig": ctx["msg_sig"],
             "msg_html": templates.get_template("_inbox_messages.html").render(ctx) if lead else "",
         }
