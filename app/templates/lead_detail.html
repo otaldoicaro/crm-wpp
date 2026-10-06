@@ -89,6 +89,13 @@
   </div>
 </div>
 
+{% if lead.form_details %}
+<div class="card form-details-card" style="margin-top:16px;">
+  <h3 style="margin-top:0">Formulário da LP / site</h3>
+  <div class="form-details">{{ lead.form_details }}</div>
+</div>
+{% endif %}
+
 <div class="card" style="margin-top:16px;">
   <h3 style="margin-top:0">Atendimento</h3>
   <p class="muted" style="margin:0">Atendente responsável</p>

@@ -18,7 +18,7 @@
     <tbody>
     {% for lead in leads %}
       <tr>
-        <td><a href="{{ '/inbox/' if lead.source == 'whatsapp' else '/leads/' }}{{ lead.id }}"><b>{{ lead.name or "(sem nome)" }}</b></a><div class="muted show-sm">{{ lead.phone }}</div></td>
+        <td><a href="{{ '/inbox/' if lead.conversations else '/leads/' }}{{ lead.id }}"><b>{{ lead.name or "(sem nome)" }}</b></a><div class="muted show-sm">{{ lead.phone }}</div></td>
         <td class="hide-sm muted">{{ lead.phone or lead.email }}</td>
         <td>{{ stage_by_id[lead.stage_id].name if lead.stage_id in stage_by_id else "—" }}</td>
         <td class="hide-sm">{{ lead.created_at|hora("%d/%m/%Y") }}</td>

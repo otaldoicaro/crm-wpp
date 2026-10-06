@@ -205,7 +205,7 @@
     <thead><tr>{% if is_admin %}<th class="check-col"><input type="checkbox" id="checkAll" title="Selecionar todos"></th>{% endif %}<th>Data</th><th>Origem</th><th>Campanha</th><th>Nome</th><th>Telefone</th><th>Etapa</th></tr></thead>
     <tbody>
       {% for lead in table_leads %}
-      <tr style="cursor:pointer" onclick="window.location='{{ '/inbox/' if lead.source == 'whatsapp' else '/leads/' }}{{ lead.id }}'">
+      <tr style="cursor:pointer" onclick="window.location='{{ '/inbox/' if lead.conversations else '/leads/' }}{{ lead.id }}'">
         {% if is_admin %}<td class="check-col" onclick="event.stopPropagation()"><input type="checkbox" class="lead-check" name="lead_ids" value="{{ lead.id }}" data-name="{{ lead.name or lead.phone or '(sem nome)' }}"></td>{% endif %}
         <td>{{ lead.created_at|hora("%d/%m %H:%M") }}</td>
         <td>{{ m.platform_badge(lead_platforms[lead.id], platform_labels[lead_platforms[lead.id]]) }}</td>

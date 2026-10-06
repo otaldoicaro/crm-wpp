@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.models import Conversation, Lead, Message, PipelineStage, WhatsAppNumber
 from app.services import attribution
 from app.services.distribution import assign_lead
+from app.services.lead_match import find_lead_by_phone
 
 
 def _get_or_create_conversation(db: Session, number: WhatsAppNumber, lead: Lead) -> Conversation:
@@ -55,7 +56,7 @@ def ingest_inbound(
     if message_exists(db, wa_message_id):
         return None  # webhook reenviado
 
-    lead = db.query(Lead).filter(Lead.tenant_id == number.tenant_id, Lead.phone == from_phone).first()
+    lead = find_lead_by_phone(db, number.tenant_id, from_phone)
 
     if lead is None:
         first_stage = (
@@ -83,6 +84,14 @@ def ingest_inbound(
 
         assign_lead(db, lead, number)
     else:
+        if not lead.conversations:
+            # lead que nasceu do formulário da LP e agora chamou no WhatsApp: o mesmo lead
+            if lead.attribution is None and referral:
+                attribution.attribution_from_ctwa_referral(db, lead, referral)
+            elif lead.attribution is None:
+                attribution.attribution_from_click_bridge(db, lead, body)
+            if number.owner_user_id and number.owner and number.owner.is_active:
+                lead.assigned_user_id = number.owner_user_id  # quem atende é o dono do WhatsApp que recebeu
         if profile_name and not lead.name:
             lead.name = profile_name
         if lead.archived_at:
@@ -125,7 +134,7 @@ def record_outbound_from_phone(
     lead com esse telefone: conversas pessoais do celular não viram lead."""
     if message_exists(db, wa_message_id):
         return None  # já registrada quando foi enviada pelo próprio CRM
-    lead = db.query(Lead).filter(Lead.tenant_id == number.tenant_id, Lead.phone == to_phone).first()
+    lead = find_lead_by_phone(db, number.tenant_id, to_phone)
     if lead is None or lead.deleted_at:
         return None
 

@@ -140,6 +140,8 @@ class Lead(Base):
     whatsapp_number_id: Mapped[Optional[str]] = mapped_column(ForeignKey("whatsapp_numbers.id"), nullable=True)
     deal_value: Mapped[Optional[float]] = mapped_column(nullable=True)  # valor fechado, preenchido na etapa "Ganho"
     loss_reason: Mapped[str] = mapped_column(String(255), default="")  # motivo, preenchido na etapa "Perdido"
+    # o que a pessoa preencheu nos formulários (LP/site), um bloco por envio, mais recente primeiro
+    form_details: Mapped[str] = mapped_column(Text, default="")
     # foto de perfil do WhatsApp (URL temporária do WhatsApp; renovada a cada 24h em /leads/{id}/avatar)
     avatar_url: Mapped[str] = mapped_column(String(1000), default="")
     avatar_checked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)

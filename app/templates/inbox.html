@@ -55,6 +55,12 @@
       {{ m.platform_badge(platform, platform_label) }}
       <a class="btn ghost small" href="/leads/{{ selected_lead.id }}?voltar=inbox">Atualizar status do lead</a>
     </div>
+    {% if selected_lead.form_details %}
+    <details class="inbox-form-details">
+      <summary>📝 Esse cliente preencheu o formulário da LP — ver carro e peças</summary>
+      <div class="form-details">{{ selected_lead.form_details }}</div>
+    </details>
+    {% endif %}
     <div class="inbox-messages" id="inboxMessages">
       {% include "_inbox_messages.html" %}
     </div>
