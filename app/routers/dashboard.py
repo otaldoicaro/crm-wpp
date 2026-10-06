@@ -411,7 +411,7 @@ def _inbox_query(
     elif removed_ids:  # "Toda a equipe" = só quem está na equipe hoje (e leads sem vendedor)
         query = query.filter(or_(Lead.assigned_user_id.is_(None), Lead.assigned_user_id.notin_(removed_ids)))
     if lidas == "nao":
-        query = inbox_state.unread_filter(query, user)
+        query = inbox_state.unanswered_filter(query)
     if tipo == "leads":
         query = query.filter(Lead.tag == "")
     elif tipo in ("cliente", "outro"):
@@ -467,7 +467,7 @@ def _inbox_context(
     if user.role != "admin":
         numero = vendedor = ""
     query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas)
-    # quantas não lidas existem com os filtros atuais (pro botão "Não lidas (N)")
+    # quantas conversas esperam resposta com os filtros atuais (pro botão "Não respondidas (N)")
     unread_query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, "nao")
     unread_total = unread_query.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
     conversations = _first_per_lead(

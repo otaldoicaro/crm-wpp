@@ -26,8 +26,8 @@
     {% for key, label in (("", "Todos"), ("leads", "Leads"), ("cliente", "Clientes"), ("outro", "Outros")) %}
       <a class="pill {{ 'pill-on' if tipo == key }}" href="{{ request.url.path }}?tipo={{ key }}">{{ label }}</a>
     {% endfor %}
-    <a class="pill unread-chip {{ 'pill-on' if lidas == 'nao' }}" href="{{ request.url.path }}?lidas={{ '' if lidas == 'nao' else 'nao' }}" title="{{ 'Mostrar todas' if lidas == 'nao' else 'Só as conversas não lidas, inclusive antigas' }}">
-      {{ "✕ " if lidas == "nao" }}Não lidas <span id="unreadTotal" class="unread-total {{ 'zero' if not unread_total }}">{{ unread_total }}</span>
+    <a class="pill unread-chip {{ 'pill-on' if lidas == 'nao' }}" href="{{ request.url.path }}?lidas={{ '' if lidas == 'nao' else 'nao' }}" title="{{ 'Mostrar todas' if lidas == 'nao' else 'Conversas em que o cliente mandou mensagem e ninguém respondeu ainda (mesmo que alguém tenha aberto), inclusive antigas' }}">
+      {{ "✕ " if lidas == "nao" }}Não respondidas <span id="unreadTotal" class="unread-total {{ 'zero' if not unread_total }}">{{ unread_total }}</span>
     </a>
   </div>
   <form class="inbox-search" method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
