@@ -58,12 +58,13 @@
     <div class="inbox-messages" id="inboxMessages">
       {% include "_inbox_messages.html" %}
     </div>
-    <form class="reply-box" method="post" action="/leads/{{ selected_lead.id }}/reply" style="position:relative;">
+    <div class="attach-tray" id="attachTray" hidden></div>
+    <form class="reply-box" method="post" action="/leads/{{ selected_lead.id }}/reply" id="replyForm" style="position:relative;">
       <button type="button" class="btn ghost small" id="attachToggle" title="Anexar" style="flex:0 0 auto;">📎</button>
       <input type="file" id="attachInput" accept="image/*,video/*,application/pdf" multiple hidden>
       <button type="button" class="btn ghost small" id="emojiToggle" title="Emojis" style="flex:0 0 auto;">🙂</button>
       <div id="emojiPicker" hidden style="position:absolute; bottom:56px; left:14px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:8px; display:grid; grid-template-columns:repeat(8,1fr); gap:4px; z-index:10;"></div>
-      <input type="text" name="body" id="replyInput" placeholder="Responder pelo WhatsApp... (arraste ou cole fotos aqui)" required autocomplete="off">
+      <input type="text" name="body" id="replyInput" placeholder="Responder pelo WhatsApp... (arraste fotos aqui)" required autocomplete="off">
       <button class="btn" type="submit" id="sendBtn">Enviar</button>
     </form>
     <div id="attachStatus" class="muted" style="padding:0 14px 10px; display:none;"></div>
@@ -102,71 +103,118 @@
       var sendBtn = document.getElementById("sendBtn");
       attachToggle.addEventListener("click", function () { attachInput.click(); });
       attachInput.addEventListener("change", function () {
-        sendFiles(Array.prototype.slice.call(attachInput.files));
+        stageFiles(Array.prototype.slice.call(attachInput.files));
         attachInput.value = "";
       });
 
+      // ---- anexos: igual ao WhatsApp — solta/escolhe o arquivo, ele fica anexado
+      // (miniatura acima da resposta) e só vai pro cliente ao clicar em Enviar ----
       var MAX_BYTES = 16 * 1024 * 1024;
-      function setBusy(busy) { attachToggle.disabled = busy; sendBtn.disabled = busy; }
+      var staged = [];
+      var tray = document.getElementById("attachTray");
+      var replyForm = document.getElementById("replyForm");
+
+      function renderTray() {
+        tray.innerHTML = "";
+        tray.hidden = staged.length === 0;
+        input.required = staged.length === 0;
+        input.placeholder = staged.length ? "Legenda (opcional)" : input.dataset.placeholder;
+        staged.forEach(function (file, i) {
+          var item = document.createElement("div");
+          item.className = "tray-item";
+          if (file.type.indexOf("image/") === 0) {
+            var img = document.createElement("img");
+            img.src = URL.createObjectURL(file);
+            item.appendChild(img);
+          } else {
+            var icon = document.createElement("span");
+            icon.className = "tray-icon";
+            icon.textContent = file.type.indexOf("video/") === 0 ? "🎥" : "📄";
+            item.appendChild(icon);
+          }
+          var name = document.createElement("span");
+          name.className = "tray-name";
+          name.textContent = file.name || "imagem";
+          item.appendChild(name);
+          var remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "tray-remove";
+          remove.title = "Tirar";
+          remove.textContent = "×";
+          remove.addEventListener("click", function () { staged.splice(i, 1); renderTray(); });
+          item.appendChild(remove);
+          tray.appendChild(item);
+        });
+      }
+      function stageFiles(files) {
+        var big = [];
+        files.forEach(function (f) {
+          if (!f || !f.size) return;
+          if (f.size > MAX_BYTES) big.push(f.name); else staged.push(f);
+        });
+        if (big.length) alert("Arquivo maior que 16MB não pode ser enviado: " + big.join(", "));
+        renderTray();
+        input.focus();
+      }
       function uploadOne(file, caption) {
         var formData = new FormData();
         formData.append("file", file, file.name || "arquivo");
         formData.append("caption", caption);
         return fetch("/leads/{{ selected_lead.id }}/reply-media", { method: "POST", body: formData })
           .then(function (r) { return r.json(); })
-          .catch(function () { return { ok: false, error: "conexão" }; });
+          .catch(function () { return { ok: false, error: "sem conexão com o CRM" }; });
       }
-      // envia um ou vários arquivos, um de cada vez (a legenda digitada vai no primeiro)
-      function sendFiles(files) {
-        files = files.filter(function (f) { return f && f.size; });
-        if (!files.length) return;
-        var big = files.filter(function (f) { return f.size > MAX_BYTES; });
-        if (big.length) { alert("Arquivo maior que 16MB não pode ser enviado: " + big.map(function (f) { return f.name; }).join(", ")); }
-        files = files.filter(function (f) { return f.size <= MAX_BYTES; });
-        if (!files.length) return;
+      // Enviar com anexos: manda um por um (o texto digitado vira a legenda do primeiro)
+      replyForm.addEventListener("submit", function (e) {
+        if (!staged.length) return;  // só texto: envio normal
+        e.preventDefault();
+        var files = staged.slice();
         var caption = input.value || "";
         var failed = [];
         attachStatus.style.display = "block";
-        setBusy(true);
+        attachToggle.disabled = true;
+        sendBtn.disabled = true;
         var chain = Promise.resolve();
         files.forEach(function (file, i) {
           chain = chain.then(function () {
-            attachStatus.textContent = "Enviando " + (files.length > 1 ? (i + 1) + " de " + files.length + ": " : "") + (file.name || "imagem colada") + "...";
+            attachStatus.textContent = "Enviando " + (files.length > 1 ? (i + 1) + " de " + files.length + ": " : "") + (file.name || "imagem") + "...";
             return uploadOne(file, i === 0 ? caption : "").then(function (data) {
-              if (!data.ok) failed.push((file.name || "arquivo") + " (" + (data.error || "erro") + ")");
+              if (!data.ok) failed.push((file.name || "arquivo") + ": " + (data.error || "erro"));
             });
           });
         });
         chain.then(function () {
-          if (!failed.length) { input.value = ""; window.location.reload(); return; }
-          attachStatus.textContent = "Falha ao enviar: " + failed.join(", ");
-          setBusy(false);
+          if (!failed.length) { window.location.reload(); return; }
+          attachStatus.textContent = "Não foi enviado — " + failed.join(" | ");
+          attachToggle.disabled = false;
+          sendBtn.disabled = false;
         });
-      }
+      });
 
-      // arrastar arquivos pra dentro da conversa
+      // arrastar arquivo pra qualquer lugar da tela: mostra "Solte aqui" na conversa
       var pane = document.getElementById("threadPane");
       var dragDepth = 0;
       function hasFiles(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], "Files") !== -1; }
-      pane.addEventListener("dragenter", function (e) { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; pane.classList.add("drop-active"); });
-      pane.addEventListener("dragover", function (e) { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
-      pane.addEventListener("dragleave", function () { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) pane.classList.remove("drop-active"); });
-      pane.addEventListener("drop", function (e) {
+      window.addEventListener("dragenter", function (e) { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; pane.classList.add("drop-active"); });
+      window.addEventListener("dragover", function (e) { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+      window.addEventListener("dragleave", function () { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) pane.classList.remove("drop-active"); });
+      window.addEventListener("drop", function (e) {
         if (!hasFiles(e)) return;
-        e.preventDefault();
+        e.preventDefault();  // sem isso o navegador abre o arquivo e sai do CRM
         dragDepth = 0;
         pane.classList.remove("drop-active");
-        sendFiles(Array.prototype.slice.call(e.dataTransfer.files));
+        stageFiles(Array.prototype.slice.call(e.dataTransfer.files));
       });
-      // colar print/imagem (Ctrl+V / Cmd+V) no campo de resposta
+      // print copiado (Ctrl+V) também vira anexo — opcional, arrastar já resolve
       input.addEventListener("paste", function (e) {
         var items = (e.clipboardData && e.clipboardData.items) || [];
         var files = [];
         for (var i = 0; i < items.length; i++) {
           if (items[i].kind === "file") { var f = items[i].getAsFile(); if (f) files.push(f); }
         }
-        if (files.length) { e.preventDefault(); sendFiles(files); }
+        if (files.length) { e.preventDefault(); stageFiles(files); }
       });
+      input.dataset.placeholder = input.placeholder;
     })();
     </script>
   </div>

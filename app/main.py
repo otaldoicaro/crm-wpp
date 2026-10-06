@@ -29,6 +29,7 @@ app = FastAPI(title="CRM Multi-Tenant WhatsApp + Site")
 sync_schema()
 media_store.setup()
 archiver.schedule()
+webhooks_evolution.clean_legacy_placeholders()
 
 
 @app.middleware("http")

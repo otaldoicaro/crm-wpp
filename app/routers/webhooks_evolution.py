@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.config import EVOLUTION_WEBHOOK_TOKEN
 from app.db import get_db
-from app.models import WhatsAppNumber
+from app.models import Message, WhatsAppNumber
 from app.services.inbound import ingest_inbound, record_outbound_from_phone
 from app.services.media_store import backup_message_media
 
@@ -72,8 +72,73 @@ def _parse_content(message: dict) -> tuple:
             caption = media.get("caption", "") or (media.get("fileName", "") if media_type == "document" else "")
             return f"{placeholder}{' — ' + caption if caption else ''}", media_type, media.get("contextInfo", {}) or {}
 
-    kind = next(iter(message.keys()), "desconhecido")
-    return f"[mensagem do tipo '{kind}' ainda não suportada]", "", {}
+    if "locationMessage" in message or "liveLocationMessage" in message:
+        loc = message.get("locationMessage") or message.get("liveLocationMessage") or {}
+        lat, lng = loc.get("degreesLatitude"), loc.get("degreesLongitude")
+        name = loc.get("name") or loc.get("address") or ""
+        link = f" https://maps.google.com/?q={lat},{lng}" if lat is not None and lng is not None else ""
+        return f"📍 Localização{' — ' + name if name else ''}{link}", "", {}
+    if "contactMessage" in message:
+        return f"👤 Contato: {message['contactMessage'].get('displayName', '')}", "", {}
+    if "contactsArrayMessage" in message:
+        names = [c.get("displayName", "") for c in message["contactsArrayMessage"].get("contacts", [])]
+        return f"👤 Contatos: {', '.join(n for n in names if n)}", "", {}
+
+    kinds = [k for k in message.keys() if k not in IGNORED_TYPES]
+    if not kinds:
+        return "", "", {}  # só metadados (reação, chave de grupo, etc.): não vira mensagem
+    logger.info("evolution: tipo de mensagem não exibido no CRM: %s", kinds)
+    return "📎 Mensagem que o CRM ainda não mostra (ex: enquete, figurinha animada) — veja no celular", "", {}
+
+
+# tipos que não são conteúdo pra mostrar na conversa
+IGNORED_TYPES = {
+    "messageContextInfo",
+    "senderKeyDistributionMessage",
+    "reactionMessage",
+    "encReactionMessage",
+    "pollUpdateMessage",
+    "keepInChatMessage",
+    "pinInChatMessage",
+    "protocolMessage",
+    "secretEncryptedMessage",
+    "editedMessage",
+    "base64",
+}
+
+
+def _apply_edit_or_delete(db: Session, item: dict) -> bool:
+    """Edição/exclusão de uma mensagem que já está no CRM. Devolve True se tratou.
+    - protocolMessage REVOKE: "Apagar pra todos" -> marca a original como apagada
+    - protocolMessage MESSAGE_EDIT / editedMessage: edição com o texto novo -> atualiza
+    - secretEncryptedMessage MESSAGE_EDIT: edição criptografada (o texto novo não vem
+      pro WhatsApp Web) -> marca a original como editada no celular"""
+    message = item.get("message") or {}
+    if "editedMessage" in message:
+        message = message["editedMessage"].get("message", {}) or message
+    proto = message.get("protocolMessage")
+    secret = message.get("secretEncryptedMessage")
+    if not proto and not secret:
+        return False
+
+    target = ((proto or secret).get("key") if proto else secret.get("targetMessageKey")) or {}
+    original = db.query(Message).filter(Message.wa_message_id == target.get("id", "")).first() if target else None
+    kind = str((proto or {}).get("type", "")) if proto else str(secret.get("secretEncType", ""))
+
+    if original is not None:
+        if proto and kind in ("0", "REVOKE"):
+            if not original.body.startswith("🚫"):
+                original.body = f"🚫 Mensagem apagada no WhatsApp: {original.body}"
+        elif proto and (kind in ("14", "MESSAGE_EDIT") or proto.get("editedMessage")):
+            new_text, _, _ = _parse_content(proto.get("editedMessage") or {})
+            if new_text:
+                original.body = f"{new_text} ✏️ (editada)"
+        elif secret and kind in ("2", "MESSAGE_EDIT"):
+            if "(editada no celular" not in original.body:
+                original.body = f"{original.body} ✏️ (editada no celular — veja o texto novo lá)"
+        db.add(original)
+        db.commit()
+    return True  # nunca vira mensagem nova, mesmo se a original não estiver no CRM
 
 
 def _referral_from_context(context_info: dict):
@@ -137,6 +202,9 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
     if not jid or jid.endswith("@g.us") or jid.endswith("@broadcast") or jid.endswith("@newsletter"):
         return None  # grupos, status e canais não viram lead
 
+    if _apply_edit_or_delete(db, item):
+        return None
+
     phone = _phone_from_key(key, item)
     wa_message_id = key.get("id", "")
     body, media_type, context_info = _parse_content(item.get("message") or {})
@@ -162,3 +230,26 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
         profile_name=item.get("pushName", "") or "",
         referral=_referral_from_context(context_info),
     )
+
+
+def clean_legacy_placeholders() -> int:
+    """Versões antigas gravavam "[mensagem do tipo 'X' ainda não suportada]" pra edições,
+    reações etc. Apaga as que não são conteúdo e troca o resto pelo texto amigável.
+    Roda no start; depois da primeira vez não acha mais nada."""
+    from app.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        fixed = 0
+        for msg in db.query(Message).filter(Message.body.like("[mensagem do tipo '%' ainda não suportada]")):
+            kind = msg.body.split("'")[1]
+            if kind in IGNORED_TYPES:
+                db.delete(msg)
+            else:
+                msg.body = "📎 Mensagem que o CRM ainda não mostra (ex: enquete, figurinha animada) — veja no celular"
+                db.add(msg)
+            fixed += 1
+        db.commit()
+        return fixed
+    finally:
+        db.close()
