@@ -12,11 +12,11 @@
 <form method="get" action="/inbox-equipe" class="card team-picker" id="teamPicker">
   <div class="team-picker-list">
     {% for p in people %}
-    <label class="team-chip"><input type="checkbox" name="v" value="{{ p.id }}" {{ "checked" if p.id in selected }}> {{ p.name }}</label>
+    <label class="team-chip"><input type="checkbox" name="v" value="{{ p.id }}" data-role="{{ p.role }}" {{ "checked" if p.id in selected }}> {{ p.name }}{% if p.role == "admin" %} <span class="role-badge admin">Admin</span>{% endif %}</label>
     {% endfor %}
   </div>
   <div class="team-picker-actions">
-    <button type="button" class="btn ghost small" id="pickAll">Selecionar todos</button>
+    <button type="button" class="btn ghost small" id="pickAll">Selecionar todos os vendedores</button>
     <button type="button" class="btn ghost small" id="pickNone">Limpar</button>
     <span class="muted" id="pickCount"></span>
     <button class="btn small" type="submit">Ver</button>
@@ -42,7 +42,8 @@
     document.getElementById("pickCount").textContent = n + " de " + boxes.length + " selecionados";
   }
   boxes.forEach(function (b) { b.addEventListener("change", refresh); });
-  document.getElementById("pickAll").addEventListener("click", function () { boxes.forEach(function (b) { b.checked = true; }); refresh(); });
+  // só vendedores: admins (gestores) ficam de fora, mas dá pra marcar um admin na mão
+  document.getElementById("pickAll").addEventListener("click", function () { boxes.forEach(function (b) { b.checked = b.dataset.role !== "admin"; }); refresh(); });
   document.getElementById("pickNone").addEventListener("click", function () { boxes.forEach(function (b) { b.checked = false; }); refresh(); });
   refresh();
 
