@@ -656,6 +656,10 @@ def _team_columns(db: Session, tenant: Tenant, user: User, seller_ids: list) -> 
         ).count()
         today_count = query.filter(Conversation.last_message_at >= today).count()
         columns.append({"seller": people[seller_id], "convs": convs[:TEAM_VIEW_PER_COLUMN], "waiting": waiting, "today": today_count})
+    # não lidas (de quem está olhando) de todas as colunas numa consulta só
+    unread = inbox_state.unread_map(db, user, [c.lead_id for col in columns for c in col["convs"]])
+    for col in columns:
+        col["unread"] = unread
     return columns
 
 
@@ -703,6 +707,35 @@ def team_inbox(
     )
     response.set_cookie(TEAM_VIEW_COOKIE, ",".join(selected), httponly=True, samesite="lax")
     return response
+
+
+TEAM_THREAD_LAST = 80  # mensagens mostradas na coluna (a conversa inteira abre no Inbox)
+
+
+@router.get("/inbox-equipe/conversa/{lead_id}")
+def team_thread(
+    lead_id: str,
+    ms: str = "",
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Conversa aberta dentro de uma coluna da visão da equipe. Com `ms` (assinatura
+    que a coluna já tem) só desenha de novo se chegou/saiu mensagem."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403)
+    current = _msg_sig(db, lead_id)
+    if ms and current == ms:
+        return JSONResponse({"changed": False})
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    if not lead:
+        raise HTTPException(status_code=404)
+    inbox_state.mark_read(db, user.id, lead_id)
+    messages = lead.all_messages[-TEAM_THREAD_LAST:]
+    closed = bool(lead.stage and (lead.stage.is_won or lead.stage.is_lost))
+    head = templates.get_template("_team_thread_head.html").render({"lead": lead, "closed": closed, "truncated": len(lead.all_messages) > TEAM_THREAD_LAST})
+    body = templates.get_template("_inbox_messages.html").render({"messages": messages})
+    return JSONResponse({"sig": current, "head": head, "html": body})
 
 
 @router.get("/inbox-equipe/atualizar")
@@ -818,6 +851,7 @@ def get_media(
 def reply_lead(
     lead_id: str,
     body: str = Form(...),
+    ajax: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -832,7 +866,8 @@ def reply_lead(
     if ok:
         response_times.mark_outbound(lead)
     _record_outbound(db, conversation, user, wa_id, body if ok else f"⚠️ Não enviada: {body}", secret=secret)
-
+    if ajax:
+        return JSONResponse({"ok": ok, "error": "" if ok else "o WhatsApp deste número não aceitou o envio"})
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
 

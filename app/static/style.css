@@ -417,3 +417,16 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .team-view-btn { flex: 0 0 auto; padding: 6px 12px; font-size: .78rem; }
 @media (max-width: 860px) { .team-grid { grid-template-columns: repeat(var(--cols), 85vw); } }
 .ctx-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.team-col { height: calc(100vh - 250px); max-height: none; }
+.team-col-list { flex: 1; min-height: 0; }
+.team-col-list[hidden], .team-col-thread[hidden] { display: none !important; }
+.team-col-thread { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.team-thread-head { padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.team-thread-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.team-open-full { font-size: .74rem; }
+.team-thread-msgs { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; }
+.team-thread-msgs .msg-bubble { max-width: 88%; font-size: .82rem; }
+.team-reply { padding: 8px 10px; }
+.team-reply input[type=text] { padding: 9px 12px; font-size: .84rem; }
+.team-reply-status { padding: 0 12px 8px; font-size: .76rem; color: var(--danger); }
+.team-reply-status:empty { display: none; }

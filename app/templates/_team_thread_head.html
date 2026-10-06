@@ -1,0 +1,11 @@
+{% import "_macros.html" as m %}
+<div class="team-thread-top">
+  <button type="button" class="btn ghost small team-back">← Conversas</button>
+  <a class="team-open-full" href="/inbox/{{ lead.id }}" title="Abrir no Inbox completo">abrir no Inbox ↗</a>
+</div>
+<div class="team-thread-who">
+  <b>{{ lead.name or lead.phone }}</b>{% if lead.tag %} <span class="tag-badge {{ lead.tag }}">{{ "Cliente" if lead.tag == "cliente" else "Outro" }}</span>{% endif %}
+  <div class="muted">{{ lead.phone }}</div>
+  {{ m.tempo_atendimento(lead, closed=closed) }}
+  {% if truncated %}<div class="muted" style="font-size:.72rem">Mostrando as últimas mensagens — a conversa completa está no Inbox.</div>{% endif %}
+</div>
