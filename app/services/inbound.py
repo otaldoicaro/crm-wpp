@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import Conversation, Lead, Message, PipelineStage, WhatsAppNumber
-from app.services import attribution
+from app.services import attribution, response_times
 from app.services.distribution import assign_lead
 from app.services.lead_match import find_lead_by_phone
 
@@ -101,6 +101,8 @@ def ingest_inbound(
         db.add(lead)
 
     conversation = _get_or_create_conversation(db, number, lead)
+    response_times.mark_inbound(lead)
+    db.add(lead)
     message = Message(
         conversation_id=conversation.id,
         direction="in",
@@ -139,6 +141,8 @@ def record_outbound_from_phone(
         return None
 
     conversation = _get_or_create_conversation(db, number, lead)
+    response_times.mark_outbound(lead)  # vendedor respondeu pelo celular
+    db.add(lead)
     message = Message(
         conversation_id=conversation.id,
         direction="out",

@@ -373,3 +373,11 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 .inbox-form-details summary { cursor: pointer; font-weight: 700; }
 .inbox-form-details .form-details { margin-top: 6px; max-height: 180px; overflow-y: auto; }
 .form-badge { display: inline-flex; align-items: center; font-size: .66rem; font-weight: 800; padding: 3px 8px; border-radius: 7px; background: var(--y-soft); color: var(--text); border: 1px solid var(--y); }
+.rt-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.rt-tag { font-size: .66rem; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--panel-3); color: var(--muted); white-space: nowrap; }
+.rt-tag.wait { background: var(--y-soft); color: var(--text); }
+.rt-tag.late { background: var(--danger-bg); color: var(--danger); }
+.inbox-thread-head .rt-row { margin-top: 3px; }
+.rt-grid .stat-card .muted { font-size: .72rem; margin-top: 4px; }
+.rt-grid .stat-value { font-size: 1.6rem; }
+.rt-late-cell { color: var(--danger); font-weight: 800; }

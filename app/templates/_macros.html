@@ -51,3 +51,17 @@
   {% endif %}
 {% endfor %}
 {%- endmacro %}
+
+{% macro tempo_atendimento(lead, closed=False) -%}
+{# ⏱ quanto demoramos no 1º atendimento + ⏳ cliente esperando / 💬 nossa última resposta #}
+{% set fr = rt.first_response(lead) %}
+{% set waiting = None if closed else rt.waiting_since(lead) %}
+<div class="rt-row">
+  {% if fr is not none %}<span class="rt-tag" title="Tempo até a nossa 1ª resposta">⏱ 1º atend.: {{ fr|duracao }}</span>{% endif %}
+  {% if waiting %}
+    <span class="rt-tag {{ 'late' if (agora() - waiting) > rt.WAITING_ALERT else 'wait' }}" title="Cliente esperando resposta nossa">⏳ aguardando há {{ waiting|ha }}</span>
+  {% elif lead.last_outbound_at %}
+    <span class="rt-tag {{ 'late' if not closed and (agora() - lead.last_outbound_at) > rt.IDLE_ALERT }}" title="Nossa última mensagem pro cliente">💬 última resposta há {{ lead.last_outbound_at|ha }}</span>
+  {% endif %}
+</div>
+{%- endmacro %}

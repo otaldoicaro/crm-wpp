@@ -12,12 +12,13 @@ número é adicionado pela tela WhatsApp do CRM (ver evolution_client.set_webhoo
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.config import EVOLUTION_WEBHOOK_TOKEN
-from app.db import get_db
+from app.db import SessionLocal
 from app.models import Message, WhatsAppNumber
 from app.services.inbound import ingest_inbound, record_outbound_from_phone
 from app.services.msgsecret import decrypt_edit, secret_b64, text_from_message, to_bytes
@@ -184,11 +185,27 @@ def _referral_from_context(context_info: dict):
 
 
 @router.post("/webhooks/evolution")
-async def receive_evolution_event(request: Request, background: BackgroundTasks, db: Session = Depends(get_db)):
+async def receive_evolution_event(request: Request, background: BackgroundTasks):
     if EVOLUTION_WEBHOOK_TOKEN and request.query_params.get("token") != EVOLUTION_WEBHOOK_TOKEN:
         return JSONResponse({"ok": False}, status_code=403)
-
     payload = await request.json()
+    # o trabalho com banco roda numa thread separada: se rodasse aqui (no laço
+    # principal), cada mensagem recebida travava o CRM inteiro enquanto o banco respondia
+    for message_id in await run_in_threadpool(_process_event, payload):
+        background.add_task(backup_message_media, message_id)
+    return JSONResponse({"ok": True})
+
+
+def _process_event(payload: dict) -> list:
+    """Processa o evento e devolve os ids das mensagens com mídia (pra copiar depois)."""
+    db = SessionLocal()
+    try:
+        return _process_event_db(db, payload)
+    finally:
+        db.close()
+
+
+def _process_event_db(db: Session, payload: dict) -> list:
     event = _normalize_event(payload.get("event", ""))
     instance = payload.get("instance", "")
     number = (
@@ -198,7 +215,7 @@ async def receive_evolution_event(request: Request, background: BackgroundTasks,
     )
     if not number:
         logger.warning("evolution: evento %s de instância desconhecida: %s", event, instance)
-        return JSONResponse({"ok": True})
+        return []
 
     data = payload.get("data") or {}
 
@@ -208,16 +225,17 @@ async def receive_evolution_event(request: Request, background: BackgroundTasks,
             number.connection_state = state
             db.add(number)
             db.commit()
-        return JSONResponse({"ok": True})
+        return []
 
     if event != "messages.upsert":
-        return JSONResponse({"ok": True})
+        return []
 
+    media_ids = []
     for item in data if isinstance(data, list) else [data]:
         message = _handle_message(db, number, item)
         if message is not None and message.media_id:
-            background.add_task(backup_message_media, message.id)
-    return JSONResponse({"ok": True})
+            media_ids.append(message.id)
+    return media_ids
 
 
 def _handle_message(db: Session, number: WhatsAppNumber, item: dict):

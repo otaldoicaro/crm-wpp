@@ -11,12 +11,13 @@ Configuração no Meta for Developers > seu App > WhatsApp > Configuration:
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.config import META_WEBHOOK_VERIFY_TOKEN
-from app.db import get_db
+from app.db import SessionLocal
 from app.models import WhatsAppNumber
 from app.services.inbound import ingest_inbound
 from app.services.media_store import backup_message_media
@@ -37,8 +38,23 @@ def verify_webhook(request: Request):
 
 
 @router.post("/webhooks/whatsapp")
-async def receive_whatsapp_event(request: Request, background: BackgroundTasks, db: Session = Depends(get_db)):
+async def receive_whatsapp_event(request: Request, background: BackgroundTasks):
     payload = await request.json()
+    for message_id in await run_in_threadpool(_process_payload, payload):  # banco fora do laço principal
+        background.add_task(backup_message_media, message_id)
+    return JSONResponse({"ok": True})
+
+
+def _process_payload(payload: dict) -> list:
+    db = SessionLocal()
+    try:
+        return _process_payload_db(db, payload)
+    finally:
+        db.close()
+
+
+def _process_payload_db(db: Session, payload: dict) -> list:
+    media_ids = []
 
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
@@ -61,9 +77,8 @@ async def receive_whatsapp_event(request: Request, background: BackgroundTasks, 
             for wa_message in value.get("messages", []):
                 message = _handle_inbound_message(db, number, wa_message, contacts)
                 if message is not None and message.media_id:
-                    background.add_task(backup_message_media, message.id)
-
-    return JSONResponse({"ok": True})
+                    media_ids.append(message.id)
+    return media_ids
 
 
 def _handle_inbound_message(db: Session, number: WhatsAppNumber, wa_message: dict, contacts: dict):

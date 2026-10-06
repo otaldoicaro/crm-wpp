@@ -19,10 +19,11 @@ no código da página), o pior uso indevido seria criar leads falsos nesse clien
 import json
 
 from fastapi import APIRouter, Depends, Form, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import SessionLocal, get_db
 from app.models import Tenant
 from app.services.lead_match import upsert_form_lead
 
@@ -65,9 +66,7 @@ def lp_preflight(tenant_id: str):
 
 
 @router.post("/webhooks/lp/{tenant_id}")
-async def receive_lp_lead(tenant_id: str, request: Request, db: Session = Depends(get_db)):
-    if not db.get(Tenant, tenant_id):
-        return JSONResponse({"ok": False, "error": "tenant inválido"}, status_code=404, headers=CORS)
+async def receive_lp_lead(tenant_id: str, request: Request):
     try:
         payload = json.loads((await request.body()).decode("utf-8") or "{}")
     except (ValueError, UnicodeDecodeError):
@@ -84,5 +83,16 @@ async def receive_lp_lead(tenant_id: str, request: Request, db: Session = Depend
     }
     if not data["phone"] and not data["email"]:
         return JSONResponse({"ok": False, "error": "sem telefone nem e-mail"}, status_code=400, headers=CORS)
-    lead, created = upsert_form_lead(db, tenant_id, data, source="site_form")
-    return JSONResponse({"ok": True, "lead_id": lead.id, "created": created}, headers=CORS)
+    result = await run_in_threadpool(_save_lp_lead, tenant_id, data)  # banco fora do laço principal
+    return JSONResponse(result, status_code=200 if result["ok"] else 404, headers=CORS)
+
+
+def _save_lp_lead(tenant_id: str, data: dict) -> dict:
+    db = SessionLocal()
+    try:
+        if not db.get(Tenant, tenant_id):
+            return {"ok": False, "error": "tenant inválido"}
+        lead, created = upsert_form_lead(db, tenant_id, data, source="site_form")
+        return {"ok": True, "lead_id": lead.id, "created": created}
+    finally:
+        db.close()

@@ -37,6 +37,7 @@
       <div class="info">
         <div class="name">{{ selected_lead.name or selected_lead.phone }}</div>
         <span class="muted">{{ selected_lead.phone }} · atendente: {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "não atribuído" }}</span>
+        {{ m.tempo_atendimento(selected_lead, closed=selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost)) }}
         {% if active_conversation %}
         {% set active_number = active_conversation.whatsapp_number %}
         <div class="via-number">

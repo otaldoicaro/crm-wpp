@@ -7,11 +7,13 @@ deploy, e a interface fica com o visual desatualizado até o usuário limpar
 o cache manualmente.
 """
 
+import datetime
 import os
 
 from fastapi.templating import Jinja2Templates
 
 from app.themes import theme_css, theme_for
+from app.services import response_times
 from app.timeutil import fmt_local
 
 templates = Jinja2Templates(directory="app/templates")
@@ -28,5 +30,9 @@ templates.env.globals["asset_version"] = _asset_version()
 templates.env.globals["theme_for"] = theme_for
 templates.env.globals["theme_css"] = theme_css
 templates.env.filters["hora"] = fmt_local
+templates.env.filters["duracao"] = response_times.human
+templates.env.filters["ha"] = response_times.ago
+templates.env.globals["rt"] = response_times
+templates.env.globals["agora"] = datetime.datetime.utcnow
 # "Carlos  Vendedor" e "carlos vendedor" contam como o mesmo nome
 templates.env.filters["chave_nome"] = lambda s: " ".join((s or "").lower().split())

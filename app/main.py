@@ -7,8 +7,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
 
-from app.db import SessionLocal, sync_schema
-from app.services import archiver, media_store
+from app.db import SessionLocal, sync_indexes, sync_schema
+from app.services import archiver, media_store, response_times
 from app.routers import (
     admin_setup,
     auth_router,
@@ -27,9 +27,12 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="CRM Multi-Tenant WhatsApp + Site")
 
 sync_schema()
+sync_indexes()
 media_store.setup()
 archiver.schedule()
 webhooks_evolution.clean_legacy_placeholders()
+with SessionLocal() as _db:
+    response_times.backfill(_db)
 
 
 @app.middleware("http")

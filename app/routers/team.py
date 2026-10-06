@@ -12,6 +12,7 @@ import datetime
 import secrets
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -119,14 +120,18 @@ async def save_roles(
     """Salva os níveis escolhidos na tabela (campo role_<id> = agent | admin).
     O próprio nível não muda por aqui (evita o último admin se rebaixar)."""
     _require_admin(user)
-    form = await request.form()
+    form = dict(await request.form())
+    await run_in_threadpool(_apply_roles, db, tenant, user, form)
+    return RedirectResponse(url="/equipe?salvo=1", status_code=302)
+
+
+def _apply_roles(db: Session, tenant: Tenant, user: User, form: dict) -> None:
     for member in db.query(User).filter(User.tenant_id == tenant.id, User.id != user.id):
         role = form.get(f"role_{member.id}")
         if role in ("agent", "admin") and role != member.role:
             member.role = role
             db.add(member)
     db.commit()
-    return RedirectResponse(url="/equipe?salvo=1", status_code=302)
 
 
 @router.post("/equipe/{user_id}/{action}")

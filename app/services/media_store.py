@@ -162,15 +162,21 @@ def backup_message_media(message_id: str) -> None:
         message = db.get(Message, message_id)
         if not message or not message.media_id or message.media_stored_key:
             return
-        conversation = db.get(Conversation, message.conversation_id)
-        number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
-        content, mime_type = messaging.fetch_media(number, message.media_id)
-        key = save(message.id, content, mime_type) if content else ""
-        if key:
-            message.media_stored_key = key
-            db.add(message)
-            db.commit()
+        media_id = message.media_id
+        number = db.get(WhatsAppNumber, db.get(Conversation, message.conversation_id).whatsapp_number_id)
+        db.expunge(number)
+    finally:
+        db.close()  # devolve a conexão antes do download (que pode demorar)
+    try:
+        content, mime_type = messaging.fetch_media(number, media_id)
+        key = save(message_id, content, mime_type) if content else ""
     except Exception:
         logger.exception("media_store: falha no backup da mensagem %s", message_id)
-    finally:
-        db.close()
+        return
+    if key:
+        db = SessionLocal()
+        try:
+            db.query(Message).filter(Message.id == message_id).update({Message.media_stored_key: key})
+            db.commit()
+        finally:
+            db.close()

@@ -1,16 +1,20 @@
+import base64
 import datetime
+import os
+import threading
+import time
 from typing import Optional
 
 import requests
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app.services import evolution_client, media_store, messaging
+from app.services import evolution_client, media_store, messaging, response_times
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.services.people import removed_user_ids, team_members
 from app.services.platform import PLATFORM_LABEL, resolve_platform
@@ -26,6 +30,9 @@ STAGE_COLOR_PALETTE = ["#4285F4", "#f2a71b", "#8b5cf6", "#22c55e", "#e21b3c", "#
 def _stage_colors(stages: list[PipelineStage]) -> dict[str, str]:
     return {stage.id: STAGE_COLOR_PALETTE[i % len(STAGE_COLOR_PALETTE)] for i, stage in enumerate(stages)}
 
+
+# o que as telas de lista usam de cada lead, carregado em lote
+LEAD_CARD_LOAD = (selectinload(Lead.attribution), selectinload(Lead.conversations), joinedload(Lead.assigned_user))
 
 PIPELINE_COL_LIMIT = 30  # cartões por coluna; "ver mais" soma de 30 em 30
 
@@ -72,7 +79,11 @@ def pipeline_view(
     for stage in stages:
         limit = max(n, PIPELINE_COL_LIMIT) if col == stage.id else PIPELINE_COL_LIMIT
         leads_by_stage[stage.id] = (
-            base.filter(Lead.stage_id == stage.id).order_by(Lead.updated_at.desc()).limit(limit).all()
+            base.filter(Lead.stage_id == stage.id)
+            .options(*LEAD_CARD_LOAD)  # carrega origem/conversas/atendente junto (sem 1 consulta por cartão)
+            .order_by(Lead.updated_at.desc())
+            .limit(limit)
+            .all()
         )
     shown = [lead for col_leads in leads_by_stage.values() for lead in col_leads]
     lead_platforms = {lead.id: resolve_platform(lead.attribution) for lead in shown}
@@ -374,15 +385,8 @@ def inbox_thread(
 INBOX_LIST_LIMIT = 60  # com milhares de leads/mês a lista inteira pesaria; o resto se acha pela busca
 
 
-def _inbox_context(
-    db: Session,
-    tenant: Tenant,
-    user: User,
-    selected_lead_id: Optional[str],
-    busca: str = "",
-    numero: str = "",
-    vendedor: str = "",
-) -> dict:
+def _inbox_query(db: Session, tenant: Tenant, user: User, busca: str, numero: str, vendedor: str):
+    """Conversas visíveis no Inbox com os filtros aplicados. Devolve (query, removed_ids)."""
     query = (
         db.query(Conversation)
         .join(Lead, Lead.id == Conversation.lead_id)
@@ -391,7 +395,6 @@ def _inbox_context(
     if user.role != "admin":
         # no rodízio cada vendedor só enxerga os leads que caíram pra ele; admin vê tudo
         query = query.filter(Lead.assigned_user_id == user.id)
-        numero = vendedor = ""
     if numero:
         query = query.filter(Conversation.whatsapp_number_id == numero)
     removed_ids = removed_user_ids(db, tenant.id)
@@ -410,12 +413,53 @@ def _inbox_context(
         if digits:
             conditions.append(Lead.phone.like(f"%{digits}%"))
         query = query.filter(or_(*conditions))
-    # um item por lead (um lead pode ter conversa em mais de um número), o mais recente primeiro
-    conversations, seen = [], set()
-    for conv in query.order_by(Conversation.last_message_at.desc()).limit(INBOX_LIST_LIMIT * 2):
-        if conv.lead_id not in seen and len(conversations) < INBOX_LIST_LIMIT:
-            seen.add(conv.lead_id)
-            conversations.append(conv)
+    return query, removed_ids
+
+
+def _first_per_lead(rows) -> list:
+    """Um item por lead (um lead pode ter conversa em mais de um número), o mais recente primeiro."""
+    picked, seen = [], set()
+    for row in rows:
+        if row.lead_id not in seen and len(picked) < INBOX_LIST_LIMIT:
+            seen.add(row.lead_id)
+            picked.append(row)
+    return picked
+
+
+def _list_sig(rows) -> str:
+    return "|".join(f"{r.id}:{r.last_message_at.isoformat()}" for r in rows)
+
+
+def _msg_sig(db: Session, lead_id: Optional[str]) -> str:
+    """Muda quando chega/sai mensagem ou quando uma é editada/apagada (o texto muda de tamanho)."""
+    if not lead_id:
+        return "0"
+    count, last, size = (
+        db.query(func.count(Message.id), func.max(Message.created_at), func.sum(func.length(Message.body)))
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .filter(Conversation.lead_id == lead_id)
+        .one()
+    )
+    return f"{count}:{last.isoformat() if last else ''}:{size or 0}"
+
+
+def _inbox_context(
+    db: Session,
+    tenant: Tenant,
+    user: User,
+    selected_lead_id: Optional[str],
+    busca: str = "",
+    numero: str = "",
+    vendedor: str = "",
+) -> dict:
+    if user.role != "admin":
+        numero = vendedor = ""
+    query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor)
+    conversations = _first_per_lead(
+        query.options(joinedload(Conversation.lead).joinedload(Lead.assigned_user))  # sem 1 consulta por item
+        .order_by(Conversation.last_message_at.desc())
+        .limit(INBOX_LIST_LIMIT * 2)
+    )
 
     selected_lead = None
     messages = []
@@ -437,7 +481,7 @@ def _inbox_context(
             ]
 
     return {
-            "list_sig": "|".join(f"{c.id}:{c.last_message_at.isoformat()}" for c in conversations),
+            "list_sig": _list_sig(conversations),
             "list_truncated": len(conversations) >= INBOX_LIST_LIMIT,
             "busca": busca,
             "numero": numero,
@@ -450,7 +494,7 @@ def _inbox_context(
             else [],
             "filter_sellers": team_members(db, tenant.id) if user.role == "admin" else [],
             "has_removed": bool(removed_ids) if user.role == "admin" else False,
-            "msg_sig": f"{len(messages)}:{messages[-1].id}:{messages[-1].body}" if messages else "0",
+            "msg_sig": _msg_sig(db, selected_lead.id) if selected_lead else "0",
             "tenant": tenant,
             "user": user,
             "active_nav": "inbox",
@@ -497,9 +541,18 @@ def inbox_refresh(
     """Chamado a cada poucos segundos pela tela do Inbox: devolve a lista e a
     conversa aberta já desenhadas, com uma "assinatura" pra tela só trocar o
     que mudou (mensagem nova do cliente ou enviada pelo celular)."""
-    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor)
-    if ctx["list_sig"] == ls and ctx["msg_sig"] == ms:
+    # checagem rápida (2 consultas leves): só monta a tela se algo mudou
+    if user.role != "admin":
+        numero = vendedor = ""
+    query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor)
+    rows = _first_per_lead(
+        query.with_entities(Conversation.id, Conversation.lead_id, Conversation.last_message_at)
+        .order_by(Conversation.last_message_at.desc())
+        .limit(INBOX_LIST_LIMIT * 2)
+    )
+    if _list_sig(rows) == ls and _msg_sig(db, lead or None) == ms:
         return JSONResponse({"changed": False})  # nada novo: resposta mínima, sem desenhar nada
+    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor)
     return JSONResponse(
         {
             "list_sig": ctx["list_sig"],
@@ -510,7 +563,21 @@ def inbox_refresh(
     )
 
 
-AVATAR_TTL = datetime.timedelta(hours=24)
+AVATAR_TTL = 24 * 60 * 60
+AVATAR_DIR = os.getenv("AVATAR_CACHE_DIR", "/tmp/crm-avatars")
+_AVATAR_SLOTS = threading.BoundedSemaphore(4)  # no máximo 4 buscas no WhatsApp ao mesmo tempo
+# PNG 1x1 transparente: "sem foto" (a letra inicial continua aparecendo por baixo)
+_BLANK_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+)
+
+
+def _blank_avatar(max_age: int) -> Response:
+    return Response(content=_BLANK_PNG, media_type="image/png", headers={"Cache-Control": f"private, max-age={max_age}"})
+
+
+def _fresh(path: str) -> bool:
+    return os.path.exists(path) and time.time() - os.path.getmtime(path) < AVATAR_TTL
 
 
 @router.get("/leads/{lead_id}/avatar")
@@ -520,40 +587,43 @@ def lead_avatar(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    """Foto de perfil do WhatsApp do lead. 404 = sem foto (a tela mostra a inicial)."""
+    """Foto de perfil do WhatsApp do lead, guardada em disco por 24h. Sem foto (ou
+    WhatsApp ocupado) devolve uma imagem transparente: a tela mostra a inicial."""
+    os.makedirs(AVATAR_DIR, exist_ok=True)
+    photo, none_marker = os.path.join(AVATAR_DIR, lead_id), os.path.join(AVATAR_DIR, f"{lead_id}.none")
+    if _fresh(photo):
+        with open(photo, "rb") as fh:
+            return Response(content=fh.read(), media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+    if _fresh(none_marker):
+        return _blank_avatar(86400)
+
     lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
     conversation = lead.active_conversation if lead else None
     number = conversation.whatsapp_number if conversation else None
     if not lead or not number or number.provider != "evolution":
-        raise HTTPException(status_code=404)
+        return _blank_avatar(86400)
+    instance, phone = number.evolution_instance, lead.phone
+    db.close()  # devolve a conexão do banco antes de ir no WhatsApp
 
-    def refresh_url() -> str:
+    if not _AVATAR_SLOTS.acquire(blocking=False):
+        return _blank_avatar(60)  # muita busca ao mesmo tempo: tenta de novo daqui a pouco
+    try:
+        content = b""
         try:
-            lead.avatar_url = evolution_client.profile_picture_url(number.evolution_instance, lead.phone)
-        except evolution_client.EvolutionError:
-            lead.avatar_url = ""
-        lead.avatar_checked_at = datetime.datetime.utcnow()
-        db.add(lead)
-        db.commit()
-        return lead.avatar_url
-
-    now = datetime.datetime.utcnow()
-    url = lead.avatar_url if lead.avatar_checked_at and now - lead.avatar_checked_at < AVATAR_TTL else refresh_url()
-    for attempt in range(2):
-        if not url:
-            break
-        try:
-            resp = requests.get(url, timeout=8)
-        except requests.RequestException:
-            resp = None
-        if resp is not None and resp.ok:
-            return Response(
-                content=resp.content,
-                media_type=resp.headers.get("content-type", "image/jpeg"),
-                headers={"Cache-Control": "private, max-age=86400"},
-            )
-        url = refresh_url() if attempt == 0 else ""  # URL do WhatsApp expirou: pega uma nova
-    raise HTTPException(status_code=404)
+            url = evolution_client.profile_picture_url(instance, phone)
+            if url:
+                resp = requests.get(url, timeout=6)
+                content = resp.content if resp.ok else b""
+        except (evolution_client.EvolutionError, requests.RequestException):
+            return _blank_avatar(300)
+        if not content:
+            open(none_marker, "wb").close()
+            return _blank_avatar(86400)
+        with open(photo, "wb") as fh:
+            fh.write(content)
+        return Response(content=content, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+    finally:
+        _AVATAR_SLOTS.release()
 
 
 @router.get("/media/{message_id}")
@@ -597,6 +667,8 @@ def reply_lead(
     conversation = lead.active_conversation
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
     ok, wa_id, secret = messaging.send_text(number, lead.phone, body)
+    if ok:
+        response_times.mark_outbound(lead)
     _record_outbound(db, conversation, user, wa_id, body if ok else f"⚠️ Não enviada: {body}", secret=secret)
 
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
@@ -637,7 +709,7 @@ def switch_number(
 
 
 @router.post("/leads/{lead_id}/reply-media")
-async def reply_lead_media(
+def reply_lead_media(
     lead_id: str,
     file: UploadFile,
     caption: str = Form(""),
@@ -652,7 +724,7 @@ async def reply_lead_media(
     if not lead or not lead.conversations:
         return JSONResponse({"ok": False, "error": "conversa não encontrada"}, status_code=404)
 
-    content = await file.read()
+    content = file.file.read()
     max_bytes = 16 * 1024 * 1024  # limite da própria Cloud API pra imagem/doc (vídeo é maior, mas fica um teto seguro)
     if len(content) > max_bytes:
         return JSONResponse({"ok": False, "error": "arquivo maior que 16MB"}, status_code=400)
@@ -667,6 +739,7 @@ async def reply_lead_media(
     )
     if not ok:
         return JSONResponse({"ok": False, "error": error}, status_code=502)
+    response_times.mark_outbound(lead)
 
     placeholder = {"image": "📷 Imagem", "video": "🎥 Vídeo", "audio": "🎤 Áudio", "document": "📄 Documento"}[media_kind]
     message = _record_outbound(
@@ -752,7 +825,7 @@ def dashboard_view(
     stage_filter: str = "",
     platform_filter: str = "",
     q: str = "",
-    date_range: str = "all",
+    date_range: str = "30d",
     date_from: str = "",
     date_to: str = "",
     seller: str = "",
@@ -778,7 +851,7 @@ def dashboard_view(
         leads_query = leads_query.filter(Lead.created_at >= range_from)
     if range_to:
         leads_query = leads_query.filter(Lead.created_at <= range_to)
-    all_period_leads = leads_query.all()
+    all_period_leads = leads_query.options(*LEAD_CARD_LOAD).all()
     leads = [lead for lead in all_period_leads if lead.assigned_user_id == seller] if seller else all_period_leads
 
     last_24h = now - datetime.timedelta(hours=24)
@@ -823,6 +896,17 @@ def dashboard_view(
             }
         )
 
+    # tempo de atendimento (período + vendedor escolhidos); "aguardando" e "sem interação" só em aberto
+    open_leads = [lead for lead in leads if lead.stage_id not in won_stage_ids and lead.stage_id not in lost_stage_ids]
+    rt_all, rt_open = response_times.summary(leads), response_times.summary(open_leads)
+    rt_box = {
+        "median_first": rt_all["median_first"],
+        "within_15": rt_all["within_15"],
+        "answered": rt_all["answered"],
+        "waiting": rt_open["never_answered"],
+        "idle": rt_open["idle"],
+    }
+
     # funil lado a lado por vendedor (mesmo período; ignora o filtro de vendedor)
     seller_rows = []
     for s in sellers:
@@ -830,6 +914,8 @@ def dashboard_view(
         if not mine and not s.is_active:
             continue
         won = [lead for lead in mine if lead.stage_id in won_stage_ids]
+        mine_rt = response_times.summary(mine)
+        mine_open = [l for l in mine if l.stage_id not in won_stage_ids and l.stage_id not in lost_stage_ids]
         seller_rows.append(
             {
                 "user": s,
@@ -838,6 +924,8 @@ def dashboard_view(
                 "won": len(won),
                 "conversion": round(len(won) / len(mine) * 100) if mine else 0,
                 "revenue": sum(lead.deal_value or 0 for lead in won),
+                "median_first": mine_rt["median_first"],
+                "waiting": response_times.summary(mine_open)["never_answered"],
             }
         )
     seller_rows.sort(key=lambda r: (r["won"], r["total"]), reverse=True)
@@ -975,6 +1063,7 @@ def dashboard_view(
             "seller": seller,
             "sellers": sellers,
             "seller_rows": seller_rows,
+            "rt_box": rt_box,
             "unassigned": unassigned,
             "traffic_rows": traffic_rows,
             "has_spend_data": has_spend_data,

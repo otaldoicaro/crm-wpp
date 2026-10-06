@@ -64,6 +64,7 @@
         {% if lead.attribution and lead.attribution.utm_campaign %}
           <div class="campaign" title="{{ lead.attribution.utm_campaign }}">{{ lead.attribution.utm_campaign }}</div>
         {% endif %}
+        {{ m.tempo_atendimento(lead, closed=stage.is_won or stage.is_lost) }}
         <div class="foot">
           <span>{{ lead.created_at|hora("%d/%m") }}</span>
           {% if lead.assigned_user %}<span>{{ lead.assigned_user.name }}</span>{% endif %}

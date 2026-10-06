@@ -73,6 +73,34 @@
 </div>
 <p class="muted" style="margin-top:-8px">Clique num card acima pra filtrar a lista de leads embaixo. Os filtros de data no topo valem pra tudo nesta página.</p>
 
+<div class="section-title"><h3 style="margin:0">Tempo de atendimento</h3></div>
+<div class="stat-grid rt-grid">
+  <div class="stat-card c-info">
+    {{ m.stat_icon("clock") }}
+    <div class="stat-label">1º atendimento (mediana)</div>
+    <div class="stat-value">{{ rt_box.median_first|duracao }}</div>
+    <div class="muted">metade dos leads foi respondida em até esse tempo ({{ rt_box.answered }} respondidos)</div>
+  </div>
+  <div class="stat-card c-success">
+    {{ m.stat_icon("check") }}
+    <div class="stat-label">Respondidos em até 15 min</div>
+    <div class="stat-value">{{ rt_box.within_15 ~ "%" if rt_box.within_15 is not none else "—" }}</div>
+    <div class="muted">dos leads que já tiveram resposta</div>
+  </div>
+  <div class="stat-card c-danger">
+    {{ m.stat_icon("clock") }}
+    <div class="stat-label">Aguardando 1º atendimento</div>
+    <div class="stat-value">{{ rt_box.waiting }}</div>
+    <div class="muted">leads em aberto que ainda não responderam</div>
+  </div>
+  <div class="stat-card c-gold">
+    {{ m.stat_icon("users") }}
+    <div class="stat-label">Sem interação há +3 dias</div>
+    <div class="stat-value">{{ rt_box.idle }}</div>
+    <div class="muted">em aberto, nossa última mensagem tem mais de 3 dias</div>
+  </div>
+</div>
+
 <div class="section-title"><h3 style="margin:0">Funil por etapa</h3></div>
 <div class="card">
   {% for s in stage_counts %}
@@ -91,7 +119,7 @@
 <div class="card">
   <div style="overflow-x:auto;">
   <table class="table-simple seller-table">
-    <thead><tr><th>Vendedor</th><th>Leads</th>{% for st in stages %}<th>{{ st.name }}</th>{% endfor %}<th>Conversão</th><th>Receita</th></tr></thead>
+    <thead><tr><th>Vendedor</th><th>Leads</th>{% for st in stages %}<th>{{ st.name }}</th>{% endfor %}<th>Conversão</th><th>Receita</th><th title="Mediana do tempo até a 1ª resposta">1º atend.</th><th title="Leads em aberto ainda sem resposta">Aguardando</th></tr></thead>
     <tbody>
     {% for r in seller_rows %}
       <tr style="cursor:pointer" onclick="window.location='/dashboard?seller={{ r.user.id }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}'">
@@ -100,6 +128,8 @@
         {% for st in stages %}<td class="{{ 'muted' if not r.by_stage[st.id] }}">{{ r.by_stage[st.id] }}</td>{% endfor %}
         <td><span class="conv-pill">{{ r.conversion }}%</span></td>
         <td>R$ {{ "{:,.0f}".format(r.revenue).replace(",", ".") }}</td>
+        <td>{{ r.median_first|duracao }}</td>
+        <td class="{{ 'rt-late-cell' if r.waiting else 'muted' }}">{{ r.waiting }}</td>
       </tr>
     {% endfor %}
     </tbody>

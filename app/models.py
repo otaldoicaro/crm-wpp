@@ -135,17 +135,22 @@ class Lead(Base):
     phone: Mapped[str] = mapped_column(String(30), default="", index=True)
     email: Mapped[str] = mapped_column(String(255), default="")
     source: Mapped[str] = mapped_column(String(30), default="site_form")  # whatsapp | site_form
-    stage_id: Mapped[Optional[str]] = mapped_column(ForeignKey("pipeline_stages.id"), nullable=True)
-    assigned_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    stage_id: Mapped[Optional[str]] = mapped_column(ForeignKey("pipeline_stages.id"), nullable=True, index=True)
+    assigned_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     whatsapp_number_id: Mapped[Optional[str]] = mapped_column(ForeignKey("whatsapp_numbers.id"), nullable=True)
     deal_value: Mapped[Optional[float]] = mapped_column(nullable=True)  # valor fechado, preenchido na etapa "Ganho"
     loss_reason: Mapped[str] = mapped_column(String(255), default="")  # motivo, preenchido na etapa "Perdido"
+    # tempos de atendimento (preenchidos a cada mensagem; leads antigos calculados no start):
+    # 1º atendimento = first_response_at - created_at; "sem interação" = agora - last_outbound_at
+    first_response_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    last_inbound_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    last_outbound_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
     # o que a pessoa preencheu nos formulários (LP/site), um bloco por envio, mais recente primeiro
     form_details: Mapped[str] = mapped_column(Text, default="")
     # foto de perfil do WhatsApp (URL temporária do WhatsApp; renovada a cada 24h em /leads/{id}/avatar)
     avatar_url: Mapped[str] = mapped_column(String(1000), default="")
     avatar_checked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now, index=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
     # arquivado = some do Pipeline (continua no banco, no Dashboard e em /arquivados).
     # Automático (app/services/archiver.py) ou manual; volta sozinho se o cliente mandar mensagem.
@@ -250,7 +255,7 @@ class Conversation(Base):
     assigned_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="open")  # open | closed
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
-    last_message_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+    last_message_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now, index=True)
     # texto da última mensagem, pra lista do Inbox não precisar abrir todas as mensagens
     last_preview: Mapped[str] = mapped_column(String(200), default="")
 
@@ -266,7 +271,7 @@ class Message(Base):
     conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
     direction: Mapped[str] = mapped_column(String(10))  # in | out
     sender_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
-    wa_message_id: Mapped[str] = mapped_column(String(120), default="")
+    wa_message_id: Mapped[str] = mapped_column(String(120), default="", index=True)
     body: Mapped[str] = mapped_column(Text, default="")
     media_url: Mapped[str] = mapped_column(String(500), default="")
     # id de mídia da Cloud API (áudio/imagem/documento) — a URL da Meta expira em minutos,
