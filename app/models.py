@@ -354,3 +354,20 @@ class InboxRead(Base):
     last_read_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     manual_unread: Mapped[bool] = mapped_column(Boolean, default=False)  # "Marcar como não lida"
     favorite: Mapped[bool] = mapped_column(Boolean, default=False)  # ⭐ favoritas (de cada pessoa)
+
+
+class QuickReply(Base):
+    """Resposta rápida: mensagem pronta que aparece ao digitar "/" na conversa.
+    shared=True vale pra equipe toda; senão só pra quem criou."""
+
+    __tablename__ = "quick_replies"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    created_by_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    shortcut: Mapped[str] = mapped_column(String(40), default="")  # o que se digita depois da "/" (ex: pix)
+    body: Mapped[str] = mapped_column(Text, default="")
+    shared: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+
+    created_by: Mapped[Optional["User"]] = relationship()

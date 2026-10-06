@@ -13,6 +13,7 @@ from app.routers import (
     admin_setup,
     auth_router,
     bridge,
+    quick_replies,
     team,
     dashboard,
     webhooks_evolution,
@@ -79,6 +80,7 @@ app.include_router(auth_router.router)
 app.include_router(dashboard.router)
 app.include_router(whatsapp_connect.router)
 app.include_router(team.router)
+app.include_router(quick_replies.router)
 
 
 @app.get("/health")

@@ -16,6 +16,7 @@ from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app.services import evolution_client, inbox_state, media_store, messaging, response_times
 from app.services.conversions.dispatcher import dispatch_stage_conversion
+from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
 from app.services.platform import PLATFORM_LABEL, resolve_platform
 from app.services.messaging import media_kind_for_mime
@@ -555,6 +556,7 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     if selected_lead_id:
         inbox_state.mark_read(db, user.id, selected_lead_id)
     ctx = _inbox_context(db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas)
+    ctx["quick_replies"] = replies_for_js(db, tenant, user)
     response = templates.TemplateResponse(request, "inbox.html", ctx)
     response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}", httponly=True, samesite="lax")
     return response
@@ -769,6 +771,7 @@ def team_inbox(
             "columns": columns,
             "sig": _team_sig(db, tenant, user, selected),
             "max": TEAM_VIEW_MAX,
+            "quick_replies": replies_for_js(db, tenant, user),
         },
     )
     response.set_cookie(TEAM_VIEW_COOKIE, ",".join(selected), httponly=True, samesite="lax")
@@ -1224,6 +1227,8 @@ def dashboard_view(
         table_leads = [lead for lead in table_leads if is_no_contact_24h(lead)]
     elif card == "won":
         table_leads = [lead for lead in table_leads if lead.stage_id in won_stage_ids]
+    elif card == "receita":
+        table_leads = [lead for lead in table_leads if lead.stage_id in won_stage_ids and lead.deal_value]
 
     if stage_filter:
         table_leads = [lead for lead in table_leads if lead.stage_id == stage_filter]
@@ -1239,7 +1244,10 @@ def dashboard_view(
             or needle in (lead.email or "").lower()
         ]
 
-    table_leads = sorted(table_leads, key=lambda lead: lead.created_at, reverse=True)[:150]
+    if card == "receita":  # de onde veio a receita: maiores vendas primeiro
+        table_leads = sorted(table_leads, key=lambda lead: lead.deal_value or 0, reverse=True)[:150]
+    else:
+        table_leads = sorted(table_leads, key=lambda lead: lead.created_at, reverse=True)[:150]
     stage_by_id = {s.id: s for s in stages}
 
     # ---- tráfego: cruza leads (por campanha/conjunto/anúncio) com gasto importado ----

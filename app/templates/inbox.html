@@ -88,7 +88,8 @@
       <input type="file" id="attachInput" accept="image/*,video/*,application/pdf" multiple hidden>
       <button type="button" class="btn ghost small" id="emojiToggle" title="Emojis" style="flex:0 0 auto;">🙂</button>
       <div id="emojiPicker" hidden style="position:absolute; bottom:56px; left:14px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:8px; display:grid; grid-template-columns:repeat(8,1fr); gap:4px; z-index:10;"></div>
-      <input type="text" name="body" id="replyInput" placeholder="Responder pelo WhatsApp... (arraste fotos aqui)" required autocomplete="off">
+      <button type="button" class="btn ghost small" id="qrToggle" title="Respostas rápidas (ou digite /)" style="flex:0 0 auto;">⚡</button>
+      <textarea name="body" id="replyInput" rows="1" placeholder="Responder... (/ = respostas rápidas · Shift+Enter = nova linha)" required autocomplete="off" data-quick-replies data-lead-name="{{ selected_lead.name or '' }}"></textarea>
       <button class="btn" type="submit" id="sendBtn">Enviar</button>
     </form>
     <div id="attachStatus" class="muted" style="padding:0 14px 10px; display:none;"></div>
@@ -370,6 +371,26 @@
       if (window.__inboxRefreshNow) window.__inboxRefreshNow();
     });
   });
+})();
+</script>
+<script>
+  window.QUICK_REPLIES = {{ quick_replies|tojson }};
+  window.QUICK_REPLIES_ME = {{ user.name|tojson }};
+</script>
+<script src="/static/quick-replies.js?v={{ asset_version }}"></script>
+<script>
+// campo de resposta: cresce com o texto; Enter envia, Shift+Enter quebra linha (igual WhatsApp Web)
+(function () {
+  var field = document.getElementById("replyInput");
+  if (!field) return;
+  function grow() { field.style.height = "auto"; field.style.height = Math.min(field.scrollHeight, 160) + "px"; }
+  field.addEventListener("input", grow);
+  field.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || e.shiftKey || e.isComposing || (field.qrIsOpen && field.qrIsOpen())) return;
+    e.preventDefault();
+    if (field.value.trim() || document.querySelector("#attachTray .tray-item")) field.form.requestSubmit();
+  });
+  document.getElementById("qrToggle").addEventListener("click", function () { if (field.qrOpen) field.qrOpen(); });
 })();
 </script>
 {% endblock %}

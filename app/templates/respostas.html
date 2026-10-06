@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Respostas rápidas{% endblock %}
+{% block content %}
+<p><a href="/inbox">&larr; voltar pro Inbox</a></p>
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">Respostas rápidas</h2>
+    <span class="muted">Mensagens prontas pra agilizar o atendimento. Na conversa, digite <b>/</b> e escolha (ex: <b>/pix</b>). Use <b>{nome}</b> pro primeiro nome do cliente e <b>{vendedor}</b> pro seu nome.</span>
+  </div>
+</div>
+
+<div class="replies-layout">
+  <form method="post" action="/respostas" class="card reply-editor">
+    <h3 style="margin-top:0">{{ "Editar resposta" if editing else "Nova resposta" }}</h3>
+    {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+    <input type="hidden" name="reply_id" value="{{ editing.id if editing else '' }}">
+    <p><label>Atalho (o que vem depois da /)<br><input type="text" name="shortcut" required maxlength="40" placeholder="ex: pix, garantia, bomdia" value="{{ editing.shortcut if editing else '' }}"></label></p>
+    <p><label>Mensagem<br><textarea name="body" rows="7" required placeholder="Olá, {nome}! Aqui é o {vendedor}, da Nova Viseu...">{{ editing.body if editing else '' }}</textarea></label></p>
+    <p>
+      <label class="check-line"><input type="radio" name="shared" value="" {{ "checked" if not (editing and editing.shared) }}> Só pra mim</label>
+      <label class="check-line"><input type="radio" name="shared" value="1" {{ "checked" if editing and editing.shared }}> Pra equipe toda</label>
+    </p>
+    <button class="btn" type="submit">{{ "Salvar alterações" if editing else "Criar resposta" }}</button>
+    {% if editing %}<a class="btn ghost" href="/respostas">Cancelar</a>{% endif %}
+  </form>
+
+  <div class="card">
+    <h3 style="margin-top:0">Disponíveis pra você ({{ replies|length }})</h3>
+    {% for r in replies %}
+    <div class="reply-row">
+      <div class="reply-row-main">
+        <div><b>/{{ r.shortcut }}</b> <span class="tag-badge {{ 'cliente' if r.shared else 'outro' }}">{{ "Equipe" if r.shared else "Só minha" }}</span>
+          {% if r.shared and r.created_by %}<span class="muted" style="font-size:.74rem">por {{ r.created_by.name }}</span>{% endif %}</div>
+        <div class="reply-body">{{ r.body }}</div>
+      </div>
+      {% if can_edit(r) %}
+      <div class="row-actions">
+        <a class="btn ghost small" href="/respostas?editar={{ r.id }}">Editar</a>
+        <form method="post" action="/respostas/{{ r.id }}/apagar" onsubmit="return confirm('Apagar /{{ r.shortcut }}?')"><button class="btn ghost small" type="submit">Apagar</button></form>
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="muted">Nenhuma ainda. Crie a primeira ao lado.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -8,6 +8,8 @@ o cache manualmente.
 """
 
 import datetime
+
+from markupsafe import Markup, escape
 import os
 
 from fastapi.templating import Jinja2Templates
@@ -34,5 +36,6 @@ templates.env.filters["duracao"] = response_times.human
 templates.env.filters["ha"] = response_times.ago
 templates.env.globals["rt"] = response_times
 templates.env.globals["agora"] = datetime.datetime.utcnow
+templates.env.filters["quebras"] = lambda text: Markup(str(escape(text or "")).replace("\n", "<br>"))
 # "Carlos  Vendedor" e "carlos vendedor" contam como o mesmo nome
 templates.env.filters["chave_nome"] = lambda s: " ".join((s or "").lower().split())

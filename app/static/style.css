@@ -458,3 +458,22 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .pend-toggle { border: 1px solid transparent; cursor: pointer; font-family: inherit; box-shadow: none; }
 .pend-toggle:hover { border-color: currentColor; }
 .pend-toggle.on { background: var(--danger); color: #fff; }
+.replies-layout { display: grid; grid-template-columns: minmax(280px, 420px) 1fr; gap: 14px; align-items: start; }
+@media (max-width: 860px) { .replies-layout { grid-template-columns: 1fr; } }
+.reply-editor textarea { min-height: 140px; }
+.reply-row { display: flex; gap: 10px; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--line); }
+.reply-row:first-of-type { border-top: 0; }
+.reply-row-main { min-width: 0; }
+.reply-body { white-space: pre-wrap; font-size: .86rem; color: var(--muted); margin-top: 4px; }
+.reply-box textarea { flex: 1; resize: none; border-radius: 20px; padding: 10px 16px; line-height: 1.35; max-height: 160px; min-height: 42px; }
+.reply-box { position: relative; align-items: flex-end; }
+.qr-popup { position: absolute; left: 10px; right: 10px; bottom: calc(100% + 6px); z-index: 40; max-height: 320px; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, .22); padding: 6px; }
+.qr-popup[hidden] { display: none; }
+.qr-item { display: block; width: 100%; text-align: left; background: none; box-shadow: none; color: var(--text); padding: 8px 10px; border-radius: 8px; font-weight: 500; }
+.qr-item b { display: block; font-size: .8rem; }
+.qr-item span { display: block; font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qr-item.on, .qr-item:hover { background: var(--y-soft); }
+.qr-empty { padding: 10px; font-size: .82rem; color: var(--muted); }
+.qr-manage { display: block; padding: 8px 10px; font-size: .78rem; border-top: 1px solid var(--line); margin-top: 4px; }
+.team-reply textarea { min-height: 38px; padding: 8px 12px; font-size: .84rem; }

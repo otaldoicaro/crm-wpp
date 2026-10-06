@@ -14,7 +14,7 @@
     {% elif msg.media_type == "document" %}
       <a href="/media/{{ msg.id }}" target="_blank" style="color:inherit; text-decoration:underline;">{{ msg.body }}</a>
     {% else %}
-      {{ msg.body }}
+      {{ msg.body|quebras }}
     {% endif %}
   </div>
   <span class="msg-time">{{ msg.created_at|hora("%d/%m %H:%M") }}</span>

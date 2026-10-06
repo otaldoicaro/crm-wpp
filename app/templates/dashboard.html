@@ -58,11 +58,12 @@
     <div class="stat-label">Fechados</div>
     <div class="stat-value">{{ won_count }}</div>
   </a>
-  <div class="stat-card c-success">
+  <a class="stat-card c-success {{ 'accent' if card == 'receita' }}" href="/dashboard?card=receita&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}#leads" style="text-decoration:none; color:inherit;" title="Ver de quais leads veio a receita">
     {{ m.stat_icon("dollar") }}
     <div class="stat-label">Receita fechada</div>
-    <div class="stat-value">R$ {{ "%.0f"|format(revenue) }}</div>
-  </div>
+    <div class="stat-value">R$ {{ "{:,.0f}".format(revenue).replace(",", ".") }}</div>
+    <div class="muted" style="font-size:.72rem; margin-top:4px">ver de quais leads veio →</div>
+  </a>
   {% if best_creative %}
   <div class="stat-card c-purple">
     {{ m.stat_icon("target") }}
@@ -197,7 +198,7 @@
   </div>
 </div>
 
-<div class="section-title"><h3 style="margin:0">Leads ({{ table_leads|length }})</h3></div>
+<div class="section-title" id="leads"><h3 style="margin:0">{{ "Vendas que formam a receita" if card == "receita" else "Leads" }} ({{ table_leads|length }}){% if card == "receita" %} · R$ {{ "{:,.0f}".format(table_leads|sum(attribute="deal_value")).replace(",", ".") }}{% endif %}</h3></div>
 <div class="card">
   <form method="get" action="/dashboard" style="margin-bottom:14px;">
     <input type="hidden" name="card" value="{{ card }}">
@@ -232,7 +233,7 @@
     </div>
   {% endif %}
   <table class="table-simple">
-    <thead><tr>{% if is_admin %}<th class="check-col"><input type="checkbox" id="checkAll" title="Selecionar todos"></th>{% endif %}<th>Data</th><th>Origem</th><th>Campanha</th><th>Nome</th><th>Telefone</th><th>Etapa</th></tr></thead>
+    <thead><tr>{% if is_admin %}<th class="check-col"><input type="checkbox" id="checkAll" title="Selecionar todos"></th>{% endif %}<th>Data</th><th>Origem</th><th>Campanha</th><th>Nome</th><th>Telefone</th><th>Etapa</th><th>Valor</th></tr></thead>
     <tbody>
       {% for lead in table_leads %}
       <tr style="cursor:pointer" onclick="window.location='{{ '/inbox/' if lead.conversations else '/leads/' }}{{ lead.id }}'">
@@ -243,9 +244,10 @@
         <td>{{ lead.name or "(sem nome)" }}</td>
         <td class="muted">{{ lead.phone or lead.email }}</td>
         <td>{{ stage_by_id[lead.stage_id].name if lead.stage_id in stage_by_id else "—" }}</td>
+        <td>{% if lead.deal_value %}<b>R$ {{ "{:,.0f}".format(lead.deal_value).replace(",", ".") }}</b>{% else %}<span class="muted">—</span>{% endif %}</td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="muted">Nenhum lead encontrado com esses filtros.</td></tr>
+      <tr><td colspan="8" class="muted">Nenhum lead encontrado com esses filtros.</td></tr>
       {% endfor %}
     </tbody>
   </table>

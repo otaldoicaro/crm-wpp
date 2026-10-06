@@ -117,7 +117,10 @@
     var item = e.target.closest(".team-col-list .inbox-list-item");
     if (item && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
-      showThread(item.closest(".team-col").dataset.seller, item.dataset.lead);
+      var colEl = item.closest(".team-col");
+      var nameEl = item.querySelector(".name");
+      colEl.querySelector("[data-quick-replies]").dataset.leadName = nameEl ? nameEl.textContent.replace(/[★👥]/g, "").trim() : "";
+      showThread(colEl.dataset.seller, item.dataset.lead);
       return;
     }
     if (e.target.closest(".team-back")) showList(e.target.closest(".team-col").dataset.seller);
@@ -134,7 +137,7 @@
     var form = e.target.closest(".team-reply"); if (!form) return;
     e.preventDefault();
     var c = form.closest(".team-col"), seller = c.dataset.seller, state = open[seller];
-    var input = form.querySelector("input"), status = c.querySelector(".team-reply-status");
+    var input = form.querySelector("textarea"), status = c.querySelector(".team-reply-status");
     if (!state || !input.value.trim()) return;
     var btn = form.querySelector("button"); btn.disabled = true;
     fetch("/leads/" + state.lead + "/reply", { method: "POST", body: new URLSearchParams({ body: input.value, ajax: "1" }) })
@@ -222,4 +225,19 @@
   <button type="button" data-tag="outro">🏷️ É outro (não é venda)</button>
   <button type="button" data-tag="">🏷️ Voltar pra lead</button>
 </div>
+<script>
+  window.QUICK_REPLIES = {{ quick_replies|tojson }};
+  window.QUICK_REPLIES_ME = {{ user.name|tojson }};
+</script>
+<script src="/static/quick-replies.js?v={{ asset_version }}"></script>
+<script>
+// Enter envia, Shift+Enter quebra linha (com a lista de respostas aberta, Enter escolhe a resposta)
+document.querySelectorAll(".team-reply textarea").forEach(function (field) {
+  field.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || e.shiftKey || e.isComposing || (field.qrIsOpen && field.qrIsOpen())) return;
+    e.preventDefault();
+    if (field.value.trim()) field.form.requestSubmit();
+  });
+});
+</script>
 {% endblock %}
