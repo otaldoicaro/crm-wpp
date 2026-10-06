@@ -20,6 +20,7 @@ from app.config import EVOLUTION_WEBHOOK_TOKEN
 from app.db import get_db
 from app.models import Message, WhatsAppNumber
 from app.services.inbound import ingest_inbound, record_outbound_from_phone
+from app.services.msgsecret import decrypt_edit, secret_b64, text_from_message, to_bytes
 from app.services.media_store import backup_message_media
 
 router = APIRouter()
@@ -107,7 +108,19 @@ IGNORED_TYPES = {
 }
 
 
-def _apply_edit_or_delete(db: Session, item: dict) -> bool:
+def _author_jids(number: WhatsAppNumber, item: dict) -> list:
+    """JIDs possíveis de quem escreveu/editou (número e LID), pra abrir edições cifradas."""
+    key = item.get("key") or {}
+    if key.get("fromMe"):
+        jids = [f"{number.phone_number}@s.whatsapp.net" if number.phone_number else ""]
+        jids += [key.get(k, "") for k in ("senderLid", "participantLid")]
+    else:
+        jids = [key.get(k, "") for k in ("remoteJid", "remoteJidAlt", "senderPn", "senderLid", "participant", "participantAlt")]
+    jids.append(item.get("sender", "") if key.get("fromMe") else "")
+    return [j for j in jids if j and j.endswith(("@s.whatsapp.net", "@lid"))]
+
+
+def _apply_edit_or_delete(db: Session, number: WhatsAppNumber, item: dict) -> bool:
     """Edição/exclusão de uma mensagem que já está no CRM. Devolve True se tratou.
     - protocolMessage REVOKE: "Apagar pra todos" -> marca a original como apagada
     - protocolMessage MESSAGE_EDIT / editedMessage: edição com o texto novo -> atualiza
@@ -134,7 +147,18 @@ def _apply_edit_or_delete(db: Session, item: dict) -> bool:
             if new_text:
                 original.body = f"{new_text} ✏️ (editada)"
         elif secret and kind in ("2", "MESSAGE_EDIT"):
-            if "(editada no celular" not in original.body:
+            plain = decrypt_edit(
+                original.secret,
+                target.get("id", ""),
+                _author_jids(number, item),
+                to_bytes(secret.get("encPayload")),
+                to_bytes(secret.get("encIv")),
+            )
+            new_text = text_from_message(plain) if plain else ""
+            if new_text:
+                original.body = f"{new_text} ✏️ (editada)"
+            elif "(editada no celular" not in original.body:
+                logger.info("evolution: não deu pra abrir a edição de %s (sem secret guardado?)", target.get("id"))
                 original.body = f"{original.body} ✏️ (editada no celular — veja o texto novo lá)"
         db.add(original)
         db.commit()
@@ -202,7 +226,7 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
     if not jid or jid.endswith("@g.us") or jid.endswith("@broadcast") or jid.endswith("@newsletter"):
         return None  # grupos, status e canais não viram lead
 
-    if _apply_edit_or_delete(db, item):
+    if _apply_edit_or_delete(db, number, item):
         return None
 
     phone = _phone_from_key(key, item)
@@ -216,8 +240,9 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
     context_info = item.get("contextInfo") or context_info or {}
     media_id = wa_message_id if media_type else ""
 
+    secret = secret_b64(item.get("message") or {})
     if key.get("fromMe"):
-        return record_outbound_from_phone(db, number, phone, wa_message_id, body, media_id, media_type)
+        return record_outbound_from_phone(db, number, phone, wa_message_id, body, media_id, media_type, secret=secret)
 
     return ingest_inbound(
         db,
@@ -229,6 +254,7 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
         media_type=media_type,
         profile_name=item.get("pushName", "") or "",
         referral=_referral_from_context(context_info),
+        secret=secret,
     )
 
 

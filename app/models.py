@@ -273,6 +273,8 @@ class Message(Base):
     media_type: Mapped[str] = mapped_column(String(30), default="")  # audio | image | video | document | sticker
     # chave da cópia própria da mídia (app/services/media_store.py); vazio = não copiada
     media_stored_key: Mapped[str] = mapped_column(String(160), default="")
+    # messageSecret do WhatsApp (base64): necessário pra abrir uma edição futura desta mensagem
+    secret: Mapped[str] = mapped_column(String(100), default="")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")

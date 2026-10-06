@@ -50,6 +50,7 @@ def ingest_inbound(
     media_type: str = "",
     profile_name: str = "",
     referral: Optional[dict] = None,
+    secret: str = "",
 ) -> Optional[Message]:
     if message_exists(db, wa_message_id):
         return None  # webhook reenviado
@@ -98,6 +99,7 @@ def ingest_inbound(
         body=body,
         media_id=media_id,
         media_type=media_type,
+        secret=secret,
     )
     conversation.last_message_at = datetime.datetime.utcnow()
     conversation.last_preview = body[:200]
@@ -115,6 +117,7 @@ def record_outbound_from_phone(
     body: str,
     media_id: str = "",
     media_type: str = "",
+    secret: str = "",
 ) -> Optional[Message]:
     """Mensagem que o próprio número mandou pelo app do celular (só existe no
     Evolution — na API oficial não dá pra usar o app ao mesmo tempo). Entra no
@@ -134,6 +137,7 @@ def record_outbound_from_phone(
         body=body,
         media_id=media_id,
         media_type=media_type,
+        secret=secret,
     )
     conversation.last_message_at = datetime.datetime.utcnow()
     conversation.last_preview = body[:200]

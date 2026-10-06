@@ -596,8 +596,8 @@ def reply_lead(
 
     conversation = lead.active_conversation
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
-    ok, wa_id = messaging.send_text(number, lead.phone, body)
-    _record_outbound(db, conversation, user, wa_id, body if ok else f"⚠️ Não enviada: {body}")
+    ok, wa_id, secret = messaging.send_text(number, lead.phone, body)
+    _record_outbound(db, conversation, user, wa_id, body if ok else f"⚠️ Não enviada: {body}", secret=secret)
 
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
@@ -662,7 +662,7 @@ async def reply_lead_media(
     mime_type = file.content_type or "application/octet-stream"
     media_kind = media_kind_for_mime(mime_type)
 
-    ok, wa_id, media_id, error = messaging.send_media(
+    ok, wa_id, media_id, error, secret = messaging.send_media(
         number, lead.phone, content, file.filename or "arquivo", mime_type, media_kind, caption
     )
     if not ok:
@@ -670,7 +670,14 @@ async def reply_lead_media(
 
     placeholder = {"image": "📷 Imagem", "video": "🎥 Vídeo", "audio": "🎤 Áudio", "document": "📄 Documento"}[media_kind]
     message = _record_outbound(
-        db, conversation, user, wa_id, f"{placeholder}{' — ' + caption if caption else ''}", media_id, media_kind
+        db,
+        conversation,
+        user,
+        wa_id,
+        f"{placeholder}{' — ' + caption if caption else ''}",
+        media_id,
+        media_kind,
+        secret=secret,
     )
     stored_key = media_store.save(message.id, content, mime_type)
     if stored_key:
@@ -688,6 +695,7 @@ def _record_outbound(
     body: str,
     media_id: str = "",
     media_type: str = "",
+    secret: str = "",
 ) -> Message:
     # no Evolution o webhook "fromMe" dessa mesma mensagem pode chegar antes
     # deste commit; aí ela já está salva e só marcamos quem enviou
@@ -697,6 +705,7 @@ def _record_outbound(
     message.body = body
     message.media_id = media_id or message.media_id
     message.media_type = media_type or message.media_type
+    message.secret = secret or message.secret
     conversation.last_message_at = datetime.datetime.utcnow()
     conversation.last_preview = body[:200]
     db.add(message)

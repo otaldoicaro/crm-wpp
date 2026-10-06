@@ -14,38 +14,39 @@ from app.services.whatsapp_client import media_kind_for_mime  # noqa: F401  (ree
 logger = logging.getLogger("messaging")
 
 
-def send_text(number: WhatsAppNumber, phone: str, body: str) -> tuple[bool, str]:
-    """Devolve (ok, id_da_mensagem_no_whatsapp)."""
+def send_text(number: WhatsAppNumber, phone: str, body: str) -> tuple[bool, str, str]:
+    """Devolve (ok, id_da_mensagem_no_whatsapp, messageSecret)."""
     if number.provider == "evolution":
         try:
-            return True, evolution_client.send_text(number.evolution_instance, phone, body)
+            wa_id, secret = evolution_client.send_text(number.evolution_instance, phone, body)
+            return True, wa_id, secret
         except evolution_client.EvolutionError:
-            return False, ""
+            return False, "", ""
     result = whatsapp_client.send_text_message(number, phone, body)
     wa_id = result.get("body", {}).get("messages", [{}])[0].get("id", "") if result["ok"] else ""
-    return result["ok"], wa_id
+    return result["ok"], wa_id, ""
 
 
 def send_media(
     number: WhatsAppNumber, phone: str, content: bytes, filename: str, mime_type: str, media_kind: str, caption: str
 ) -> tuple[bool, str, str, str]:
-    """Devolve (ok, id_da_mensagem, media_id_pra_guardar, erro)."""
+    """Devolve (ok, id_da_mensagem, media_id_pra_guardar, erro, messageSecret)."""
     if number.provider == "evolution":
         try:
-            wa_id = evolution_client.send_media(
+            wa_id, secret = evolution_client.send_media(
                 number.evolution_instance, phone, content, filename, mime_type, media_kind, caption
             )
         except evolution_client.EvolutionError as exc:
-            return False, "", "", friendly_error(exc)
+            return False, "", "", friendly_error(exc), ""
         # no Evolution a mídia é buscada depois pelo id da própria mensagem
-        return True, wa_id, wa_id, ""
+        return True, wa_id, wa_id, "", secret
 
     media_id = whatsapp_client.upload_media(number, content, filename, mime_type)
     if not media_id:
-        return False, "", "", "falha ao enviar arquivo pra Meta"
+        return False, "", "", "falha ao enviar arquivo pra Meta", ""
     result = whatsapp_client.send_media_message(number, phone, media_id, media_kind, caption)
     wa_id = result.get("body", {}).get("messages", [{}])[0].get("id", "") if result["ok"] else ""
-    return result["ok"], wa_id, media_id, "" if result["ok"] else "Meta recusou o envio"
+    return result["ok"], wa_id, media_id, "" if result["ok"] else "Meta recusou o envio", ""
 
 
 def friendly_error(exc: Exception) -> str:

@@ -134,20 +134,23 @@ def logout(instance: str) -> None:
 
 # ---------- mensagens ----------
 
-def _message_id(body: dict) -> str:
-    return (body.get("key") or {}).get("id", "")
+def _sent(body: dict) -> tuple:
+    """(id da mensagem, messageSecret em base64) da resposta de envio do Evolution."""
+    from app.services.msgsecret import secret_b64
+
+    return (body.get("key") or {}).get("id", ""), secret_b64(body.get("message") or {})
 
 
-def send_text(instance: str, phone_digits: str, text: str) -> str:
-    """Envia texto e devolve o id da mensagem no WhatsApp."""
+def send_text(instance: str, phone_digits: str, text: str) -> tuple:
+    """Envia texto e devolve (id da mensagem, messageSecret)."""
     body = _request("POST", f"/message/sendText/{instance}", json={"number": phone_digits, "text": text})
-    return _message_id(body)
+    return _sent(body)
 
 
 def send_media(
     instance: str, phone_digits: str, content: bytes, filename: str, mime_type: str, media_kind: str, caption: str = ""
 ) -> str:
-    """media_kind: image | video | audio | document. Devolve o id da mensagem."""
+    """media_kind: image | video | audio | document. Devolve (id da mensagem, messageSecret)."""
     payload = {
         "number": phone_digits,
         "mediatype": "document" if media_kind == "audio" else media_kind,
@@ -157,7 +160,7 @@ def send_media(
         "caption": caption,
     }
     body = _request("POST", f"/message/sendMedia/{instance}", json=payload, timeout=60)
-    return _message_id(body)
+    return _sent(body)
 
 
 def fetch_media(instance: str, message_id: str) -> tuple[Optional[bytes], Optional[str]]:
