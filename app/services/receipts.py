@@ -47,8 +47,15 @@ PROMPT = (
 )
 
 
-def is_enabled() -> bool:
+def ai_enabled() -> bool:
+    """IA paga: só se alguém instalou a chave (configurar_ia.sh). Sem ela, só a leitura grátis."""
     return bool(ANTHROPIC_API_KEY)
+
+
+def is_enabled() -> bool:
+    from app.services import receipt_text
+
+    return receipt_text.ocr_available() or ai_enabled()
 
 
 _client = None
@@ -154,7 +161,14 @@ def check_message(message_id: str) -> None:
     finally:
         db.close()  # a análise pode levar alguns segundos: não segura conexão do banco
 
-    result = analyze(content, mime, store)
+    # 1º a leitura grátis (texto do PDF / OCR do print do banco); a IA só se estiver ligada e a
+    # leitura grátis não tiver certeza
+    from app.services import receipt_text
+
+    text = receipt_text.extract_text(content, mime)
+    result = receipt_text.classify(text) if text.strip() else None
+    if (result is None or result.get("confidence") == "baixa") and ai_enabled():
+        result = analyze(content, mime, store)
     if not result or not result.get("is_payment_receipt") or result.get("confidence") == "baixa":
         return
     amount = float(result.get("amount") or 0)

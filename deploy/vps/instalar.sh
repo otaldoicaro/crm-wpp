@@ -126,7 +126,10 @@ fi
 
 # ---------- CRM + HTTPS ----------
 say "Subindo o CRM e o HTTPS (a primeira vez demora uns minutos)"
-$DC up -d --build app caddy
+# --pull + SECURITY_UPDATES (semana do ano): 1x por semana o container é refeito com as
+# correções de segurança mais novas do sistema (inclui o Tesseract, que lê os comprovantes)
+$DC build --pull --build-arg SECURITY_UPDATES="$(date +%G-%V)" app
+$DC up -d app caddy
 # coloca o Evolution na mesma rede interna do CRM (webhook direto em http://crm-app:8000)
 docker network connect crm_default "$EVO" 2>/dev/null || true
 for _ in $(seq 1 60); do
