@@ -50,6 +50,15 @@ def entry_stage(db, tenant_id: str, with_chat: bool) -> Optional[PipelineStage]:
     )
 
 
+def is_automatic(stage) -> bool:
+    """Etapas de 1º contato ("Lead sem conversa" e "Novo"): só o CRM coloca leads nelas (quando o
+    lead chega); ninguém move um lead pra lá na mão."""
+    return stage is not None and _plain(stage.name) in (_plain(NO_CHAT_NAME), "novo")
+
+
+AUTOMATIC_MSG = "“Lead sem conversa” e “Novo” são só pra leads que acabaram de chegar: o CRM coloca e tira sozinho."
+
+
 def in_service_stage(stages: list) -> Optional[PipelineStage]:
     return stage_named(stages, "Em atendimento", "Atendimento", "Em contato")
 

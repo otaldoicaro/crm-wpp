@@ -396,6 +396,8 @@ def update_lead(
         return RedirectResponse(url="/", status_code=302)
 
     stage_changed = stage and lead.stage_id != stage.id
+    if stage_changed and funnel.is_automatic(stage):
+        return RedirectResponse(url=f"/leads/{lead_id}?erro=" + quote(funnel.AUTOMATIC_MSG), status_code=302)
     lead.name = name
     lead.phone = phone
     lead.email = email
@@ -428,6 +430,10 @@ def change_stage(
 ):
     lead = _visible_lead(db, tenant, user, lead_id)
     stage = db.query(PipelineStage).filter(PipelineStage.id == stage_id, PipelineStage.tenant_id == tenant.id).first()
+    if lead and stage and lead.stage_id != stage.id and funnel.is_automatic(stage):
+        if ajax:
+            return JSONResponse({"ok": False, "error": funnel.AUTOMATIC_MSG}, status_code=400)
+        return RedirectResponse(url="/?erro=" + quote(funnel.AUTOMATIC_MSG), status_code=302)
     if lead and stage:
         funnel.set_stage(lead, stage)
         db.add(lead)
@@ -836,6 +842,8 @@ def set_lead_stage(
     if stage.is_won and value <= 0:
         return JSONResponse({"ok": False, "error": f"pra marcar como {stage.name}, preencha o valor da venda"}, status_code=400)
     changed = lead.stage_id != stage.id
+    if changed and funnel.is_automatic(stage):
+        return JSONResponse({"ok": False, "error": funnel.AUTOMATIC_MSG}, status_code=400)
     funnel.set_stage(lead, stage)
     if value > 0:
         lead.deal_value = value

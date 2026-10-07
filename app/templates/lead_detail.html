@@ -28,7 +28,7 @@
       <p><label>Etapa<br>
         <select name="stage_id" id="stageSelect">
           {% for stage in stages %}
-            <option value="{{ stage.id }}" {% if lead.stage_id == stage.id %}selected{% endif %}>{{ stage.name }}</option>
+            <option value="{{ stage.id }}" {% if lead.stage_id == stage.id %}selected{% elif auto_stage(stage) %}disabled title="O CRM coloca e tira sozinho"{% endif %}>{{ stage.name }}{{ " (automática)" if auto_stage(stage) }}</option>
           {% endfor %}
         </select>
       </label></p>

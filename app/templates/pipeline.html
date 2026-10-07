@@ -47,10 +47,10 @@
 
 <div class="kanban">
   {% for stage in stages %}
-  <div class="kanban-col" data-stage-id="{{ stage.id }}" id="col-{{ stage.id }}">
+  <div class="kanban-col" data-stage-id="{{ stage.id }}" data-auto="{{ 1 if auto_stage(stage) else 0 }}" id="col-{{ stage.id }}">
     <div class="kanban-col-head">
       <span class="dot" style="background: {{ stage_colors[stage.id] }}"></span>
-      <h3>{{ stage.name }}</h3>
+      <h3>{{ stage.name }}</h3>{% if auto_stage(stage) %}<span class="auto-hint" title="O CRM coloca e tira os leads daqui sozinho (1º contato). Não dá pra arrastar pra cá.">⚙ automática</span>{% endif %}
       <span class="count">{{ totals.get(stage.id, 0) }}</span>
     </div>
     <div class="kanban-cards" data-stage-id="{{ stage.id }}">
@@ -101,6 +101,7 @@
 
   document.querySelectorAll(".kanban-col").forEach(function (col) {
     col.addEventListener("dragover", function (e) {
+      if (col.dataset.auto === "1") return;  // "Lead sem conversa" e "Novo": só o CRM coloca leads aqui
       e.preventDefault();
       col.classList.add("drag-over");
     });
@@ -112,6 +113,7 @@
       col.classList.remove("drag-over");
       const stageId = col.dataset.stageId;
       if (!draggedId || !stageId) return;
+      if (col.dataset.auto === "1") { alert("“Lead sem conversa” e “Novo” são só pra leads que acabaram de chegar: o CRM coloca e tira sozinho."); return; }
       const body = new URLSearchParams({ stage_id: stageId, ajax: "1" });
       fetch("/leads/" + draggedId + "/stage", { method: "POST", body: body })
         .then(function () { window.location.reload(); });
