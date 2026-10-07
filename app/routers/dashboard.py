@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app.services import deals, evolution_client, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, traffic
+from app.services import deals, evolution_client, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -1128,6 +1128,67 @@ def confirm_receipt(
     return RedirectResponse(url=voltar if voltar.startswith("/") else f"/inbox/{lead_id}", status_code=302)
 
 
+@router.post("/leads/{lead_id}/sugestao")
+def answer_suggestion(
+    lead_id: str,
+    acao: str = Form(...),
+    tipo: str = Form(""),
+    valor: str = Form(""),
+    loss_reason: str = Form(""),
+    loss_detail: str = Form(""),
+    voltar: str = Form(""),
+    ajax: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """💡 Sugestão de etapa (services/suggestions.py): aceitar aplica; "Não" não volta a sugerir."""
+    lead = _lead_for_action(db, tenant, user, lead_id)
+    back = voltar if voltar.startswith("/") else f"/inbox/{lead_id}"
+
+    def done(error: str = ""):
+        if ajax:
+            return JSONResponse({"ok": not error, "error": error}, status_code=400 if error else 200)
+        return RedirectResponse(url=back + (("&" if "?" in back else "?") + "erro=" + quote(error) if error else ""), status_code=302)
+
+    kind = tipo or lead.suggest_kind
+    if acao != "aceitar":
+        lead.suggest_kind = kind
+        suggestions.dismiss(lead)
+        db.commit()
+        return done()
+    stages = funnel._stages(db, tenant.id)
+    target = None
+    if kind == "qualificado":
+        target = funnel.stage_named(stages, "Qualificado", "Qualificados")
+    elif kind == "ganho":
+        target = next((st for st in stages if st.is_won), None)
+        try:
+            amount = _parse_brl(valor) or (lead.quoted_value or 0)
+        except ValueError:
+            amount = 0
+        if amount <= 0:
+            return done("Preencha o valor da venda.")
+        lead.deal_value = amount
+    elif kind == "perdido":
+        target = next((st for st in stages if st.is_lost), None)
+        error = funnel.check_loss(db, lead, target, loss_reason) if target else "Etapa Perdido não encontrada."
+        if error:
+            return done(error)
+        lead.loss_reason, lead.loss_detail = loss_reason, loss_detail.strip()
+    elif kind == "outro":
+        lead.tag = "outro"
+    if target is not None and (lead.stage is None or target.order > lead.stage.order or target.is_won or target.is_lost):
+        changed = lead.stage_id != target.id
+        funnel.set_stage(lead, target)
+        if changed and target.conversion_event_name:
+            dispatch_stage_conversion(db, lead, target.conversion_event_name)
+    lead.suggest_kind = ""
+    _add_note(db, lead, f"💡 {suggestions.KIND_LABEL.get(kind, kind)}: confirmado por {user.name}")
+    db.commit()
+    return done()
+
+
 @router.post("/leads/{lead_id}/encerrar")
 def settle_lead(
     lead_id: str,
@@ -1759,6 +1820,7 @@ def _record_outbound(
     if lead is not None and wa_id:  # enviada de verdade (não conta "⚠️ Não enviada")
         funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
         followup.on_outbound_text(db, lead, body)  # mandou preço: vai pra "Negociando"
+        suggestions.on_message(lead, body, outbound=True)  # 💡 "temos sim", "não temos", "pedido confirmado"...
     existing = db.query(Message).filter(Message.wa_message_id == wa_id).first() if wa_id else None
     message = existing or Message(conversation_id=conversation.id, direction="out", wa_message_id=wa_id)
     message.sender_user_id = user.id

@@ -194,8 +194,8 @@ def summary(leads: list, stages: list) -> dict:
         "steps": [
             {"label": "Leads", "count": total, "rate": None, "rate_label": ""},
             {"label": "Qualificados", "count": qualified, "rate": rate(qualified, total), "rate_label": "dos leads"},
-            {"label": "Negociações", "count": negotiating, "rate": rate(negotiating, qualified), "rate_label": "dos qualificados"},
-            {"label": "Vendas", "count": won, "rate": rate(won, negotiating), "rate_label": "das negociações"},
+            {"label": "Oportunidades", "count": negotiating, "rate": rate(negotiating, qualified), "rate_label": "dos qualificados"},
+            {"label": "Vendas", "count": won, "rate": rate(won, negotiating), "rate_label": "das oportunidades"},
         ],
         "overall": rate(won, total),
     }

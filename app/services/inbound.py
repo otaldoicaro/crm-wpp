@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import Conversation, Lead, Message, WhatsAppNumber
-from app.services import attribution, deals, followup, funnel, response_times
+from app.services import attribution, deals, followup, funnel, response_times, suggestions
 from app.services.distribution import assign_lead
 from app.services.lead_match import find_lead_by_phone
 
@@ -101,6 +101,7 @@ def ingest_inbound(
     conversation = _get_or_create_conversation(db, number, lead)
     response_times.mark_inbound(lead)
     funnel.on_message(db, lead, outbound=False)  # cliente falou: "Lead sem conversa" -> "Novo"
+    suggestions.on_message(lead, body, outbound=False)  # 💡 dados do carro, "já comprei", "pago na hora"...
     db.add(lead)
     message = Message(
         conversation_id=conversation.id,
@@ -143,6 +144,7 @@ def record_outbound_from_phone(
     response_times.mark_outbound(lead)  # vendedor respondeu pelo celular
     funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
     followup.on_outbound_text(db, lead, body)  # mandou preço pelo celular: vai pra "Negociando"
+    suggestions.on_message(lead, body, outbound=True)  # 💡 "temos sim", "não temos", "pedido confirmado"...
     db.add(lead)
     message = Message(
         conversation_id=conversation.id,

@@ -8,7 +8,7 @@
   <div class="muted">{{ lead.phone }}</div>
   {{ m.tempo_atendimento(lead, closed=closed) }}
   {{ m.followup_tags(lead) }}
-  {% with voltar_url="" %}{% include "_receipt_banner.html" %}{% endwith %}
+  {% with voltar_url="" %}{% include "_receipt_banner.html" %}{% include "_suggest_banner.html" %}{% endwith %}
   {% if lead.quoted_value and not closed %}<div class="muted quoted">💰 Último valor enviado: R$ {{ "{:,.2f}".format(lead.quoted_value).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>{% endif %}
   {% if stages %}
   <form class="mini-stage" data-lead="{{ lead.id }}">

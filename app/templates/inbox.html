@@ -86,7 +86,7 @@
         {% if deal_info and deal_info.recurring %}
         <a class="recurring-badge" href="/leads/{{ selected_lead.id }}#negocios" title="Ver todos os negócios desse cliente">🔁 Cliente recorrente · {{ selected_lead.deal_number }}º negócio{% if deal_info.purchases %} · já comprou R$ {{ "{:,.0f}".format(deal_info.total).replace(",", ".") }} ({{ deal_info.purchases }} venda{{ "s" if deal_info.purchases > 1 }}){% endif %}</a>
         {% endif %}
-        {% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_receipt_banner.html" %}{% include "_next_step.html" %}{% endwith %}
+        {% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_receipt_banner.html" %}{% include "_suggest_banner.html" %}{% include "_next_step.html" %}{% endwith %}
         <div class="thread-actions">
           {% if deal_info and selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost) %}
           <form method="post" action="/leads/{{ selected_lead.id }}/novo-negocio" onsubmit="return confirm('Abrir um novo negócio pra este cliente?\n\nO atual fica como está ({{ selected_lead.stage.name }}), e a conversa passa pro negócio novo, em Em atendimento.')">

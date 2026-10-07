@@ -73,8 +73,10 @@
 {# ⏰ parado na etapa · 📞 follow-up pendente · 📅 próximo contato (ver services/followup.py) #}
 {% set f = fu_state(lead) %}
 {% set receipt = lead.receipt_status == "pending" and lead.stage and not (lead.stage.is_won or lead.stage.is_lost) %}
-{% if f.stale or f.followup or f.next or receipt %}
+{% set sug = sug_current(lead) %}
+{% if f.stale or f.followup or f.next or receipt or sug %}
 <div class="rt-row fu-row">
+  {% if sug and not receipt %}<span class="rt-tag suggest-tag" title="Confirme na conversa">💡 {{ SUG_LABEL[sug].lower() }}</span>{% endif %}
   {% if receipt %}<span class="rt-tag receipt-tag" title="A IA leu um comprovante de pagamento: confirme a venda na conversa">💸 comprovante R$ {{ "{:,.0f}".format(lead.receipt_amount or 0).replace(",", ".") }} a confirmar</span>{% endif %}
   {% if f.stale %}<span class="rt-tag {{ 'late' if f.stale.late else 'wait' }}" title="Tempo nesta etapa{{ ' (passou do prazo)' if f.stale.late else ' (perto do prazo)' }}">⏰ há {{ f.stale.for|duracao }} em {{ f.stale.stage }}</span>{% endif %}
   {% if f.followup %}<span class="rt-tag fu-tag" title="A última mensagem foi nossa e o cliente não respondeu">📞 follow-up · sem resposta há {{ f.followup.for|duracao }}{% if f.followup.attempts > 1 %} · {{ f.followup.attempts }} tentativas{% endif %}</span>{% if f.followup.attempts >= 2 %}<span class="rt-tag" title="Já dá pra marcar como Perdido com o motivo “Não responde mais”">pode marcar Perdido</span>{% endif %}{% endif %}

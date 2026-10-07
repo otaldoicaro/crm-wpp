@@ -131,7 +131,7 @@
   <p style="margin:4px 0 0; font-weight:700;">{{ lead.assigned_user.name if lead.assigned_user else "Ninguém atribuído ainda" }}</p>
   {% endif %}
 
-  {% with voltar_url="/leads/" ~ lead.id ~ "?salvo=1" %}{% include "_receipt_banner.html" %}{% include "_next_step.html" %}{% endwith %}
+  {% with voltar_url="/leads/" ~ lead.id ~ "?salvo=1" %}{% include "_receipt_banner.html" %}{% include "_suggest_banner.html" %}{% include "_next_step.html" %}{% endwith %}
   {% if deal_info and (deal_info.count > 1 or (lead.stage and (lead.stage.is_won or lead.stage.is_lost))) %}
   <div class="deals-box" id="negocios">
     <h4>🔁 Negócios deste cliente{% if deal_info.purchases %} · {{ deal_info.purchases }} compra{{ "s" if deal_info.purchases > 1 }} · R$ {{ "{:,.0f}".format(deal_info.total).replace(",", ".") }}{% endif %}</h4>

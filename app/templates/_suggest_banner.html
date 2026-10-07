@@ -1,0 +1,26 @@
+{# 💡 sugestão de etapa lida nas mensagens: o vendedor confirma ou descarta (services/suggestions.py) #}
+{% set kind = sug_current(lead) %}
+{% set fu = fu_state(lead) if not kind else None %}
+{% if not kind and fu and fu.followup and fu.followup.attempts >= 3 and fu.followup.for.days >= 2 and "perdido" not in (lead.suggest_dismissed or "") %}
+  {% set kind = "perdido" %}{% set no_reply = True %}
+{% endif %}
+{% if kind and not lead.is_group and lead.receipt_status != "pending" %}
+<form method="post" action="/leads/{{ lead.id }}/sugestao" class="suggest-banner suggest-{{ kind }}" data-suggest>
+  <input type="hidden" name="voltar" value="{{ voltar_url }}">
+  <input type="hidden" name="tipo" value="{{ kind }}">
+  <div class="suggest-text">💡 <b>{{ "Cliente não responde há " ~ (fu.followup.for|duracao) ~ " (" ~ fu.followup.attempts ~ " tentativas)" if no_reply else SUG_LABEL[kind] }}</b>
+    {% if not no_reply and lead.suggest_text %}<span class="muted">{{ lead.suggest_text }}</span>{% endif %}</div>
+  {% if kind == "ganho" %}
+    <label>Valor da venda R$ <input name="valor" inputmode="decimal" value="{{ ('%.2f'|format(lead.quoted_value)).replace('.', ',') if lead.quoted_value else '' }}" placeholder="valor"></label>
+    <button class="btn small" type="submit" name="acao" value="aceitar">✓ Marcar como Ganho</button>
+  {% elif kind == "perdido" %}
+    {% with reason=("Não responde mais" if no_reply else lead.suggest_loss_reason), detail="", required=True %}{% include "_loss_fields.html" %}{% endwith %}
+    <button class="btn small" type="submit" name="acao" value="aceitar">✓ Marcar como Perdido</button>
+  {% elif kind == "qualificado" %}
+    <button class="btn small" type="submit" name="acao" value="aceitar">✓ Marcar como Qualificado</button>
+  {% elif kind == "outro" %}
+    <button class="btn small" type="submit" name="acao" value="aceitar">✓ Marcar como Outro (sai do funil)</button>
+  {% endif %}
+  <button class="btn ghost small" type="submit" name="acao" value="descartar" formnovalidate>Não</button>
+</form>
+{% endif %}

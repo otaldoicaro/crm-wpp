@@ -58,3 +58,16 @@ document.addEventListener("submit", function (e) {
         : "Não deu certo. Tente pelo Inbox.";
     });
 });
+
+// 💡 sugestão de etapa na visão da equipe / leads da campanha: responde sem sair da tela
+document.addEventListener("submit", function (e) {
+  var form = e.target.closest("form[data-suggest]");
+  if (!form || !form.closest(".team-thread-head, #campHead")) return;
+  e.preventDefault();
+  var data = new FormData(form);
+  data.append("acao", e.submitter ? e.submitter.value : "aceitar");
+  data.append("ajax", "1");
+  fetch(form.action, { method: "POST", body: data })
+    .then(function (r) { return r.json(); })
+    .then(function (d) { form.innerHTML = d.ok ? (data.get("acao") === "aceitar" ? "✅ Feito" : "Ok, sem mudança.") : ("⚠️ " + d.error); });
+});

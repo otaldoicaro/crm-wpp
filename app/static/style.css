@@ -665,3 +665,13 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .kanban { align-items: stretch; }
 .kanban .kanban-col { min-width: var(--colw, 270px); max-width: var(--colw, 270px); height: var(--colh, calc(100vh - 190px)); max-height: none; }
 .kanban .kanban-cards { flex: 1; min-height: 0; }
+/* 💡 sugestão de etapa */
+.suggest-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: #fff6dc; border: 1px solid #f0d27a; font-size: .8rem; }
+.suggest-banner.suggest-perdido { background: #fdecec; border-color: #f2b4b4; }
+.suggest-banner.suggest-ganho { background: #e7f7ec; border-color: #9fd8b2; }
+.suggest-banner .suggest-text { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.suggest-banner label { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.suggest-banner input { width: 110px; font-size: .8rem; padding: 4px 7px; }
+.suggest-banner .loss-field { flex-direction: row; align-items: center; margin: 0; }
+.suggest-banner .loss-field textarea { min-height: 0; height: 30px; width: 220px; }
+.suggest-tag { background: #fff6dc; color: #8a6200; }
