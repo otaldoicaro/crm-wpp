@@ -148,12 +148,16 @@ if tenant:
     print("Cliente encontrado:", tenant.name)
 else:
     print("ATENÇÃO: cliente '$CRM_TENANT' não existe neste banco (crie com scripts/novo_cliente.py).")
-for n in db.query(WhatsAppNumber).filter(WhatsAppNumber.provider == "evolution").all():
+# só os números ativos (os removidos na tela WhatsApp já foram apagados no Evolution)
+for n in db.query(WhatsAppNumber).filter(WhatsAppNumber.provider == "evolution", WhatsAppNumber.is_active.is_(True)).all():
     try:
         evolution_client.set_webhook(n.evolution_instance)
-        print("WhatsApp", n.evolution_instance, "-> webhook atualizado")
+        print("WhatsApp", n.label, "-> webhook atualizado")
     except Exception as exc:
-        print("WhatsApp", n.evolution_instance, "-> falhou:", exc)
+        if "does not exist" in str(exc):
+            print("WhatsApp", n.label, "-> ainda não conectado (o QR code da tela WhatsApp resolve)")
+        else:
+            print("WhatsApp", n.label, "-> falhou:", exc)
 PY
 
 # ---------- backup diário ----------

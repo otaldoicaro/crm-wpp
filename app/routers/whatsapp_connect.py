@@ -144,7 +144,13 @@ def number_qr(
         state = evolution_client.connection_state(number.evolution_instance)
         if state == "open":
             return JSONResponse(_mark_connected(db, number))
-        evolution_client.set_webhook(number.evolution_instance)  # garante que as mensagens vão chegar
+        try:
+            evolution_client.set_webhook(number.evolution_instance)  # garante que as mensagens vão chegar
+        except evolution_client.EvolutionError as exc:
+            if "does not exist" not in str(exc):
+                raise
+            # o Evolution apagou a instância (ex: ficou muito tempo sem ler o QR): cria de novo
+            evolution_client.create_instance(number.evolution_instance)  # já com o webhook
         qr = evolution_client.connect(number.evolution_instance, number.phone_number)
     except evolution_client.EvolutionError as exc:
         return JSONResponse({"state": "error", "error": str(exc)}, status_code=502)
