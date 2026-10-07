@@ -76,11 +76,15 @@
           {% endif %}
           {% if transfer_people %}
           <form method="post" action="/leads/{{ selected_lead.id }}/transferir" class="transfer-form">
-            <input type="hidden" name="trocar_numero" value="">
-            <select name="para" aria-label="Transferir para outro vendedor">
-              <option value="">↪ Transferir para…</option>
+            <select name="para" aria-label="Passar a conversa pra outro vendedor no CRM">
+              <option value="">↪ Passar pra outro vendedor (no CRM)…</option>
               {% for t in transfer_people %}<option value="{{ t.user.id }}" data-number="{{ t.number.label if t.number else '' }}">{{ t.user.name }}{{ " (Admin)" if t.user.role == "admin" }}</option>{% endfor %}
             </select>
+            <span class="transfer-confirm" hidden>
+              <label class="transfer-switch" hidden><input type="checkbox" name="trocar_numero" value="1"> mandar as próximas mensagens pelo WhatsApp dele(a)</label>
+              <button class="btn small" type="submit">Passar</button>
+              <button class="btn ghost small" type="button" data-cancel>Cancelar</button>
+            </span>
           </form>
           {% endif %}
         </div>{% endif %}
@@ -90,8 +94,8 @@
           <span class="muted">Enviando por: <b>{{ active_number.label }}</b>{% if active_number.provider == "evolution" and active_number.connection_state != "open" %} <span class="via-down">desconectado</span>{% endif %}</span>
           {% if other_numbers %}
           <form method="post" action="/leads/{{ selected_lead.id }}/switch-number">
-            <select name="whatsapp_number_id" onchange="if (this.value && confirm('Continuar esta conversa por ' + this.options[this.selectedIndex].text + '? O histórico continua aqui; as próximas mensagens saem por esse número.')) this.form.submit(); else this.value='';">
-              <option value="">Continuar por outro número…</option>
+            <select name="whatsapp_number_id" onchange="if (this.value && confirm('Mandar as próximas mensagens pelo ' + this.options[this.selectedIndex].text + '?\n\nO cliente passa a receber de OUTRO número (no celular dele vira outra conversa). O histórico continua aqui no CRM.\n\nPra só passar a conversa pra outro vendedor, use “Passar pra outro vendedor” (o número continua o mesmo).')) this.form.submit(); else this.value='';">
+              <option value="">Trocar o WhatsApp de envio…</option>
               {% for n in other_numbers %}<option value="{{ n.id }}">{{ n.label }}</option>{% endfor %}
             </select>
           </form>
@@ -141,16 +145,17 @@
   });
   sync();
 })();
-// transferir: confirma e pergunta se as próximas mensagens saem pelo WhatsApp de quem recebe
-document.querySelectorAll(".transfer-form select").forEach(function (sel) {
+// passar pra outro vendedor NO CRM: a conversa continua pelo mesmo WhatsApp (o cliente não
+// percebe nada); só troca o número de envio se marcar a caixinha
+document.querySelectorAll(".transfer-form").forEach(function (form) {
+  var sel = form.para, box = form.querySelector(".transfer-confirm"), sw = form.querySelector(".transfer-switch");
   sel.addEventListener("change", function () {
     var opt = sel.options[sel.selectedIndex];
-    if (!sel.value) return;
-    if (!confirm("Transferir esta conversa para " + opt.text + "?\n\nEla aparece na hora no Inbox dele(a), com todo o histórico, e o tempo de resposta passa a contar pra ele(a).")) { sel.value = ""; return; }
-    var num = opt.dataset.number;
-    sel.form.trocar_numero.value = num && confirm("Continuar a conversa pelo WhatsApp de " + opt.text + " (" + num + ")?\n\nOK = as próximas mensagens saem pelo número dele(a)\nCancelar = continua pelo número atual (ele(a) responde pelo CRM)") ? "1" : "";
-    sel.form.submit();
+    box.hidden = !sel.value;
+    sw.hidden = !opt.dataset.number;
+    form.trocar_numero.checked = false;
   });
+  form.querySelector("[data-cancel]").addEventListener("click", function () { sel.value = ""; box.hidden = true; });
 });
 </script>
     <div class="inbox-messages" id="inboxMessages">

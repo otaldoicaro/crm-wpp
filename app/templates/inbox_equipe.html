@@ -191,9 +191,8 @@
   grid.addEventListener("change", function (e) {
     var sel = e.target.closest(".team-transfer"); if (!sel || !sel.value) return;
     var opt = sel.options[sel.selectedIndex];
-    if (!confirm("Transferir esta conversa para " + opt.text + "?\n\nEla aparece na hora no Inbox dele(a), com todo o histórico.")) { sel.value = ""; return; }
-    var num = opt.dataset.number;
-    var trocar = num && confirm("Continuar a conversa pelo WhatsApp de " + opt.text + " (" + num + ")?\n\nOK = as próximas mensagens saem pelo número dele(a)\nCancelar = continua pelo número atual") ? "1" : "";
+    if (!confirm("Passar esta conversa para " + opt.text + " no CRM?\n\nEla aparece na hora no Inbox dele(a), com todo o histórico. O WhatsApp continua o mesmo (o cliente não percebe nada).")) { sel.value = ""; return; }
+    var trocar = "";
     var seller = sel.closest(".team-col").dataset.seller;
     fetch("/leads/" + sel.dataset.lead + "/transferir", { method: "POST", body: new URLSearchParams({ para: sel.value, trocar_numero: trocar, ajax: "1" }) })
       .then(function (r) { if (!r.ok) throw 0; showList(seller); sig = ""; refreshLists(true); })

@@ -511,3 +511,7 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .stage-bar .stage-value.needed input { border-color: var(--danger); background: var(--danger-bg); }
 .stage-bar .stage-status { font-size: .76rem; }
 .stage-bar [hidden] { display: none !important; }
+.transfer-form { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.transfer-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .76rem; }
+.transfer-confirm[hidden], .transfer-switch[hidden] { display: none !important; }
+.transfer-switch { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }

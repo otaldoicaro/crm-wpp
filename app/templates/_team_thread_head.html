@@ -11,7 +11,7 @@
     {% if can_settle %}<button type="button" class="btn ghost small team-settle" data-lead="{{ lead.id }}" title="O cliente só agradeceu / o assunto acabou: não precisa responder">✓ Encerrar atendimento</button>{% endif %}
     {% if transfer_people %}
     <select class="team-transfer" data-lead="{{ lead.id }}" aria-label="Transferir para outro vendedor">
-      <option value="">↪ Transferir para…</option>
+      <option value="">↪ Passar pra outro vendedor (no CRM)…</option>
       {% for t in transfer_people %}<option value="{{ t.user.id }}" data-number="{{ t.number.label if t.number else '' }}">{{ t.user.name }}{{ " (Admin)" if t.user.role == "admin" }}</option>{% endfor %}
     </select>
     {% endif %}
