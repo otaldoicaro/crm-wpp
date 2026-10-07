@@ -109,7 +109,48 @@
     </label>
   </form>
   <p class="muted" style="margin:0">Atendente responsável</p>
+  {% if people and not lead.deleted_at %}
+  <form method="post" action="/leads/{{ lead.id }}/transferir" class="owner-form"
+        onsubmit="return this.para.value && confirm('Passar este lead para ' + this.para.options[this.para.selectedIndex].text + '?\n\nEle sai do Pipeline e do Inbox de quem atendia e aparece pro novo vendedor.')">
+    <input type="hidden" name="voltar" value="/leads/{{ lead.id }}?salvo=1">
+    <select name="para">
+      {% if not lead.assigned_user %}<option value="">Ninguém atribuído ainda</option>{% endif %}
+      {% for p in people %}<option value="{{ p.id }}" {{ "selected" if p.id == lead.assigned_user_id }}>{{ p.name }}{{ " (Admin)" if p.role == "admin" }}</option>{% endfor %}
+    </select>
+    <button class="btn small" type="submit">Trocar</button>
+  </form>
+  {% else %}
   <p style="margin:4px 0 0; font-weight:700;">{{ lead.assigned_user.name if lead.assigned_user else "Ninguém atribuído ainda" }}</p>
+  {% endif %}
+
+  {% if not lead.is_group and not lead.deleted_at %}
+  <div class="start-chat">
+    {% if lead.conversations %}
+    <a class="btn small" href="/inbox/{{ lead.id }}">💬 Abrir conversa no Inbox</a>
+    {% else %}
+    <h4>💬 Esse lead ainda não tem conversa</h4>
+    <p class="muted">Ele chegou (formulário ou link) mas nunca mandou mensagem. Puxe a conversa:</p>
+    {% if start_error %}<div class="stage-warning">{{ start_error }}</div>{% endif %}
+    {% if start_numbers %}
+    <form method="post" action="/leads/{{ lead.id }}/iniciar">
+      <label>Enviar pelo WhatsApp
+        <select name="whatsapp_number_id">
+          {% for n in start_numbers %}<option value="{{ n.id }}">{{ n.label }}{% if n.owner %} — {{ n.owner.name }}{% endif %}</option>{% endfor %}
+        </select>
+      </label>
+      <label>1ª mensagem
+        <textarea name="body" rows="3" required>Olá{{ ", " ~ lead.name.split(" ")[0] if lead.name }}! Tudo bem? Aqui é {{ user.name.split(" ")[0] }}, da {{ tenant.name }}. Vi que você entrou em contato com a gente, como posso te ajudar?</textarea>
+      </label>
+      <button class="btn small" type="submit">Enviar e abrir a conversa</button>
+    </form>
+    <p class="muted">A conversa passa a aparecer no Inbox, e a resposta do cliente chega lá.</p>
+    {% endif %}
+    {% if wa_link %}
+    <p class="muted">Ou abra direto no WhatsApp (celular ou WhatsApp Web): <a href="{{ wa_link }}" target="_blank" rel="noopener">abrir conversa com {{ lead.phone }} ↗</a>. Use o WhatsApp de um número conectado ao CRM, assim a conversa também aparece aqui.</p>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
   {% if not lead.archived_at %}
   <div class="lead-actions">
     <form method="post" action="/leads/{{ lead.id }}/arquivo" onsubmit="return confirm('Arquivar este lead? Ele sai do Pipeline mas continua salvo e contando no Dashboard (Pipeline > Arquivados).')">

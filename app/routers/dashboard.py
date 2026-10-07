@@ -3,7 +3,7 @@ import datetime
 import os
 import re
 import threading
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 import time
 from typing import Optional
 
@@ -312,8 +312,68 @@ def lead_detail(
             "voltar": request.query_params.get("voltar", ""),
             "platform": resolve_platform(lead.attribution),
             "platform_label": PLATFORM_LABEL[resolve_platform(lead.attribution)],
+            "people": team_members(db, tenant.id, only_active=True) if user.role == "admin" else [],
+            "start_numbers": _start_numbers(db, tenant, user, lead),
+            "wa_link": _wa_link(lead),
+            "start_error": request.query_params.get("erro_envio", ""),
         },
     )
+
+
+def _start_numbers(db: Session, tenant: Tenant, user: User, lead: Lead) -> list:
+    """WhatsApps conectados que podem mandar a 1ª mensagem: o do vendedor do lead primeiro.
+    Vendedor só usa o(s) dele; admin escolhe qualquer um."""
+    numbers = [
+        n for n in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
+        .order_by(WhatsAppNumber.label)
+        if n.provider != "evolution" or n.connection_state == "open"
+    ]
+    if user.role != "admin":
+        numbers = [n for n in numbers if n.owner_user_id == user.id]
+    numbers.sort(key=lambda n: n.owner_user_id != lead.assigned_user_id)
+    return numbers
+
+
+def _wa_link(lead: Lead) -> str:
+    digits = "".join(ch for ch in (lead.phone or "") if ch.isdigit())
+    if not digits or lead.is_group:
+        return ""
+    first = (lead.name or "").split(" ")[0]
+    return f"https://wa.me/{digits}?" + urlencode({"text": f"Olá{', ' + first if first else ''}! Tudo bem?"})
+
+
+@router.post("/leads/{lead_id}/iniciar")
+def start_conversation(
+    lead_id: str,
+    whatsapp_number_id: str = Form(...),
+    body: str = Form(...),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Manda a 1ª mensagem pro lead (ex: preencheu o formulário/clicou no link mas nunca chamou
+    no WhatsApp). A conversa passa a existir e aparece no Inbox."""
+    lead = _lead_for_action(db, tenant, user, lead_id)
+    number = next((n for n in _start_numbers(db, tenant, user, lead) if n.id == whatsapp_number_id), None)
+    if number is None or not body.strip():
+        raise HTTPException(status_code=400, detail="Escolha um WhatsApp conectado e escreva a mensagem")
+    ok, wa_id, secret = messaging.send_text(number, lead.phone, body.strip())
+    if not ok:
+        return RedirectResponse(
+            url=f"/leads/{lead_id}?erro_envio=" + quote("O WhatsApp " + number.label + " não conseguiu enviar. Confira se o número do lead está certo e se o WhatsApp está conectado."),
+            status_code=302,
+        )
+    # consulta de novo: o aviso do WhatsApp sobre essa mesma mensagem pode já ter criado a conversa
+    conversation = (
+        db.query(Conversation).filter(Conversation.lead_id == lead.id, Conversation.whatsapp_number_id == number.id).first()
+    )
+    if conversation is None:
+        conversation = Conversation(tenant_id=tenant.id, lead_id=lead.id, whatsapp_number_id=number.id, assigned_user_id=lead.assigned_user_id)
+        db.add(conversation)
+        db.flush()
+    response_times.mark_outbound(lead)
+    _record_outbound(db, conversation, user, wa_id, body.strip(), secret=secret)
+    return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
 
 @router.post("/leads/{lead_id}/update")
@@ -815,6 +875,7 @@ def transfer_lead(
     para: str = Form(...),
     trocar_numero: str = Form(""),
     ajax: str = Form(""),
+    voltar: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -858,6 +919,8 @@ def transfer_lead(
     inbox_state.mark_unread(db, target.id, lead.id)  # chega destacado no Inbox de quem recebeu
     if ajax:
         return JSONResponse({"ok": True})
+    if voltar.startswith("/"):
+        return RedirectResponse(url=voltar, status_code=302)
     # vendedor que passou o lead adiante não enxerga mais a conversa
     return RedirectResponse(url=f"/inbox/{lead_id}" if user.role == "admin" else "/inbox?transferido=1", status_code=302)
 

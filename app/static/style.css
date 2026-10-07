@@ -577,3 +577,12 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .my-numbers .stat-grid { margin: 0; }
 .team-total-row td { border-top: 2px solid var(--line); background: var(--panel-2); }
 @media (max-width: 900px) { .my-numbers { grid-template-columns: 1fr; } }
+/* ficha do lead: trocar vendedor e puxar a conversa */
+.owner-form { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.owner-form select { width: auto; max-width: 260px; }
+.start-chat { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.start-chat h4 { margin: 0; }
+.start-chat p { margin: 0; font-size: .82rem; }
+.start-chat form { display: flex; flex-direction: column; gap: 8px; }
+.start-chat label { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; font-weight: 600; }
+.start-chat form .btn { align-self: flex-start; }
