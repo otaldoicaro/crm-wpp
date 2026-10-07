@@ -75,3 +75,34 @@ def sync_indexes() -> None:
             if index.name not in existing:
                 logger.warning("sync_indexes: criando índice %s", index.name)
                 index.create(bind=engine, checkfirst=True)
+
+
+def setup_text_search() -> None:
+    """Busca dentro das conversas: no Postgres, um índice de trigramas (pg_trgm) deixa o
+    "contém essa palavra" rápido mesmo com centenas de milhares de mensagens. Criado uma vez;
+    nos outros bancos (testes locais) a busca funciona sem índice."""
+    if engine.dialect.name != "postgresql":
+        return
+    from sqlalchemy import text
+
+    import threading
+
+    def build():
+        try:
+            # CONCURRENTLY: monta o índice sem travar a tabela (mensagens continuam chegando)
+            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+                invalid = conn.execute(text(
+                    "SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
+                    "WHERE c.relname = 'ix_messages_body_trgm' AND NOT i.indisvalid"
+                )).first()
+                if invalid:  # uma tentativa anterior foi interrompida no meio
+                    conn.execute(text("DROP INDEX CONCURRENTLY IF EXISTS ix_messages_body_trgm"))
+                conn.execute(text(
+                    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_messages_body_trgm ON messages USING gin (body gin_trgm_ops)"
+                ))
+        except Exception:
+            logger.exception("setup_text_search: não deu pra criar o índice (a busca funciona, só mais devagar)")
+
+    # em segundo plano: na 1ª vez pode levar uns minutos, e o CRM já sobe atendendo
+    threading.Thread(target=build, daemon=True).start()

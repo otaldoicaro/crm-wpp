@@ -642,6 +642,39 @@ def set_meta_accounts(
     return RedirectResponse(url="/dashboard?salvo=1#trafego", status_code=302)
 
 
+SEARCH_LIMIT = 100
+
+
+@router.get("/busca", response_class=HTMLResponse)
+def message_search(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Procura um texto dentro das mensagens (as mais recentes primeiro). Vendedor só acha
+    nas conversas dele. Usa o índice de trigramas do Postgres (db.setup_text_search)."""
+    q = q.strip()[:100]
+    hits = []
+    if len(q) >= 3:
+        query = (
+            db.query(Message, Lead)
+            .join(Conversation, Conversation.id == Message.conversation_id)
+            .join(Lead, Lead.id == Conversation.lead_id)
+            .filter(
+                Conversation.tenant_id == tenant.id, Lead.deleted_at.is_(None),
+                Message.direction != "note", Message.body.ilike(f"%{q}%"),
+            )
+        )
+        if user.role != "admin":
+            query = query.filter(Lead.assigned_user_id == user.id)
+        hits = query.order_by(Message.created_at.desc()).limit(SEARCH_LIMIT).all()
+    return templates.TemplateResponse(request, "busca.html", {
+        "tenant": tenant, "user": user, "active_nav": "inbox", "q": q, "hits": hits, "limit": SEARCH_LIMIT,
+    })
+
+
 @router.get("/inbox", response_class=HTMLResponse)
 def inbox_view(
     request: Request,

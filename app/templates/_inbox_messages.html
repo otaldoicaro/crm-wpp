@@ -3,7 +3,7 @@
   {% if msg.direction == "note" %}
   <div class="msg-note">{{ msg.body }} · {{ msg.created_at|hora("%d/%m %H:%M") }}</div>
   {% else %}
-  <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}">
+  <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}" id="msg-{{ msg.id }}">
     {% if msg.sender_name and msg.direction == 'in' %}<div class="msg-sender">{{ msg.sender_name }}</div>{% endif %}
     {% if msg.media_type == "audio" %}
       {% if msg.body and not msg.body.startswith("🎤") %}<div>{{ msg.body }}</div>{% endif %}

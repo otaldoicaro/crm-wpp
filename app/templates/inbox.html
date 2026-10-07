@@ -41,6 +41,7 @@
   </div>
   <form class="inbox-search" method="get" data-reset-scroll action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
     <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone..." autocomplete="off">
+    <a class="msg-search-link" href="/busca" onclick="var q = this.parentNode.busca.value.trim(); this.href = '/busca' + (q ? '?q=' + encodeURIComponent(q) : '');">🔎 Buscar no texto das conversas</a>
     <select name="ordem" onchange="this.form.submit()" aria-label="Ordem das conversas" class="inbox-order">
       {% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if ordem == key }}>↕ {{ label }}</option>{% endfor %}
     </select>
@@ -235,9 +236,11 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
         if (!picker.contains(e.target) && e.target !== toggle) picker.hidden = true;
       });
 
-      // rola pro final da conversa ao abrir
+      // rola pro final da conversa ao abrir — ou até a mensagem achada na busca (#msg-...)
       var messagesEl = document.getElementById("inboxMessages");
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+      var found = location.hash.indexOf("#msg-") === 0 && document.getElementById(location.hash.slice(1));
+      if (found) { found.scrollIntoView({ block: "center" }); found.classList.add("msg-found"); }
+      else messagesEl.scrollTop = messagesEl.scrollHeight;
 
       // anexo (foto/video/documento)
       var attachToggle = document.getElementById("attachToggle");

@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
 
-from app.db import SessionLocal, sync_indexes, sync_schema
+from app.db import SessionLocal, setup_text_search, sync_indexes, sync_schema
 from app.services import archiver, followup, funnel, media_store, meta_spend, people, response_times
 from app.routers import (
     admin_setup,
@@ -29,6 +29,7 @@ app = FastAPI(title="CRM Multi-Tenant WhatsApp + Site")
 
 sync_schema()
 sync_indexes()
+setup_text_search()  # índice pra busca dentro das conversas
 media_store.setup()
 with SessionLocal() as _fdb:
     funnel.setup(_fdb)  # etapa "Negociando" + etapa mais avançada dos leads antigos

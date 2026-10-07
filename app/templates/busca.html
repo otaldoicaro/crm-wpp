@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Buscar nas conversas{% endblock %}
+{% macro snippet(text, q) -%}
+{# trecho em volta da palavra achada, com ela destacada #}
+{%- set low = text.lower() -%}{%- set i = low.find(q.lower()) -%}
+{%- if i < 0 -%}{{ text[:160] }}{{ "…" if text|length > 160 }}{%- else -%}
+{%- set start = [i - 60, 0]|max -%}
+{{ "…" if start > 0 }}{{ text[start:i] }}<mark>{{ text[i:i + q|length] }}</mark>{{ text[i + q|length:i + q|length + 90] }}{{ "…" if i + q|length + 90 < text|length }}
+{%- endif -%}
+{%- endmacro %}
+{% block content %}
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">Buscar nas conversas</h2>
+    <span class="muted">Procura o texto dentro das mensagens{{ " das suas conversas" if user.role != "admin" }}. Clique num resultado pra abrir a conversa naquela mensagem.</span>
+  </div>
+  <a class="btn ghost small" href="/inbox">← Voltar pro Inbox</a>
+</div>
+<form method="get" action="/busca" class="card search-box">
+  <input type="search" name="q" value="{{ q }}" placeholder="Ex: farol, pix, 1.250, retrovisor do gol…" autofocus minlength="3">
+  <button class="btn" type="submit">Buscar</button>
+</form>
+{% if q and q|length < 3 %}
+<p class="muted">Digite pelo menos 3 letras.</p>
+{% elif q %}
+<p class="muted">{{ hits|length }}{{ "+" if hits|length >= limit }} mensagem(ns) com “{{ q }}”{{ " — mostrando as " ~ limit ~ " mais recentes" if hits|length >= limit }}.</p>
+<div class="card search-results">
+  {% for msg, lead in hits %}
+  <a class="search-hit" href="/inbox/{{ lead.id }}#msg-{{ msg.id }}">
+    {{ m.avatar(lead) }}
+    <div class="search-hit-body">
+      <div class="row1"><b>{{ lead.name or lead.phone }}</b>{% if lead.is_group %} <span class="muted">👥 grupo</span>{% endif %}<span class="muted">{{ msg.created_at|hora("%d/%m/%Y %H:%M") }}</span></div>
+      <div class="search-snippet"><span class="muted">{{ "Nós:" if msg.direction == "out" else ((msg.sender_name or "Cliente") ~ ":") }}</span> {{ snippet(msg.body, q) }}</div>
+      <div class="muted" style="font-size:.72rem">{{ lead.assigned_user.name if lead.assigned_user else "sem vendedor" }}{% if lead.stage %} · {{ lead.stage.name }}{% endif %}</div>
+    </div>
+  </a>
+  {% else %}
+  <p class="muted" style="padding:14px">Nada encontrado.</p>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
