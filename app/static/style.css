@@ -625,3 +625,16 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .my-numbers .cf-shape b { font-size: 1.05rem; }
 .my-numbers .cf-shape span { font-size: .72rem; }
 .my-numbers .cf-side { font-size: .72rem; }
+/* follow-up */
+.fu-row { margin-top: 3px; }
+.fu-tag { background: #e6eefc; color: #2350a8; }
+.quoted { font-size: .74rem; margin-top: 3px; }
+.prazos-form { max-width: 760px; display: flex; flex-direction: column; gap: 10px; }
+.prazos-form h3 { margin: 12px 0 0; }
+.prazos-form label { font-size: .88rem; }
+.prazos-form .check { display: flex; gap: 8px; align-items: flex-start; }
+.prazos-form .btn { align-self: flex-start; }
+.late-toggle { cursor: pointer; }
+.next-step { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: .78rem; font-weight: 600; }
+.next-step input { font-size: .78rem; padding: 4px 7px; width: auto; }
+.next-step input[name=nota] { min-width: 200px; flex: 1; }

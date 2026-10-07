@@ -44,6 +44,11 @@ class Tenant(Base):
     # contas de anúncio do Meta deste cliente ("123,456", sem o act_): descobertas sozinhas pelos
     # anúncios dos leads, ou preenchidas no Dashboard. Os gastos são buscados dessas contas.
     meta_ad_accounts: Mapped[str] = mapped_column(String(300), default="")
+    # follow-up: depois de quantas horas sem o cliente responder a nossa última mensagem o lead
+    # aparece como "📞 follow-up". E se o time precisa agendar o próximo contato dos leads em
+    # Qualificado/Negociando (bom pra venda mais longa, ex: serviços). Configurável em /prazos.
+    followup_hours: Mapped[int] = mapped_column(Integer, default=24)
+    require_next_step: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     users: Mapped[list["User"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
@@ -129,6 +134,8 @@ class PipelineStage(Base):
     # nome do evento a disparar pro Meta/Google quando um lead ENTRA nesta etapa
     # (ex: "Lead", "Qualified", "Purchase"). Vazio = não dispara nada nesta etapa.
     conversion_event_name: Mapped[str] = mapped_column(String(60), default="")
+    # prazo pra ficar nesta etapa (horas; 0 = sem prazo). Passou: "⏰ parado" no card
+    sla_hours: Mapped[int] = mapped_column(Integer, default=0)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="stages")
 
@@ -162,6 +169,14 @@ class Lead(Base):
     # negócios (recompra): cada card é um negócio. contact_id = id do 1º negócio da pessoa (vazio
     # no 1º); deal_number = 1ª, 2ª, 3ª... oportunidade. A conversa do WhatsApp fica sempre no
     # negócio mais recente; os anteriores guardam etapa, valor e quando fecharam.
+    # follow-up: quando entrou na etapa atual; quantas mensagens nossas seguidas sem resposta
+    # do cliente; último valor que o time mandou (detectado na mensagem); próximo contato agendado
+    stage_entered_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    unanswered_outs: Mapped[int] = mapped_column(Integer, default=0)
+    quoted_value: Mapped[Optional[float]] = mapped_column(nullable=True)
+    quoted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    next_action_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    next_action_note: Mapped[str] = mapped_column(String(255), default="")
     contact_id: Mapped[str] = mapped_column(String(32), default="", index=True)
     deal_number: Mapped[int] = mapped_column(Integer, default=1)
     closed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)  # virou Ganho/Perdido

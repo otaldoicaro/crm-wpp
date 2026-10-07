@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Prazos e follow-up{% endblock %}
+{% block content %}
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">Prazos e follow-up</h2>
+    <span class="muted">Quanto tempo um lead pode ficar em cada etapa antes de aparecer como “⏰ parado”, e quando cobrar um follow-up. Vale só pra {{ tenant.name }}.</span>
+  </div>
+  <a class="btn ghost small" href="/">← Voltar pro Pipeline</a>
+</div>
+<form method="post" action="/prazos" class="card prazos-form">
+  <h3 style="margin-top:0">⏰ Prazo de cada etapa</h3>
+  <p class="muted">Em horas (24 = 1 dia). 0 = sem prazo. O card fica amarelo perto do prazo e vermelho quando passa.</p>
+  <table class="table-simple">
+    <thead><tr><th>Etapa</th><th>Prazo (horas)</th></tr></thead>
+    <tbody>
+    {% for st in stages %}
+      <tr>
+        <td>{{ st.name }}{% if auto_stage(st) %} <span class="muted">(1º contato: já tem o “⏳ aguardando”)</span>{% elif st.is_won or st.is_lost %} <span class="muted">(etapa final)</span>{% endif %}</td>
+        <td>{% if st.is_won or st.is_lost or auto_stage(st) %}—{% else %}<input type="number" min="0" step="1" name="sla_{{ st.id }}" value="{{ st.sla_hours }}" style="width:110px">{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <h3>📞 Follow-up</h3>
+  <label>Cobrar follow-up quando o cliente não responde a nossa última mensagem há
+    <input type="number" min="1" step="1" name="followup_hours" value="{{ tenant.followup_hours }}" style="width:90px"> horas
+  </label>
+
+  <h3>📅 Próximo contato obrigatório</h3>
+  <label class="check"><input type="checkbox" name="require_next_step" value="1" {{ "checked" if tenant.require_next_step }}>
+    Leads em Qualificado em diante precisam ter o próximo contato agendado (data + nota). Sem agendamento, ou com a data vencida, aparecem como atrasados.
+  </label>
+  <p class="muted">Bom pra vendas mais longas (serviços, projetos). Pra venda rápida, como autopeças, os prazos por etapa costumam bastar.</p>
+
+  <button class="btn" type="submit">Salvar</button>
+</form>
+{% endblock %}

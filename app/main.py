@@ -8,7 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
 
 from app.db import SessionLocal, sync_indexes, sync_schema
-from app.services import archiver, funnel, media_store, meta_spend, people, response_times
+from app.services import archiver, followup, funnel, media_store, meta_spend, people, response_times
 from app.routers import (
     admin_setup,
     auth_router,
@@ -32,7 +32,8 @@ sync_indexes()
 media_store.setup()
 with SessionLocal() as _fdb:
     funnel.setup(_fdb)  # etapa "Negociando" + etapa mais avançada dos leads antigos
-    funnel.move_answered_to_service(_fdb)  # quem o time já respondeu sai de "Novo"
+    funnel.move_answered_to_service(_fdb)
+    followup.setup(_fdb)  # prazos por etapa (padrão) + dados de follow-up dos leads antigos  # quem o time já respondeu sai de "Novo"
     people.admins_out_of_rotation(_fdb)  # admin só no rodízio se alguém ligar e confirmar
 archiver.schedule()
 meta_spend.schedule()  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)

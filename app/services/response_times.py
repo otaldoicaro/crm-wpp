@@ -18,12 +18,19 @@ WAITING_ALERT = datetime.timedelta(minutes=15)  # depois disso o "aguardando" fi
 IDLE_ALERT = datetime.timedelta(days=3)  # sem interação nossa há mais que isso: alerta
 
 
+FOLLOWUP_BURST = datetime.timedelta(hours=1)  # várias mensagens seguidas contam como uma tentativa
+
+
 def mark_inbound(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
     lead.last_inbound_at = when or datetime.datetime.utcnow()
+    lead.unanswered_outs = 0  # o cliente respondeu
 
 
 def mark_outbound(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
     when = when or datetime.datetime.utcnow()
+    previous = lead.last_outbound_at
+    if previous is None or (lead.last_inbound_at and lead.last_inbound_at > previous) or when - previous > FOLLOWUP_BURST:
+        lead.unanswered_outs = (lead.unanswered_outs or 0) + 1  # mais uma tentativa nossa sem resposta
     lead.last_outbound_at = when
     if lead.first_response_at is None:
         lead.first_response_at = when

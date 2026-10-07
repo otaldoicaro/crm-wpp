@@ -23,7 +23,7 @@
   </form>
   {% endif %}
   <div class="tipo-chips">
-    {% for key, label in (("", "Todos"), ("naolidas", "Não lidas"), ("favoritas", "★ Favoritas"), ("grupos", "👥 Grupos"), ("semgrupos", "Todos menos grupos"), ("leads", "Leads"), ("cliente", "Clientes"), ("outro", "Outros")) %}
+    {% for key, label in (("", "Todos"), ("naolidas", "Não lidas"), ("favoritas", "★ Favoritas"), ("grupos", "👥 Grupos"), ("semgrupos", "Todos menos grupos"), ("followup", "📞 Follow-up"), ("parados", "⏰ Parados"), ("leads", "Leads"), ("cliente", "Clientes"), ("outro", "Outros")) %}
       <a class="pill {{ 'pill-on' if tipo == key }}" href="{{ request.url.path }}?tipo={{ key }}">{{ label }}{% if key == "naolidas" and naolidas_total %} <span class="unread-total">{{ naolidas_total }}</span>{% endif %}</a>
     {% endfor %}
     <a class="pill unread-chip {{ 'pill-on' if lidas == 'nao' }}" href="{{ request.url.path }}?lidas={{ '' if lidas == 'nao' else 'nao' }}" title="{{ 'Mostrar todas' if lidas == 'nao' else 'Conversas em que o cliente mandou mensagem e ninguém respondeu ainda (mesmo que alguém tenha aberto), inclusive antigas' }}">
@@ -58,6 +58,8 @@
           </label>
         </form>
         {{ m.tempo_atendimento(selected_lead, closed=selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost)) }}
+        {{ m.followup_tags(selected_lead) }}
+        {% if selected_lead.quoted_value and not (selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost)) %}<div class="muted quoted">💰 Último valor enviado: R$ {{ "{:,.2f}".format(selected_lead.quoted_value).replace(",", "X").replace(".", ",").replace("X", ".") }} ({{ selected_lead.quoted_at|hora("%d/%m %H:%M") }})</div>{% endif %}
         {% if stages %}
         <form class="stage-bar" id="stageBar" data-lead="{{ selected_lead.id }}">
           <label>Etapa
@@ -65,7 +67,7 @@
               {% for st in stages %}<option value="{{ st.id }}" data-won="{{ 1 if st.is_won else 0 }}" data-lost="{{ 1 if st.is_lost else 0 }}" {{ "selected" if selected_lead.stage_id == st.id else ("disabled" if auto_stage(st)) }}>{{ st.name }}{{ " (automática)" if auto_stage(st) }}</option>{% endfor %}
             </select>
           </label>
-          <label class="stage-value">R$ <input name="deal_value" inputmode="decimal" autocomplete="off" placeholder="valor da venda" value="{{ ('%.2f'|format(selected_lead.deal_value)).replace('.', ',') if selected_lead.deal_value else '' }}"></label>
+          <label class="stage-value">R$ <input name="deal_value" inputmode="decimal" autocomplete="off" placeholder="valor da venda" value="{{ ('%.2f'|format(selected_lead.deal_value or selected_lead.quoted_value)).replace('.', ',') if (selected_lead.deal_value or selected_lead.quoted_value) else '' }}"></label>
           <div class="stage-loss" hidden>{% with reason=selected_lead.loss_reason, detail=selected_lead.loss_detail, required=False %}{% include "_loss_fields.html" %}{% endwith %}</div>
           <button class="btn small" type="submit" hidden>Salvar</button>
           <span class="stage-status muted"></span>
@@ -74,6 +76,7 @@
         {% if deal_info and deal_info.recurring %}
         <a class="recurring-badge" href="/leads/{{ selected_lead.id }}#negocios" title="Ver todos os negócios desse cliente">🔁 Cliente recorrente · {{ selected_lead.deal_number }}º negócio{% if deal_info.purchases %} · já comprou R$ {{ "{:,.0f}".format(deal_info.total).replace(",", ".") }} ({{ deal_info.purchases }} venda{{ "s" if deal_info.purchases > 1 }}){% endif %}</a>
         {% endif %}
+        {% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_next_step.html" %}{% endwith %}
         <div class="thread-actions">
           {% if deal_info and selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost) %}
           <form method="post" action="/leads/{{ selected_lead.id }}/novo-negocio" onsubmit="return confirm('Abrir um novo negócio pra este cliente?\n\nO atual fica como está ({{ selected_lead.stage.name }}), e a conversa passa pro negócio novo, em Em atendimento.')">

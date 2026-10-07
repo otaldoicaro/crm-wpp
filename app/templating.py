@@ -15,7 +15,7 @@ import os
 from fastapi.templating import Jinja2Templates
 
 from app.themes import theme_css, theme_for
-from app.services import funnel, response_times
+from app.services import followup, funnel, response_times
 from app.timeutil import fmt_local
 
 templates = Jinja2Templates(directory="app/templates")
@@ -37,6 +37,7 @@ templates.env.filters["ha"] = response_times.ago
 templates.env.globals["rt"] = response_times
 templates.env.globals["auto_stage"] = funnel.is_automatic  # etapas que só o CRM preenche
 templates.env.globals["LOSS_REASONS"] = funnel.LOSS_REASONS
+templates.env.globals["fu_state"] = followup.state  # selos ⏰ parado / 📞 follow-up / 📅 próximo contato
 templates.env.globals["agora"] = datetime.datetime.utcnow
 templates.env.filters["quebras"] = lambda text: Markup(str(escape(text or "")).replace("\n", "<br>"))
 # "Carlos  Vendedor" e "carlos vendedor" contam como o mesmo nome

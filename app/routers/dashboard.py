@@ -9,6 +9,7 @@ from typing import Optional
 
 import requests
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -16,7 +17,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app.services import deals, evolution_client, funnel, inbox_state, media_store, messaging, meta_spend, response_times, traffic
+from app.services import deals, evolution_client, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -107,6 +108,9 @@ def pipeline_view(
         seller = user.id  # cada vendedor vê só o pipeline dele
     if seller:
         base = base.filter(Lead.assigned_user_id == seller)
+    atrasados = request.query_params.get("atrasados") == "1"
+    if atrasados:  # só quem está parado na etapa, com follow-up pendente ou próximo contato vencido
+        base = base.filter(followup.late_condition(tenant, stages))
 
     totals = dict(base.with_entities(Lead.stage_id, func.count(Lead.id)).group_by(Lead.stage_id).all())
     leads_by_stage: dict[str, list[Lead]] = {}
@@ -153,6 +157,7 @@ def pipeline_view(
             "platform_labels": PLATFORM_LABEL,
             "ordem": ordem,
             "order_labels": ORDER_LABELS,
+            "atrasados": atrasados,
         },
     )
     response.set_cookie("pipeline_ordem", ordem, httponly=True, samesite="lax")
@@ -542,6 +547,72 @@ def campaign_leads(
     )
 
 
+@router.get("/prazos", response_class=HTMLResponse)
+def deadlines_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Prazos do follow-up (por cliente): horas em cada etapa, horas pro follow-up e se o
+    próximo contato é obrigatório."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403)
+    return templates.TemplateResponse(request, "prazos.html", {
+        "tenant": tenant, "user": user, "active_nav": "pipeline", "stages": funnel._stages(db, tenant.id),
+    })
+
+
+@router.post("/prazos")
+async def save_deadlines(
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403)
+    form = await request.form()
+
+    def hours(name: str, default: int = 0) -> int:
+        try:
+            return max(0, min(24 * 90, int(float(str(form.get(name, default)).replace(",", ".")))))
+        except ValueError:
+            return default
+
+    def apply():
+        for st in funnel._stages(db, tenant.id):
+            if f"sla_{st.id}" in form:
+                st.sla_hours = hours(f"sla_{st.id}")
+        tenant.followup_hours = hours("followup_hours", 24) or 24
+        tenant.require_next_step = form.get("require_next_step") == "1"
+        db.commit()
+
+    await run_in_threadpool(apply)
+    return RedirectResponse(url="/prazos?salvo=1", status_code=302)
+
+
+@router.post("/leads/{lead_id}/proximo-contato")
+def set_next_step(
+    lead_id: str,
+    quando: str = Form(""),
+    nota: str = Form(""),
+    voltar: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """📅 Próximo contato agendado (data/hora local)."""
+    lead = _lead_for_action(db, tenant, user, lead_id)
+    try:
+        lead.next_action_at = local_to_utc(datetime.datetime.fromisoformat(quando)) if quando else None
+    except ValueError:
+        return RedirectResponse(url=f"/leads/{lead_id}?erro=" + quote("Data inválida."), status_code=302)
+    lead.next_action_note = nota.strip()[:255]
+    db.commit()
+    return RedirectResponse(url=voltar if voltar.startswith("/") else f"/inbox/{lead_id}", status_code=302)
+
+
 @router.post("/dashboard/meta-contas")
 def set_meta_accounts(
     contas: str = Form(""),
@@ -626,6 +697,10 @@ def _inbox_query(
         query = query.filter(Lead.is_group.is_(True))
     elif tipo == "semgrupos":
         query = query.filter(Lead.is_group.is_(False))
+    elif tipo == "followup":
+        query = query.filter(followup.followup_condition(tenant, funnel._stages(db, tenant.id)))
+    elif tipo == "parados":
+        query = query.filter(followup.stale_condition(funnel._stages(db, tenant.id)))
     elif tipo == "leads":
         query = query.filter(Lead.tag == "", Lead.is_group.is_(False))
     elif tipo in ("cliente", "outro"):
@@ -1102,6 +1177,8 @@ TEAM_MODES = {
     "vistas": inbox_state.seen_unanswered_filter,
     "grupos": inbox_state.groups_filter,
     "gruposnv": inbox_state.unseen_groups_filter,
+    "followup": None,  # 📞 follow-up pendente (precisa do cliente/etapas: tratado em _team_columns)
+    "parados": None,  # ⏰ parado na etapa além do prazo
 }
 
 
@@ -1120,12 +1197,18 @@ def _team_columns(
     limits, modes = limits or {}, modes or {}
     now = datetime.datetime.utcnow()
     today = local_to_utc(to_local(now).replace(hour=0, minute=0, second=0, microsecond=0))
+    stages = funnel._stages(db, tenant.id)
+    fu_cond, stale_cond = followup.followup_condition(tenant, stages), followup.stale_condition(stages)
     columns = []
     for seller_id in [s for s in seller_ids if s in people][:TEAM_VIEW_MAX]:
         query, _ = _inbox_query(db, tenant, user, "", "", seller_id)
         list_query, _ = _inbox_query(db, tenant, user, busca, "", seller_id)
         mode = modes.get(seller_id, "")
-        if mode:
+        if mode == "followup":
+            list_query = list_query.filter(fu_cond)
+        elif mode == "parados":
+            list_query = list_query.filter(stale_cond, Lead.is_group.is_(False))
+        elif mode:
             list_query = _pending_only(list_query, mode)
         else:
             list_query = list_query.filter(Lead.is_group.is_(False))  # padrão: só leads; grupos no filtro 👥
@@ -1142,6 +1225,8 @@ def _team_columns(
         )
         waiting = open_leads.filter(response_times.awaiting_reply_sql()).count()
         unseen = inbox_state.unseen_filter(open_leads).count() if waiting else 0
+        fu_count = open_leads.filter(fu_cond).count()
+        stale_count = open_leads.filter(stale_cond).count()
         groups = db.query(Lead).filter(
             Lead.tenant_id == tenant.id, Lead.assigned_user_id == seller_id, Lead.deleted_at.is_(None), Lead.is_group.is_(True)
         )
@@ -1151,7 +1236,7 @@ def _team_columns(
         columns.append({
             "seller": people[seller_id], "convs": convs, "waiting": waiting, "unseen": unseen,
             "seen_waiting": waiting - unseen, "today": today_count, "mode": mode,
-            "groups": group_total, "groups_unseen": group_unseen,
+            "groups": group_total, "groups_unseen": group_unseen, "followups": fu_count, "stale": stale_count,
             "truncated": len(convs) >= limit and limit < INBOX_LIST_MAX, "limit": limit, "busca": busca,
         })
     # não lidas (de quem está olhando) de todas as colunas numa consulta só
@@ -1538,6 +1623,7 @@ def _record_outbound(
     lead = db.get(Lead, conversation.lead_id)
     if lead is not None and wa_id:  # enviada de verdade (não conta "⚠️ Não enviada")
         funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
+        followup.on_outbound_text(db, lead, body)  # mandou preço: vai pra "Negociando"
     existing = db.query(Message).filter(Message.wa_message_id == wa_id).first() if wa_id else None
     message = existing or Message(conversation_id=conversation.id, direction="out", wa_message_id=wa_id)
     message.sender_user_id = user.id
@@ -1693,6 +1779,8 @@ def dashboard_view(
             "within_15": mine_rt["within_15"],
             "waiting": response_times.summary(mine_open)["never_answered"],
             "idle": response_times.summary(mine_open)["idle"],
+            "followups": sum(1 for l in mine_open if followup.state(l)["followup"]),
+            "stale": sum(1 for l in mine_open if (followup.state(l)["stale"] or {}).get("late")),
         }
 
     # funil lado a lado por vendedor: só vendedores de fato (admin não entra); o vendedor

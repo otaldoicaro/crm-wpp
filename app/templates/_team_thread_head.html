@@ -7,12 +7,14 @@
   <b>{{ lead.name or lead.phone }}</b>{% if lead.tag %} <span class="tag-badge {{ lead.tag }}">{{ "Cliente" if lead.tag == "cliente" else "Outro" }}</span>{% endif %}
   <div class="muted">{{ lead.phone }}</div>
   {{ m.tempo_atendimento(lead, closed=closed) }}
+  {{ m.followup_tags(lead) }}
+  {% if lead.quoted_value and not closed %}<div class="muted quoted">💰 Último valor enviado: R$ {{ "{:,.2f}".format(lead.quoted_value).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>{% endif %}
   {% if stages %}
   <form class="mini-stage" data-lead="{{ lead.id }}">
     <select name="stage_id" aria-label="Etapa do funil">
       {% for st in stages %}<option value="{{ st.id }}" data-won="{{ 1 if st.is_won else 0 }}" data-lost="{{ 1 if st.is_lost else 0 }}" {{ "selected" if lead.stage_id == st.id else ("disabled" if auto_stage(st)) }}>{{ st.name }}{{ " (automática)" if auto_stage(st) }}</option>{% endfor %}
     </select>
-    <input name="deal_value" inputmode="decimal" placeholder="R$ valor" value="{{ ('%.2f'|format(lead.deal_value)).replace('.', ',') if lead.deal_value else '' }}">
+    <input name="deal_value" inputmode="decimal" placeholder="R$ valor" value="{{ ('%.2f'|format(lead.deal_value or lead.quoted_value)).replace('.', ',') if (lead.deal_value or lead.quoted_value) else '' }}">
     <div class="mini-loss" {{ "hidden" if not (lead.stage and lead.stage.is_lost) }}>{% with reason=lead.loss_reason, detail=lead.loss_detail, required=False %}{% include "_loss_fields.html" %}{% endwith %}</div>
     <button class="btn small" type="submit" hidden>Salvar</button>
     <span class="muted mini-stage-status"></span>

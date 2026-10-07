@@ -178,7 +178,7 @@
 <div class="card">
   <div style="overflow-x:auto;">
   <table class="table-simple seller-table">
-    <thead><tr><th>Vendedor</th><th>Leads</th>{% for st in stages %}<th>{{ st.name }}</th>{% endfor %}<th>Conversão</th><th>Receita</th><th title="Mediana do tempo até a 1ª resposta">1º atend.</th><th title="Leads em aberto ainda sem resposta">Aguardando</th></tr></thead>
+    <thead><tr><th>Vendedor</th><th>Leads</th>{% for st in stages %}<th>{{ st.name }}</th>{% endfor %}<th>Conversão</th><th>Receita</th><th title="Mediana do tempo até a 1ª resposta">1º atend.</th><th title="Leads em aberto ainda sem resposta">Aguardando</th><th title="A última mensagem foi nossa e o cliente não responde há mais que o prazo de follow-up">📞 Follow-up</th><th title="Em aberto e passaram do prazo da etapa">⏰ Parados</th></tr></thead>
     <tbody>
     {% for r in seller_rows %}
       <tr {% if is_admin %}style="cursor:pointer" onclick="window.location='/dashboard?seller={{ r.user.id }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}'"{% endif %}>
@@ -189,6 +189,8 @@
         <td>R$ {{ "{:,.0f}".format(r.revenue).replace(",", ".") }}</td>
         <td>{{ r.median_first|duracao }}</td>
         <td class="{{ 'rt-late-cell' if r.waiting else 'muted' }}">{{ r.waiting }}</td>
+        <td class="{{ 'rt-late-cell' if r.followups else 'muted' }}">{{ r.followups }}</td>
+        <td class="{{ 'rt-late-cell' if r.stale else 'muted' }}">{{ r.stale }}</td>
       </tr>
     {% endfor %}
       <tr class="team-total-row">
@@ -199,6 +201,8 @@
         <td>R$ {{ "{:,.0f}".format(team_row.revenue).replace(",", ".") }}</td>
         <td>{{ team_row.median_first|duracao }}</td>
         <td>{{ team_row.waiting }}</td>
+        <td>{{ team_row.followups }}</td>
+        <td>{{ team_row.stale }}</td>
       </tr>
     </tbody>
   </table>

@@ -36,6 +36,8 @@ def set_stage(lead: Lead, stage: PipelineStage) -> None:
         lead.closed_at = datetime.datetime.utcnow()
     elif not closing:
         lead.closed_at = None
+    if lead.stage_id != stage.id or lead.stage_entered_at is None:
+        lead.stage_entered_at = datetime.datetime.utcnow()  # conta o "há X tempo nesta etapa"
     lead.stage_id = stage.id
     if not stage.is_lost and stage.order > (lead.reached_order or 0):
         lead.reached_order = stage.order
@@ -43,6 +45,17 @@ def set_stage(lead: Lead, stage: PipelineStage) -> None:
 
 def _stages(db, tenant_id: str) -> list:
     return db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant_id).order_by(PipelineStage.order).all()
+
+
+def _stages_cached(lead: Lead) -> list:
+    """Etapas do cliente do lead (lidas uma vez por sessão do banco)."""
+    from sqlalchemy.orm import object_session
+
+    session = object_session(lead)
+    cache = session.info.setdefault("stages_by_tenant", {})
+    if lead.tenant_id not in cache:
+        cache[lead.tenant_id] = _stages(session, lead.tenant_id)
+    return cache[lead.tenant_id]
 
 
 def entry_stage(db, tenant_id: str, with_chat: bool) -> Optional[PipelineStage]:

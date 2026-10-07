@@ -40,6 +40,10 @@
     <select name="ordem" onchange="this.form.submit()" aria-label="Ordem dos cards" title="Ordem dos cards em cada coluna">
       {% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if ordem == key }}>↕ {{ label }}</option>{% endfor %}
     </select>
+    <label class="pill late-toggle {{ 'pill-on' if atrasados }}" title="Só leads parados na etapa além do prazo, com follow-up pendente ou próximo contato vencido">
+      <input type="checkbox" name="atrasados" value="1" {{ "checked" if atrasados }} onchange="this.form.submit()" hidden> {{ "✕ " if atrasados }}⚠️ Só atrasados
+    </label>
+    {% if user.role == "admin" %}<a class="pill" href="/prazos" title="Prazo de cada etapa e tempo pro follow-up">⚙ Prazos</a>{% endif %}
   </form>
 {% if user.role == "admin" %}
   <form method="get" action="/" class="pipeline-filter-form">
@@ -77,6 +81,7 @@
           <div class="campaign" title="{{ lead.attribution.utm_campaign }}">{{ lead.attribution.utm_campaign }}</div>
         {% endif %}
         {{ m.tempo_atendimento(lead, closed=stage.is_won or stage.is_lost) }}
+        {{ m.followup_tags(lead) }}
         <div class="foot">
           <span>{{ lead.created_at|hora("%d/%m") }}</span>
           {% if lead.assigned_user %}<span>{{ lead.assigned_user.name }}</span>{% endif %}

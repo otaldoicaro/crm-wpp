@@ -8,6 +8,8 @@
         ("pend", "⏳", "aguardando resposta", col.waiting, "Todas as conversas esperando resposta do vendedor"),
         ("naovistas", "🙈", "não vistas", col.unseen, "Esperando resposta e o vendedor nem abriu a conversa (no CRM ou no celular)"),
         ("vistas", "👀", "vistas sem resposta", col.seen_waiting, "O vendedor abriu/leu, mas ainda não respondeu"),
+        ("followup", "📞", "follow-up", col.followups, "A última mensagem foi nossa e o cliente não responde: hora de chamar de novo"),
+        ("parados", "⏰", "parados na etapa", col.stale, "Passaram do prazo da etapa sem mudar de etapa"),
       ) %}
       <button type="button" class="rt-tag pend-toggle {{ 'late' if n and mode != 'vistas' else ('wait' if n else '') }} {{ 'on' if col.mode == mode }}" data-seller="{{ col.seller.id }}" data-mode="{{ mode }}" title="{{ 'Mostrar todas as conversas' if col.mode == mode else tip }}">{{ "✕ " if col.mode == mode }}{{ icon }} {{ n }} {{ label }}</button>
       {% endfor %}
@@ -33,7 +35,7 @@
         <div class="inbox-list-item-body">
           <div class="row1"><span class="name">{% if lead.is_group %}👥 {% endif %}{% if lead.id in col.favorites %}<span class="fav-star">★</span> {% endif %}{{ lead.name or lead.phone }}{% if lead.tag %} <span class="tag-badge {{ lead.tag }}">{{ "Cliente" if lead.tag == "cliente" else "Outro" }}</span>{% endif %}</span><span class="time">{{ conv.last_message_at|hora("%d/%m %H:%M") }}</span></div>
           <div class="row2"><div class="preview">{{ conv.last_preview or "—" }}</div>{% if n_unread %}<span class="unread-count">{{ n_unread }}</span>{% elif n_unread is not none %}<span class="unread-dot"></span>{% endif %}</div>
-          {% if not lead.is_group %}{{ m.tempo_atendimento(lead, closed=lead.stage and (lead.stage.is_won or lead.stage.is_lost)) }}{% endif %}
+          {% if not lead.is_group %}{{ m.tempo_atendimento(lead, closed=lead.stage and (lead.stage.is_won or lead.stage.is_lost)) }}{{ m.followup_tags(lead) }}{% endif %}
         </div>
       </a>
     {% else %}

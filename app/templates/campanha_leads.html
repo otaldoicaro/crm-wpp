@@ -31,6 +31,7 @@
           <span class="muted camp-seller">{{ lead.assigned_user.name if lead.assigned_user else "sem vendedor" }}</span>
         </div>
         {{ m.tempo_atendimento(lead, closed=st and (st.is_won or st.is_lost)) }}
+        {{ m.followup_tags(lead) }}
       </div>
     </a>
     {% else %}

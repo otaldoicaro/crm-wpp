@@ -67,3 +67,16 @@
   {% endif %}
 </div>
 {%- endmacro %}
+
+
+{% macro followup_tags(lead) -%}
+{# ⏰ parado na etapa · 📞 follow-up pendente · 📅 próximo contato (ver services/followup.py) #}
+{% set f = fu_state(lead) %}
+{% if f.stale or f.followup or f.next %}
+<div class="rt-row fu-row">
+  {% if f.stale %}<span class="rt-tag {{ 'late' if f.stale.late else 'wait' }}" title="Tempo nesta etapa{{ ' (passou do prazo)' if f.stale.late else ' (perto do prazo)' }}">⏰ há {{ f.stale.for|duracao }} em {{ f.stale.stage }}</span>{% endif %}
+  {% if f.followup %}<span class="rt-tag fu-tag" title="A última mensagem foi nossa e o cliente não respondeu">📞 follow-up · sem resposta há {{ f.followup.for|duracao }}{% if f.followup.attempts > 1 %} · {{ f.followup.attempts }} tentativas{% endif %}</span>{% if f.followup.attempts >= 2 %}<span class="rt-tag" title="Já dá pra marcar como Perdido com o motivo “Não responde mais”">pode marcar Perdido</span>{% endif %}{% endif %}
+  {% if f.next %}{% if f.next.missing %}<span class="rt-tag late" title="Agende o próximo contato com o cliente">📅 sem próximo contato</span>{% else %}<span class="rt-tag {{ 'late' if f.next.late else ('wait' if f.next.today else '') }}" title="{{ f.next.note }}">📅 {{ "atrasado: " if f.next.late else ("hoje " if f.next.today else "") }}{{ f.next.at|hora("%d/%m %H:%M") }}</span>{% endif %}{% endif %}
+</div>
+{% endif %}
+{%- endmacro %}

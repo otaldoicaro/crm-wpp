@@ -1,0 +1,10 @@
+{# 📅 próximo contato (só pra clientes com "próximo contato obrigatório" ligado em /prazos) #}
+{% if tenant.require_next_step and lead.stage and not (lead.stage.is_won or lead.stage.is_lost) and not lead.is_group %}
+<form method="post" action="/leads/{{ lead.id }}/proximo-contato" class="next-step">
+  <input type="hidden" name="voltar" value="{{ voltar_url }}">
+  <span>📅 Próximo contato</span>
+  <input type="datetime-local" name="quando" value="{{ (lead.next_action_at|hora('%Y-%m-%dT%H:%M')) if lead.next_action_at else '' }}">
+  <input name="nota" value="{{ lead.next_action_note }}" placeholder="o que fazer (ex: ligar depois do mecânico)" maxlength="255">
+  <button class="btn ghost small" type="submit">Agendar</button>
+</form>
+{% endif %}
