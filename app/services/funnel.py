@@ -16,6 +16,7 @@ from app.models import Lead, PipelineStage, Tenant
 logger = logging.getLogger("funnel")
 
 NEGOTIATION_NAME = "Negociando"
+NO_CHAT_NAME = "Lead sem conversa"  # 1ª etapa: chegou (formulário/link) e ainda não falou no WhatsApp
 
 
 def _plain(text: str) -> str:
@@ -32,6 +33,31 @@ def set_stage(lead: Lead, stage: PipelineStage) -> None:
     lead.stage_id = stage.id
     if not stage.is_lost and stage.order > (lead.reached_order or 0):
         lead.reached_order = stage.order
+
+
+def _stages(db, tenant_id: str) -> list:
+    return db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant_id).order_by(PipelineStage.order).all()
+
+
+def entry_stage(db, tenant_id: str, with_chat: bool) -> Optional[PipelineStage]:
+    """Etapa de um lead novo: sem conversa ainda -> "Lead sem conversa"; já falando -> "Novo"."""
+    stages = _stages(db, tenant_id)
+    no_chat = stage_named(stages, NO_CHAT_NAME)
+    if not with_chat and no_chat:
+        return no_chat
+    return stage_named(stages, "Novo") or next(
+        (s for s in stages if s is not no_chat and not s.is_won and not s.is_lost), stages[0] if stages else None
+    )
+
+
+def on_message(db, lead: Lead) -> None:
+    """Saiu ou chegou mensagem na conversa: lead em "Lead sem conversa" vai pra "Novo"."""
+    stage = lead.stage
+    if stage is not None and _plain(stage.name) == _plain(NO_CHAT_NAME):
+        target = entry_stage(db, lead.tenant_id, with_chat=True)
+        if target is not None:
+            set_stage(lead, target)
+            db.add(lead)
 
 
 def levels(stages: list) -> dict:
@@ -94,8 +120,42 @@ def setup(db) -> None:
         logger.info("funil: etapa %s criada em %s", NEGOTIATION_NAME, tenant.name)
         db.flush()
     db.commit()
+    for tenant in db.query(Tenant).all():
+        _create_no_chat_stage(db, tenant)
     for st in db.query(PipelineStage).filter(PipelineStage.is_lost.is_(False)):
         db.query(Lead).filter(Lead.stage_id == st.id, or_(Lead.reached_order.is_(None), Lead.reached_order < st.order)).update(
             {Lead.reached_order: st.order, Lead.updated_at: Lead.updated_at}, synchronize_session=False
         )
     db.commit()
+
+
+def _create_no_chat_stage(db, tenant: Tenant) -> None:
+    """Cria "Lead sem conversa" antes de todas as etapas (uma vez só) e põe nela os leads em
+    aberto que nunca trocaram mensagem (em Novo/Em atendimento; quem já avançou fica onde está)."""
+    from app.models import Conversation
+
+    stages = _stages(db, tenant.id)
+    if not stages or stage_named(stages, NO_CHAT_NAME):
+        return
+    for st in stages:
+        st.order += 1
+    # a etapa mais avançada dos leads acompanha a renumeração
+    db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.reached_order.isnot(None)).update(
+        {Lead.reached_order: Lead.reached_order + 1, Lead.updated_at: Lead.updated_at}, synchronize_session=False
+    )
+    no_chat = PipelineStage(tenant_id=tenant.id, name=NO_CHAT_NAME, order=0)
+    db.add(no_chat)
+    db.flush()
+    qualified = stage_named(stages, "Qualificado", "Qualificados")
+    early = [s.id for s in stages if not s.is_won and not s.is_lost and (qualified is None or s.order < qualified.order)]
+    with_chat = db.query(Conversation.lead_id).filter(Conversation.tenant_id == tenant.id)
+    moved = (
+        db.query(Lead)
+        .filter(
+            Lead.tenant_id == tenant.id, Lead.is_group.is_(False), Lead.deleted_at.is_(None),
+            Lead.stage_id.in_(early), Lead.id.notin_(with_chat),
+        )
+        .update({Lead.stage_id: no_chat.id, Lead.updated_at: Lead.updated_at}, synchronize_session=False)
+    )
+    db.commit()
+    logger.info("funil: etapa %s criada em %s (%s leads sem conversa movidos)", NO_CHAT_NAME, tenant.name, moved)

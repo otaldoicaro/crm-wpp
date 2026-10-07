@@ -1456,6 +1456,9 @@ def _record_outbound(
 ) -> Message:
     # no Evolution o webhook "fromMe" dessa mesma mensagem pode chegar antes
     # deste commit; aí ela já está salva e só marcamos quem enviou
+    lead = db.get(Lead, conversation.lead_id)
+    if lead is not None:
+        funnel.on_message(db, lead)  # 1ª mensagem: sai de "Lead sem conversa" e vai pra "Novo"
     existing = db.query(Message).filter(Message.wa_message_id == wa_id).first() if wa_id else None
     message = existing or Message(conversation_id=conversation.id, direction="out", wa_message_id=wa_id)
     message.sender_user_id = user.id

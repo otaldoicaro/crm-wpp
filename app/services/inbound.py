@@ -12,8 +12,8 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import Conversation, Lead, Message, PipelineStage, WhatsAppNumber
-from app.services import attribution, response_times
+from app.models import Conversation, Lead, Message, WhatsAppNumber
+from app.services import attribution, funnel, response_times
 from app.services.distribution import assign_lead
 from app.services.lead_match import find_lead_by_phone
 
@@ -24,6 +24,7 @@ def _get_or_create_conversation(db: Session, number: WhatsAppNumber, lead: Lead)
         .filter(Conversation.lead_id == lead.id, Conversation.whatsapp_number_id == number.id)
         .first()
     )
+    funnel.on_message(db, lead)  # 1ª mensagem: sai de "Lead sem conversa" e vai pra "Novo"
     if not conversation:
         conversation = Conversation(
             tenant_id=number.tenant_id,
@@ -59,12 +60,7 @@ def ingest_inbound(
     lead = find_lead_by_phone(db, number.tenant_id, from_phone)
 
     if lead is None:
-        first_stage = (
-            db.query(PipelineStage)
-            .filter(PipelineStage.tenant_id == number.tenant_id)
-            .order_by(PipelineStage.order)
-            .first()
-        )
+        first_stage = funnel.entry_stage(db, number.tenant_id, with_chat=True)  # já chegou falando: "Novo"
         lead = Lead(
             tenant_id=number.tenant_id,
             name=profile_name,

@@ -8,7 +8,8 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import Lead, PipelineStage, UtmAttribution
+from app.models import Lead, UtmAttribution
+from app.services import funnel
 from app.services.attribution import _phone_variants, normalize_br_phone
 from app.services.distribution import assign_lead
 from app.timeutil import to_local
@@ -63,9 +64,7 @@ def upsert_form_lead(db: Session, tenant_id: str, data: dict, source: str = "sit
 
     created = lead is None
     if created:
-        first_stage = (
-            db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant_id).order_by(PipelineStage.order).first()
-        )
+        first_stage = funnel.entry_stage(db, tenant_id, with_chat=False)  # ainda não falou no WhatsApp
         lead = Lead(tenant_id=tenant_id, phone=phone, source=source, stage_id=first_stage.id if first_stage else None)
         db.add(lead)
 
