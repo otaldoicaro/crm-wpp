@@ -638,3 +638,14 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .next-step { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: .78rem; font-weight: 600; }
 .next-step input { font-size: .78rem; padding: 4px 7px; width: auto; }
 .next-step input[name=nota] { min-width: 200px; flex: 1; }
+/* filtros do Inbox: 2 selects + situação */
+.inbox-filters-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.inbox-filters-2 select { width: 100%; min-width: 0; }
+.status-chips .pill { font-size: .76rem; }
+.status-chips .unread-total.zero { opacity: .45; }
+/* comprovante lido pela IA */
+.receipt-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: #e7f7ec; border: 1px solid #9fd8b2; font-size: .8rem; }
+.receipt-banner .receipt-text { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.receipt-banner label { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.receipt-banner input { width: 110px; font-size: .8rem; padding: 4px 7px; }
+.receipt-tag { background: #e7f7ec; color: #17803d; }

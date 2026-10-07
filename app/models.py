@@ -177,6 +177,11 @@ class Lead(Base):
     quoted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     next_action_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     next_action_note: Mapped[str] = mapped_column(String(255), default="")
+    # comprovante de pagamento que o cliente mandou (lido pela IA): o vendedor confirma a venda
+    receipt_message_id: Mapped[str] = mapped_column(String(32), default="")
+    receipt_amount: Mapped[Optional[float]] = mapped_column(nullable=True)
+    receipt_info: Mapped[str] = mapped_column(String(255), default="")  # "PIX · 07/10 14:32 · de Fulano"
+    receipt_status: Mapped[str] = mapped_column(String(12), default="")  # pending | confirmed | dismissed
     contact_id: Mapped[str] = mapped_column(String(32), default="", index=True)
     deal_number: Mapped[int] = mapped_column(Integer, default=1)
     closed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)  # virou Ganho/Perdido

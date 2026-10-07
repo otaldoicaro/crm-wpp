@@ -1,0 +1,12 @@
+{# 💸 comprovante lido pela IA: o vendedor confirma a venda (ou diz que não é) #}
+{% if lead.receipt_status == "pending" and lead.stage and not (lead.stage.is_won or lead.stage.is_lost) %}
+<form method="post" action="/leads/{{ lead.id }}/comprovante" class="receipt-banner" data-receipt>
+  <input type="hidden" name="voltar" value="{{ voltar_url }}">
+  <div class="receipt-text">💸 <b>O cliente mandou um comprovante de pagamento.</b>
+    {% if lead.receipt_info %}<span class="muted">{{ lead.receipt_info }}</span>{% endif %}
+    <a href="/media/{{ lead.receipt_message_id }}" target="_blank" rel="noopener">ver comprovante ↗</a></div>
+  <label>Valor da venda R$ <input name="valor" inputmode="decimal" value="{{ ('%.2f'|format(lead.receipt_amount)).replace('.', ',') }}"></label>
+  <button class="btn small" type="submit" name="acao" value="confirmar">✓ Confirmar venda</button>
+  <button class="btn ghost small" type="submit" name="acao" value="descartar">Não é venda</button>
+</form>
+{% endif %}

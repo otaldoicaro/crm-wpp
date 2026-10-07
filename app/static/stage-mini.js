@@ -41,3 +41,20 @@
       .then(function () { btn.disabled = false; });
   });
 })();
+
+// 💸 comprovante na conversa aberta da visão da equipe / leads da campanha: confirma sem sair da tela
+document.addEventListener("submit", function (e) {
+  var form = e.target.closest("form[data-receipt]");
+  if (!form || !form.closest(".team-thread-head, #campHead")) return;
+  e.preventDefault();
+  var data = new FormData(form);
+  data.append("acao", e.submitter ? e.submitter.value : "confirmar");
+  data.append("ajax", "1");
+  fetch(form.action, { method: "POST", body: data })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      form.innerHTML = d && d.ok
+        ? (data.get("acao") === "confirmar" ? "✅ Venda confirmada" : "Ok, não era venda.")
+        : "Não deu certo. Tente pelo Inbox.";
+    });
+});

@@ -676,10 +676,31 @@ def _list_limit(raw, step: int = INBOX_LIST_LIMIT) -> int:
     return max(step, min(INBOX_LIST_MAX, value - value % step))
 
 
+INBOX_CONTACT_TYPES = [
+    ("semgrupos", "Leads e clientes"),
+    ("leads", "Só leads"),
+    ("cliente", "Só clientes"),
+    ("outro", "Outros (não é venda)"),
+    ("grupos", "👥 Grupos"),
+    ("favoritas", "★ Favoritas"),
+    ("", "Tudo (com grupos)"),
+]
+INBOX_STATUSES = [  # "precisa de atenção": um de cada vez
+    ("naolidas", "Não lidas"),
+    ("naorespondidas", "Não respondidas"),
+    ("followup", "📞 Follow-up"),
+    ("parados", "⏰ Parados"),
+]
+LEGACY_STATUS_TIPOS = ("naolidas", "followup", "parados")  # antes ficavam junto com os tipos
+
+
 def _inbox_query(
-    db: Session, tenant: Tenant, user: User, busca: str, numero: str, vendedor: str, tipo: str = "", lidas: str = ""
+    db: Session, tenant: Tenant, user: User, busca: str, numero: str, vendedor: str, tipo: str = "", lidas: str = "",
+    etapa: str = "",
 ):
-    """Conversas visíveis no Inbox com os filtros aplicados. Devolve (query, removed_ids)."""
+    """Conversas visíveis no Inbox com os filtros aplicados. Devolve (query, removed_ids).
+    tipo = quais contatos (INBOX_CONTACT_TYPES); lidas = situação (INBOX_STATUSES);
+    etapa = etapa do funil."""
     query = (
         db.query(Conversation)
         .join(Lead, Lead.id == Conversation.lead_id)
@@ -699,20 +720,23 @@ def _inbox_query(
         query = query.filter(Lead.assigned_user_id == vendedor)
     elif removed_ids:  # "Toda a equipe" = só quem está na equipe hoje (e leads sem vendedor)
         query = query.filter(or_(Lead.assigned_user_id.is_(None), Lead.assigned_user_id.notin_(removed_ids)))
-    if lidas == "nao":
+    status = lidas or (tipo if tipo in LEGACY_STATUS_TIPOS else "")
+    if status in ("nao", "naorespondidas"):
         query = inbox_state.unanswered_filter(query)
-    if tipo == "naolidas":
+    elif status == "naolidas":
         query = inbox_state.unread_filter(query, user)
-    elif tipo == "favoritas":
+    elif status == "followup":
+        query = query.filter(followup.followup_condition(tenant, funnel._stages(db, tenant.id)))
+    elif status == "parados":
+        query = query.filter(followup.stale_condition(funnel._stages(db, tenant.id)))
+    if etapa:
+        query = query.filter(Lead.stage_id == etapa)
+    if tipo == "favoritas":
         query = inbox_state.favorite_filter(query, user)
     elif tipo == "grupos":
         query = query.filter(Lead.is_group.is_(True))
     elif tipo == "semgrupos":
         query = query.filter(Lead.is_group.is_(False))
-    elif tipo == "followup":
-        query = query.filter(followup.followup_condition(tenant, funnel._stages(db, tenant.id)))
-    elif tipo == "parados":
-        query = query.filter(followup.stale_condition(funnel._stages(db, tenant.id)))
     elif tipo == "leads":
         query = query.filter(Lead.tag == "", Lead.is_group.is_(False))
     elif tipo in ("cliente", "outro"):
@@ -772,15 +796,18 @@ def _inbox_context(
     lidas: str = "",
     limit: int = INBOX_LIST_LIMIT,
     ordem: str = "recentes",
+    etapa: str = "",
 ) -> dict:
     if user.role != "admin":
         numero = vendedor = ""
-    query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas)
-    # quantas conversas esperam resposta com os filtros atuais (pro botão "Não respondidas (N)")
-    unread_query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, "nao")
-    unread_total = unread_query.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
-    naolidas_query, _ = _inbox_query(db, tenant, user, "", numero, vendedor, "naolidas")
-    naolidas_total = naolidas_query.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
+    query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa)
+
+    def count(status: str) -> int:  # quantas em cada situação, com os outros filtros atuais
+        q, _ = _inbox_query(db, tenant, user, "", numero, vendedor, tipo, status, etapa)
+        return q.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
+
+    status_counts = {key: count(key) for key, _ in INBOX_STATUSES}
+    unread_total, naolidas_total = status_counts["naorespondidas"], status_counts["naolidas"]
     conversations = _first_per_lead(
         query.options(joinedload(Conversation.lead).joinedload(Lead.assigned_user))  # sem 1 consulta por item
         .order_by(*_inbox_order(ordem))
@@ -824,6 +851,11 @@ def _inbox_context(
             "list_step": INBOX_LIST_LIMIT,
             "ordem": ordem,
             "order_labels": ORDER_LABELS,
+            "etapa": etapa,
+            "status_counts": status_counts,
+            "contact_types": INBOX_CONTACT_TYPES,
+            "statuses": INBOX_STATUSES,
+            "filter_stages": funnel._stages(db, tenant.id),
             "busca": busca,
             "numero": numero,
             "vendedor": vendedor,
@@ -879,11 +911,20 @@ INBOX_FILTER_COOKIE = "inbox_filtro"
 def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]):
     # filtros de número/vendedor ficam lembrados (cookie) ao abrir conversa, responder, etc.
     qp = request.query_params
-    saved = (request.cookies.get(INBOX_FILTER_COOKIE, "") + "||||").split("|")
+    cookie = request.cookies.get(INBOX_FILTER_COOKIE)
+    saved = ((cookie if cookie is not None else "||semgrupos|||") + "|||||").split("|")  # padrão: sem grupos
     numero = qp.get("numero", saved[0]) if "numero" in qp or "vendedor" in qp else saved[0]
     vendedor = qp.get("vendedor", saved[1]) if "numero" in qp or "vendedor" in qp else saved[1]
     tipo = qp.get("tipo", saved[2])
     lidas = qp.get("lidas", saved[3])
+    etapa = qp.get("etapa", saved[5])
+    # filtros de antes (situação misturada nos tipos; "nao" = não respondidas)
+    if tipo in LEGACY_STATUS_TIPOS:
+        lidas, tipo = tipo, "semgrupos"
+    if lidas == "nao":
+        lidas = "naorespondidas"
+    if etapa and not db.query(PipelineStage.id).filter(PipelineStage.id == etapa, PipelineStage.tenant_id == tenant.id).first():
+        etapa = ""
     ordem = qp.get("ordem", saved[4]) if qp.get("ordem", saved[4]) in dict(ORDER_LABELS) else "recentes"
     # filtro lembrado de um vendedor/número que foi excluído depois: volta pra "todos"
     if vendedor not in ("", "sem", "removidos") and not db.query(User.id).filter(User.id == vendedor, User.tenant_id == tenant.id).first():
@@ -894,11 +935,11 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     if selected_lead_id:
         inbox_state.mark_read(db, user.id, selected_lead_id)
     ctx = _inbox_context(
-        db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas, _list_limit(qp.get("qtd")), ordem
+        db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas, _list_limit(qp.get("qtd")), ordem, etapa
     )
     ctx["quick_replies"] = replies_for_js(db, tenant, user)
     response = templates.TemplateResponse(request, "inbox.html", ctx)
-    response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}|{ordem}", httponly=True, samesite="lax")
+    response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}|{ordem}|{etapa}", httponly=True, samesite="lax")
     return response
 
 
@@ -1010,6 +1051,46 @@ def new_deal(
         return RedirectResponse(url=f"/leads/{lead_id}?erro=" + quote("Já existe um negócio mais novo pra esse cliente."), status_code=302)
     new = deals.open_new(db, lead, by_customer=False, user_id=user.id)
     return RedirectResponse(url=f"/inbox/{new.id}" if new.conversations else f"/leads/{new.id}?salvo=1", status_code=302)
+
+
+@router.post("/leads/{lead_id}/comprovante")
+def confirm_receipt(
+    lead_id: str,
+    acao: str = Form(...),
+    valor: str = Form(""),
+    voltar: str = Form(""),
+    ajax: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """💸 Comprovante lido pela IA: confirmar = marca Ganho com o valor; descartar = não era venda."""
+    lead = _lead_for_action(db, tenant, user, lead_id)
+    if lead.receipt_status != "pending":
+        return JSONResponse({"ok": True}) if ajax else RedirectResponse(url=voltar or f"/inbox/{lead_id}", status_code=302)
+    if acao == "confirmar":
+        won = next((st for st in funnel._stages(db, tenant.id) if st.is_won), None)
+        try:
+            amount = _parse_brl(valor) or (lead.receipt_amount or 0)
+        except ValueError:
+            amount = lead.receipt_amount or 0
+        if won is None or amount <= 0:
+            raise HTTPException(status_code=400, detail="Valor inválido")
+        changed = lead.stage_id != won.id
+        funnel.set_stage(lead, won)
+        lead.deal_value = amount
+        lead.receipt_status = "confirmed"
+        shown = f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        _add_note(db, lead, f"💸 Venda confirmada pelo comprovante (R$ {shown}) por {user.name}")
+        db.commit()
+        if changed and won.conversion_event_name:
+            dispatch_stage_conversion(db, lead, won.conversion_event_name)
+    else:
+        lead.receipt_status = "dismissed"
+        db.commit()
+    if ajax:
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url=voltar if voltar.startswith("/") else f"/inbox/{lead_id}", status_code=302)
 
 
 @router.post("/leads/{lead_id}/encerrar")
@@ -1134,6 +1215,7 @@ def inbox_refresh(
     lidas: str = "",
     qtd: str = "",
     ordem: str = "recentes",
+    etapa: str = "",
     ls: str = "",
     ms: str = "",
     db: Session = Depends(get_db),
@@ -1147,7 +1229,7 @@ def inbox_refresh(
     if user.role != "admin":
         numero = vendedor = ""
     limit = _list_limit(qtd)
-    query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas)
+    query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa)
     rows = _first_per_lead(
         query.with_entities(Conversation.id, Conversation.lead_id, Conversation.last_message_at)
         .order_by(*_inbox_order(ordem))
@@ -1159,12 +1241,13 @@ def inbox_refresh(
         return JSONResponse({"changed": False})  # nada novo: resposta mínima, sem desenhar nada
     if lead and current_msg_sig != ms:
         inbox_state.mark_read(db, user.id, lead)  # chegou mensagem na conversa que está aberta: já foi vista
-    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo, lidas, limit, ordem)
+    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo, lidas, limit, ordem, etapa)
     return JSONResponse(
         {
             "list_sig": ctx["list_sig"],
             "list_html": templates.get_template("_inbox_list.html").render(ctx),
             "unread_total": ctx["unread_total"],
+            "status_counts": ctx["status_counts"],
             "msg_sig": ctx["msg_sig"],
             "msg_html": templates.get_template("_inbox_messages.html").render(ctx) if lead else "",
         }

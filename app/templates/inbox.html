@@ -22,13 +22,22 @@
     {% if numero or vendedor %}<a class="inbox-filters-clear" data-reset-scroll href="{{ request.url.path }}?numero=&vendedor=">Limpar filtros</a>{% endif %}
   </form>
   {% endif %}
-  <div class="tipo-chips">
-    {% for key, label in (("", "Todos"), ("naolidas", "Não lidas"), ("favoritas", "★ Favoritas"), ("grupos", "👥 Grupos"), ("semgrupos", "Todos menos grupos"), ("followup", "📞 Follow-up"), ("parados", "⏰ Parados"), ("leads", "Leads"), ("cliente", "Clientes"), ("outro", "Outros")) %}
-      <a class="pill {{ 'pill-on' if tipo == key }}" href="{{ request.url.path }}?tipo={{ key }}" data-reset-scroll>{{ label }}{% if key == "naolidas" and naolidas_total %} <span class="unread-total">{{ naolidas_total }}</span>{% endif %}</a>
+  {# filtros: quais contatos + etapa (selects) e "precisa de atenção" (um de cada vez) #}
+  <form class="inbox-filters inbox-filters-2" data-reset-scroll method="get" action="{{ request.url.path }}">
+    <select name="tipo" onchange="this.form.submit()" title="Quais contatos mostrar">
+      {% for key, label in contact_types %}<option value="{{ key }}" {{ "selected" if tipo == key }}>{{ label }}</option>{% endfor %}
+    </select>
+    <select name="etapa" onchange="this.form.submit()" title="Etapa do funil">
+      <option value="">Todas as etapas</option>
+      {% for st in filter_stages %}<option value="{{ st.id }}" {{ "selected" if etapa == st.id }}>{{ st.name }}</option>{% endfor %}
+    </select>
+    <input type="hidden" name="lidas" value="{{ lidas }}">
+  </form>
+  <div class="tipo-chips status-chips">
+    {% for key, label in statuses %}
+    {% set n = status_counts[key] %}
+    <a data-reset-scroll class="pill {{ 'pill-on' if lidas == key }} {{ 'status-' ~ key }}" href="{{ request.url.path }}?lidas={{ '' if lidas == key else key }}" title="{{ 'Mostrar todas' if lidas == key else '' }}">{{ "✕ " if lidas == key }}{{ label }} <span class="unread-total {{ 'zero' if not n }}" data-status="{{ key }}"{% if key == "naorespondidas" %} id="unreadTotal"{% endif %}>{{ n }}</span></a>
     {% endfor %}
-    <a data-reset-scroll class="pill unread-chip {{ 'pill-on' if lidas == 'nao' }}" href="{{ request.url.path }}?lidas={{ '' if lidas == 'nao' else 'nao' }}" title="{{ 'Mostrar todas' if lidas == 'nao' else 'Conversas em que o cliente mandou mensagem e ninguém respondeu ainda (mesmo que alguém tenha aberto), inclusive antigas' }}">
-      {{ "✕ " if lidas == "nao" }}Não respondidas <span id="unreadTotal" class="unread-total {{ 'zero' if not unread_total }}">{{ unread_total }}</span>
-    </a>
   </div>
   <form class="inbox-search" method="get" data-reset-scroll action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
     <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone..." autocomplete="off">
@@ -76,7 +85,7 @@
         {% if deal_info and deal_info.recurring %}
         <a class="recurring-badge" href="/leads/{{ selected_lead.id }}#negocios" title="Ver todos os negócios desse cliente">🔁 Cliente recorrente · {{ selected_lead.deal_number }}º negócio{% if deal_info.purchases %} · já comprou R$ {{ "{:,.0f}".format(deal_info.total).replace(",", ".") }} ({{ deal_info.purchases }} venda{{ "s" if deal_info.purchases > 1 }}){% endif %}</a>
         {% endif %}
-        {% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_next_step.html" %}{% endwith %}
+        {% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_receipt_banner.html" %}{% include "_next_step.html" %}{% endwith %}
         <div class="thread-actions">
           {% if deal_info and selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost) %}
           <form method="post" action="/leads/{{ selected_lead.id }}/novo-negocio" onsubmit="return confirm('Abrir um novo negócio pra este cliente?\n\nO atual fica como está ({{ selected_lead.stage.name }}), e a conversa passa pro negócio novo, em Em atendimento.')">
@@ -397,6 +406,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   var vendedor = {{ vendedor|tojson }};
   var tipo = {{ tipo|tojson }};
   var lidas = {{ lidas|tojson }};
+  var etapa = {{ etapa|tojson }};
   var qtd = {{ list_limit }};
   var ordem = {{ ordem|tojson }};
   var busy = false;
@@ -405,16 +415,17 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
     if (busy || (document.hidden && force !== true)) return;
     busy = true;
     var url = "/inbox-atualizar?lead=" + encodeURIComponent(lead) + "&busca=" + encodeURIComponent(busca) +
-      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) + "&lidas=" + encodeURIComponent(lidas) + "&qtd=" + qtd + "&ordem=" + encodeURIComponent(ordem) +
+      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) + "&lidas=" + encodeURIComponent(lidas) + "&qtd=" + qtd + "&ordem=" + encodeURIComponent(ordem) + "&etapa=" + encodeURIComponent(etapa) +
       "&ls=" + encodeURIComponent(listSig) + "&ms=" + encodeURIComponent(msgSig);
     fetch(url, { headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d || d.changed === false) return;
-        if (d.unread_total !== undefined) {
-          var tot = document.getElementById("unreadTotal");
-          tot.textContent = d.unread_total;
-          tot.classList.toggle("zero", !d.unread_total);
+        if (d.status_counts) {
+          Object.keys(d.status_counts).forEach(function (k) {
+            var el = document.querySelector('.status-chips [data-status="' + k + '"]'); if (!el) return;
+            el.textContent = d.status_counts[k]; el.classList.toggle("zero", !d.status_counts[k]);
+          });
         }
         if (d.list_sig !== listSig) {
           var top = listEl.scrollTop;

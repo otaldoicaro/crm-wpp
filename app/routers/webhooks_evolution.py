@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.config import EVOLUTION_WEBHOOK_TOKEN
 from app.db import SessionLocal
 from app.models import Conversation, Lead, Message, WhatsAppNumber
-from app.services import evolution_client, inbox_state, response_times
+from app.services import evolution_client, inbox_state, receipts, response_times
 from app.services.inbound import ingest_inbound, message_exists, record_outbound_from_phone
 from app.services.msgsecret import decrypt_edit, secret_b64, text_from_message, to_bytes
 from app.services.media_store import backup_message_media
@@ -196,7 +196,7 @@ async def receive_evolution_event(request: Request, background: BackgroundTasks)
     # o trabalho com banco roda numa thread separada: se rodasse aqui (no laço
     # principal), cada mensagem recebida travava o CRM inteiro enquanto o banco respondia
     for message_id in await run_in_threadpool(_process_event, payload):
-        background.add_task(backup_message_media, message_id)
+        background.add_task(_after_media, message_id)
     return JSONResponse({"ok": True})
 
 
@@ -247,6 +247,12 @@ def _apply_reaction(db: Session, number: WhatsAppNumber, item: dict) -> bool:
                 inbox_state.mark_seen_by_seller(lead)
                 db.commit()
     return True
+
+
+def _after_media(message_id: str) -> None:
+    """Em segundo plano: copia a mídia e, se for de um lead em negociação, vê se é comprovante."""
+    backup_message_media(message_id)
+    receipts.check_message(message_id)
 
 
 def _process_event(payload: dict) -> list:

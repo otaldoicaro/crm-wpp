@@ -19,6 +19,8 @@ META_CAPI_ACCESS_TOKEN = os.getenv("META_CAPI_ACCESS_TOKEN", "")
 META_WEBHOOK_VERIFY_TOKEN = os.getenv("META_WEBHOOK_VERIFY_TOKEN", "dev-verify-token")
 # token separado, com escopo ads_read, usado só pra buscar nome de campanha/anúncio
 META_ADS_ACCESS_TOKEN = os.getenv("META_ADS_ACCESS_TOKEN", "")
+# leitura de comprovantes de pagamento (IA do Claude). Sem a chave, a função fica desligada.
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # Google Ads
 GOOGLE_ADS_DEVELOPER_TOKEN = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "")
