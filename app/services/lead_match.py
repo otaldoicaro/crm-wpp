@@ -9,21 +9,22 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import Lead, UtmAttribution
-from app.services import funnel
+from app.services import deals, funnel
 from app.services.attribution import _phone_variants, normalize_br_phone
 from app.services.distribution import assign_lead
 from app.timeutil import to_local
 
 
 def find_lead_by_phone(db: Session, tenant_id: str, phone: str) -> Optional[Lead]:
-    """Lead do cliente com esse telefone (o mais antigo, se por acaso houver mais de um)."""
+    """Negócio atual do cliente com esse telefone: o de número mais alto (recompra); entre
+    cadastros duplicados antigos, o mais antigo."""
     if not phone:
         return None
     variants = _phone_variants(phone) | _phone_variants(normalize_br_phone(phone))
     return (
         db.query(Lead)
         .filter(Lead.tenant_id == tenant_id, Lead.phone.in_(variants))
-        .order_by(Lead.created_at)
+        .order_by(Lead.deal_number.desc(), Lead.created_at)
         .first()
     )
 
@@ -54,6 +55,8 @@ def upsert_form_lead(db: Session, tenant_id: str, data: dict, source: str = "sit
     data: name, phone, email, utm_*, gclid, fbclid, fbc, fbp + campos extras do formulário."""
     phone = normalize_br_phone(data.get("phone", ""))
     lead = find_lead_by_phone(db, tenant_id, phone)
+    if lead is not None and deals.should_reopen(lead):
+        lead = deals.open_new(db, lead, by_customer=True)  # cliente antigo preencheu de novo: negócio novo
     if lead is None and data.get("email"):
         lead = (
             db.query(Lead)

@@ -111,6 +111,36 @@
 </div>
 {% endif %}
 
+{% set cs = customer_stats %}
+<div class="section-title"><h3 style="margin:0">Clientes, recompra e LTV{{ " — equipe toda" if not is_admin }}</h3></div>
+<div class="stat-grid rt-grid">
+  <div class="stat-card c-gold"><div class="stat-label">Clientes (já compraram)</div><div class="stat-value">{{ cs.customers }}</div><div class="muted">desde o início do CRM</div></div>
+  <div class="stat-card c-success"><div class="stat-label">Taxa de recompra</div><div class="stat-value">{{ (cs.repeat_rate|string).replace(".", ",") ~ "%" if cs.repeat_rate is not none else "—" }}</div><div class="muted">{{ cs.repeaters }} cliente(s) compraram 2 vezes ou mais</div></div>
+  <div class="stat-card c-info"><div class="stat-label">LTV médio</div><div class="stat-value">{{ "R$ " ~ "{:,.0f}".format(cs.ltv).replace(",", ".") if cs.ltv else "—" }}</div><div class="muted">quanto cada cliente comprou no total, em média{% if cs.avg_purchases %} ({{ ("%.1f"|format(cs.avg_purchases)).replace(".", ",") }} compras){% endif %}</div></div>
+  <div class="stat-card c-purple"><div class="stat-label">Tempo até a 2ª compra</div><div class="stat-value">{{ (cs.days_to_second|int|string ~ " dias") if cs.days_to_second is not none else "—" }}</div><div class="muted">mediana entre a 1ª e a 2ª compra</div></div>
+</div>
+<div class="card">
+  <table class="table-simple">
+    <thead><tr><th>Vendas no período</th><th class="num">Vendas</th><th class="num">Receita</th><th class="num">Ticket médio</th></tr></thead>
+    <tbody>
+      <tr><td>🆕 Clientes novos (1ª compra)</td><td class="num">{{ cs.period.new }}</td><td class="num">R$ {{ "{:,.0f}".format(cs.period.new_revenue).replace(",", ".") }}</td><td class="num">{{ "R$ " ~ "{:,.0f}".format(cs.ticket_new).replace(",", ".") if cs.ticket_new else "—" }}</td></tr>
+      <tr><td>🔁 Recompras</td><td class="num">{{ cs.period.repeat }}</td><td class="num">R$ {{ "{:,.0f}".format(cs.period.repeat_revenue).replace(",", ".") }}</td><td class="num">{{ "R$ " ~ "{:,.0f}".format(cs.ticket_repeat).replace(",", ".") if cs.ticket_repeat else "—" }}</td></tr>
+    </tbody>
+  </table>
+  {% if cs.top %}
+  <h4 style="margin:16px 0 6px">{{ "Maiores clientes" if is_admin else "Seus maiores clientes" }}</h4>
+  <table class="table-simple">
+    <thead><tr><th>Cliente</th><th class="num">Compras</th><th class="num">Total comprado</th><th>Última compra</th></tr></thead>
+    <tbody>
+    {% for c in cs.top %}
+      <tr><td><a href="/leads/{{ c.lead_id }}#negocios">{{ c.name }}</a></td><td class="num">{{ c.purchases }}{{ " 🔁" if c.purchases > 1 }}</td><td class="num">R$ {{ "{:,.0f}".format(c.total).replace(",", ".") }}</td><td>{{ c.last|hora("%d/%m/%Y") }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  <p class="muted" style="margin:10px 0 0; font-size:.78rem">Cada compra é um negócio Ganho. Quando um cliente que já fechou volta a falar depois de 7 dias, o CRM abre um negócio novo sozinho (ou o vendedor abre em “+ Novo negócio”). As vendas de antes desta versão contam como 1ª compra.</p>
+</div>
+
 <div class="section-title"><h3 style="margin:0">Tempo de atendimento{{ " — equipe toda" if not is_admin }}</h3></div>
 <div class="stat-grid rt-grid">
   <div class="stat-card c-info">

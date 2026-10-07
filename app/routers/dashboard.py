@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app.services import evolution_client, funnel, inbox_state, media_store, messaging, meta_spend, response_times, traffic
+from app.services import deals, evolution_client, funnel, inbox_state, media_store, messaging, meta_spend, response_times, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -315,6 +315,7 @@ def lead_detail(
             "people": team_members(db, tenant.id, only_active=True) if user.role == "admin" else [],
             "start_numbers": _start_numbers(db, tenant, user, lead),
             "wa_link": _wa_link(lead),
+            "deal_info": None if lead.is_group else deals.summary(db, lead),
             "start_error": request.query_params.get("erro_envio", ""),
         },
     )
@@ -716,6 +717,7 @@ def _inbox_context(
             if selected_lead and not selected_lead.is_group and user.role == "admin" else [],
             "stages": db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
             if selected_lead and not selected_lead.is_group else [],
+            "deal_info": deals.summary(db, selected_lead) if selected_lead and not selected_lead.is_group else None,
             "can_settle": bool(selected_lead and not selected_lead.is_group and response_times.waiting_since(selected_lead)),
             "platform_label": PLATFORM_LABEL[resolve_platform(selected_lead.attribution)] if selected_lead else None,
     }
@@ -853,6 +855,24 @@ def set_lead_stage(
     if changed and stage.conversion_event_name:
         dispatch_stage_conversion(db, lead, stage.conversion_event_name)
     return JSONResponse({"ok": True})
+
+
+@router.post("/leads/{lead_id}/novo-negocio")
+def new_deal(
+    lead_id: str,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """"+ Novo negócio": o cliente que já fechou (ganho/perdido) quer comprar de novo antes dos
+    7 dias em que o CRM abriria sozinho. A conversa passa pro negócio novo."""
+    lead = _lead_for_action(db, tenant, user, lead_id)
+    if not deals.is_closed(lead):
+        return RedirectResponse(url=f"/leads/{lead_id}?erro=" + quote("Esse negócio ainda está em aberto: feche como Ganho ou Perdido antes de abrir outro."), status_code=302)
+    if deals.history(db, lead)[-1].id != lead.id:
+        return RedirectResponse(url=f"/leads/{lead_id}?erro=" + quote("Já existe um negócio mais novo pra esse cliente."), status_code=302)
+    new = deals.open_new(db, lead, by_customer=False, user_id=user.id)
+    return RedirectResponse(url=f"/inbox/{new.id}" if new.conversations else f"/leads/{new.id}?salvo=1", status_code=302)
 
 
 @router.post("/leads/{lead_id}/encerrar")
@@ -1736,6 +1756,9 @@ def dashboard_view(
             "team_row": team_row,
             "commercial_funnel": commercial_funnel,
             "my_stats": my_numbers,
+            "customer_stats": deals.customer_stats(
+                db, tenant.id, won_stage_ids, range_from, range_to, seller=seller, top_owner="" if is_admin else user.id
+            ),
             "meta_accounts": tenant.meta_ad_accounts,
         },
     )

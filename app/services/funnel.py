@@ -5,6 +5,7 @@ negociou e depois foi perdido continua contando como negociação."""
 
 from __future__ import annotations
 
+import datetime
 import logging
 import unicodedata
 from typing import Optional
@@ -29,7 +30,12 @@ def stage_named(stages: list, *names: str) -> Optional[PipelineStage]:
 
 
 def set_stage(lead: Lead, stage: PipelineStage) -> None:
-    """Muda a etapa e lembra a mais avançada (perdido não conta como avanço)."""
+    """Muda a etapa e lembra a mais avançada (perdido não conta como avanço) e quando fechou."""
+    closing = stage.is_won or stage.is_lost
+    if closing and (lead.closed_at is None or lead.stage_id != stage.id):
+        lead.closed_at = datetime.datetime.utcnow()
+    elif not closing:
+        lead.closed_at = None
     lead.stage_id = stage.id
     if not stage.is_lost and stage.order > (lead.reached_order or 0):
         lead.reached_order = stage.order
@@ -166,6 +172,10 @@ def setup(db) -> None:
     db.commit()
     for tenant in db.query(Tenant).all():
         _create_no_chat_stage(db, tenant)
+    terminal = [st.id for st in db.query(PipelineStage).filter(PipelineStage.is_won | PipelineStage.is_lost)]
+    db.query(Lead).filter(Lead.stage_id.in_(terminal), Lead.closed_at.is_(None)).update(
+        {Lead.closed_at: Lead.updated_at, Lead.updated_at: Lead.updated_at}, synchronize_session=False
+    )  # fechados antes desta versão: a data da última mudança é a melhor aproximação
     for st in db.query(PipelineStage).filter(PipelineStage.is_lost.is_(False)):
         db.query(Lead).filter(Lead.stage_id == st.id, or_(Lead.reached_order.is_(None), Lead.reached_order < st.order)).update(
             {Lead.reached_order: st.order, Lead.updated_at: Lead.updated_at}, synchronize_session=False

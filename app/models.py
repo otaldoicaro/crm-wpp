@@ -158,6 +158,12 @@ class Lead(Base):
     first_response_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     last_inbound_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     last_outbound_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    # negócios (recompra): cada card é um negócio. contact_id = id do 1º negócio da pessoa (vazio
+    # no 1º); deal_number = 1ª, 2ª, 3ª... oportunidade. A conversa do WhatsApp fica sempre no
+    # negócio mais recente; os anteriores guardam etapa, valor e quando fecharam.
+    contact_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    deal_number: Mapped[int] = mapped_column(Integer, default=1)
+    closed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)  # virou Ganho/Perdido
     # etapa mais avançada que o lead já alcançou (ordem da etapa). Um lead "Perdido" depois de
     # negociar continua contando como negociação no funil do Dashboard.
     reached_order: Mapped[int] = mapped_column(Integer, default=0)

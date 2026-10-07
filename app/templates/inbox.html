@@ -68,7 +68,15 @@
           <span class="stage-status muted"></span>
         </form>
         {% endif %}
+        {% if deal_info and deal_info.recurring %}
+        <a class="recurring-badge" href="/leads/{{ selected_lead.id }}#negocios" title="Ver todos os negócios desse cliente">🔁 Cliente recorrente · {{ selected_lead.deal_number }}º negócio{% if deal_info.purchases %} · já comprou R$ {{ "{:,.0f}".format(deal_info.total).replace(",", ".") }} ({{ deal_info.purchases }} venda{{ "s" if deal_info.purchases > 1 }}){% endif %}</a>
+        {% endif %}
         <div class="thread-actions">
+          {% if deal_info and selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost) %}
+          <form method="post" action="/leads/{{ selected_lead.id }}/novo-negocio" onsubmit="return confirm('Abrir um novo negócio pra este cliente?\n\nO atual fica como está ({{ selected_lead.stage.name }}), e a conversa passa pro negócio novo, em Em atendimento.')">
+            <button class="btn ghost small" type="submit" title="O cliente quer comprar de novo">+ Novo negócio</button>
+          </form>
+          {% endif %}
           {% if can_settle %}
           <form method="post" action="/leads/{{ selected_lead.id }}/encerrar" onsubmit="return confirm('Encerrar o atendimento? A conversa sai do “aguardando resposta” e não conta mais tempo. Se o cliente mandar mensagem de novo, volta a contar.')">
             <button class="btn ghost small" type="submit" title="O cliente só agradeceu / o assunto acabou: não precisa responder">✓ Encerrar atendimento</button>

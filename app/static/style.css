@@ -587,3 +587,11 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .start-chat label { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; font-weight: 600; }
 .start-chat form .btn { align-self: flex-start; }
 .auto-hint { font-size: .64rem; font-weight: 700; color: var(--muted); margin-left: 6px; white-space: nowrap; }
+/* negócios / recompra */
+.recurring-badge { display: inline-block; margin-top: 4px; font-size: .74rem; font-weight: 700; color: #6b3fa0; background: #efe6fb; border-radius: 6px; padding: 2px 8px; text-decoration: none; }
+.deal-badge { font-size: .64rem; font-weight: 700; color: #6b3fa0; background: #efe6fb; border-radius: 4px; padding: 0 5px; margin-left: 4px; }
+.deals-box { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.deals-box h4 { margin: 0; }
+.deals-box form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .78rem; }
+.deal-current td { background: var(--y-soft); font-weight: 700; }
+.table-simple th.num, .table-simple td.num { text-align: right; white-space: nowrap; }

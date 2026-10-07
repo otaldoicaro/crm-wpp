@@ -123,7 +123,35 @@
   <p style="margin:4px 0 0; font-weight:700;">{{ lead.assigned_user.name if lead.assigned_user else "Ninguém atribuído ainda" }}</p>
   {% endif %}
 
-  {% if not lead.is_group and not lead.deleted_at %}
+  {% if deal_info and (deal_info.count > 1 or (lead.stage and (lead.stage.is_won or lead.stage.is_lost))) %}
+  <div class="deals-box" id="negocios">
+    <h4>🔁 Negócios deste cliente{% if deal_info.purchases %} · {{ deal_info.purchases }} compra{{ "s" if deal_info.purchases > 1 }} · R$ {{ "{:,.0f}".format(deal_info.total).replace(",", ".") }}{% endif %}</h4>
+    {% set latest = deal_info.deals[-1] %}
+    {% if latest.id != lead.id %}<div class="stage-warning">Este é um negócio antigo. A conversa e o negócio atual estão no <a href="/leads/{{ latest.id }}">{{ latest.deal_number }}º negócio →</a></div>{% endif %}
+    <table class="table-simple">
+      <thead><tr><th>#</th><th>Aberto em</th><th>Etapa</th><th>Valor</th><th>Vendedor</th></tr></thead>
+      <tbody>
+      {% for d in deal_info.deals %}
+        <tr class="{{ 'deal-current' if d.id == lead.id }}">
+          <td><a href="/leads/{{ d.id }}">{{ d.deal_number }}º</a></td>
+          <td>{{ d.created_at|hora("%d/%m/%Y") }}</td>
+          <td>{{ d.stage.name if d.stage else "—" }}{% if d.closed_at %} <span class="muted">({{ d.closed_at|hora("%d/%m/%Y") }})</span>{% endif %}</td>
+          <td>{{ "R$ " ~ "{:,.0f}".format(d.deal_value).replace(",", ".") if d.deal_value and d.stage and d.stage.is_won else "—" }}</td>
+          <td>{{ d.assigned_user.name if d.assigned_user else "—" }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if latest.id == lead.id and lead.stage and (lead.stage.is_won or lead.stage.is_lost) and not lead.deleted_at %}
+    <form method="post" action="/leads/{{ lead.id }}/novo-negocio" onsubmit="return confirm('Abrir um novo negócio pra este cliente? O atual fica como está, e a conversa passa pro negócio novo.')">
+      <button class="btn small" type="submit">+ Novo negócio</button>
+      <span class="muted">Se o cliente voltar a mandar mensagem depois de 7 dias do fechamento, o CRM abre sozinho.</span>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if not lead.is_group and not lead.deleted_at and deal_info and deal_info.deals[-1].id == lead.id %}
   <div class="start-chat">
     {% if lead.conversations %}
     <a class="btn small" href="/inbox/{{ lead.id }}">💬 Abrir conversa no Inbox</a>
