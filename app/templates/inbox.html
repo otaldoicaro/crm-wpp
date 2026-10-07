@@ -263,13 +263,14 @@
   var vendedor = {{ vendedor|tojson }};
   var tipo = {{ tipo|tojson }};
   var lidas = {{ lidas|tojson }};
+  var qtd = {{ list_limit }};
   var busy = false;
   function nearBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 120; }
-  function tick() {
-    if (busy || document.hidden) return;
+  function tick(force) {
+    if (busy || (document.hidden && force !== true)) return;
     busy = true;
     var url = "/inbox-atualizar?lead=" + encodeURIComponent(lead) + "&busca=" + encodeURIComponent(busca) +
-      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) + "&lidas=" + encodeURIComponent(lidas) +
+      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) + "&lidas=" + encodeURIComponent(lidas) + "&qtd=" + qtd +
       "&ls=" + encodeURIComponent(listSig) + "&ms=" + encodeURIComponent(msgSig);
     fetch(url, { headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
@@ -297,6 +298,14 @@
       .then(function () { busy = false; });
   }
   setInterval(tick, 3000);
+  // "Ver mais conversas" no fim da lista: traz mais 60 (e continua atualizando sozinho)
+  listEl.addEventListener("click", function (e) {
+    var more = e.target.closest("[data-more]"); if (!more) return;
+    more.disabled = true; more.textContent = "Carregando…";
+    qtd += {{ list_step }};
+    var waitIdle = function () { if (busy) return setTimeout(waitIdle, 100); listSig = ""; tick(true); };
+    waitIdle();
+  });
   window.__inboxRefreshNow = function () { listSig = ""; tick(); };
   document.addEventListener("visibilitychange", tick);
 })();

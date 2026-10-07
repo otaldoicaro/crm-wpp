@@ -26,5 +26,8 @@
   {% endif %}
 {% endfor %}
 {% if list_truncated %}
-  <div class="kanban-empty" style="padding:14px">Mostrando as {{ conversations|length }} conversas mais recentes. Use a busca acima pra achar conversas antigas.</div>
+  <div class="list-more">
+    <button type="button" class="btn ghost small" data-more="inbox">Ver mais conversas</button>
+    <div class="muted">Mostrando as {{ conversations|length }} mais recentes</div>
+  </div>
 {% endif %}

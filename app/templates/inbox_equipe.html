@@ -27,6 +27,15 @@
 </details>
 
 {% if columns %}
+<div class="team-toolbar">
+  <div class="tipo-chips">
+    <button type="button" class="pill team-filter {{ 'pill-on' if not tipo }}" data-f="">Todas</button>
+    <button type="button" class="pill team-filter {{ 'pill-on' if tipo == 'naolidas' }}" data-f="naolidas">Não lidas <span class="unread-total {{ 'zero' if not naolidas_total }}" id="teamUnreadTotal">{{ naolidas_total }}</span></button>
+  </div>
+  <label class="team-search">🔍
+    <input type="search" id="teamSearch" value="{{ busca }}" placeholder="Buscar nome ou telefone em todas as colunas..." autocomplete="off">
+  </label>
+</div>
 <div class="team-scroll-hint muted" id="scrollHint" hidden>↔ Role pro lado (ou use Shift + rodinha do mouse) pra ver as outras colunas</div>
 <div class="team-grid" id="teamGrid">
   {% include "_inbox_equipe_cols.html" %}
@@ -35,6 +44,16 @@
 <p class="muted">Marque as pessoas acima (ou <b>Selecionar todos</b>) e clique em <b>Ver</b>.</p>
 {% endif %}
 
+<div class="ctx-menu" id="ctxMenu" hidden>
+  <button type="button" data-action="nao-lida">Marcar como não lida</button>
+  <button type="button" data-action="lida">Marcar como lida</button>
+  <button type="button" data-fav="1">⭐ Favoritar</button>
+  <button type="button" data-fav="0">☆ Remover dos favoritos</button>
+  <hr class="tag-sep">
+  <button type="button" data-tag="cliente">🏷️ É cliente</button>
+  <button type="button" data-tag="outro">🏷️ É outro (não é venda)</button>
+  <button type="button" data-tag="">🏷️ Voltar pra lead</button>
+</div>
 <script>
 (function () {
   var MAX = {{ max }};
@@ -70,12 +89,37 @@
   window.addEventListener("resize", function () { clearTimeout(fitTimer); fitTimer = setTimeout(fit, 80); });
   document.querySelector(".team-picker-wrap").addEventListener("toggle", fit);
   fit();
+  window.addEventListener("load", fit);  // a barra de rolagem da página pode aparecer depois
   var sig = {{ sig|tojson }};
   var qs = boxes.filter(function (b) { return b.checked; }).map(function (b) { return "v=" + encodeURIComponent(b.value); }).join("&");
   // colunas em "só aguardando resposta" (clique no ⏳ do cabeçalho da coluna)
   var pending = {};
   grid.querySelectorAll(".pend-toggle.on").forEach(function (b) { pending[b.dataset.seller] = true; });
   function pendingQs() { return "&pset=1" + Object.keys(pending).map(function (s) { return "&p=" + encodeURIComponent(s); }).join(""); }
+  // lupa, "Não lidas" e "Ver mais" de cada coluna
+  var busca = {{ busca|tojson }}, tipo = {{ tipo|tojson }}, limits = {};
+  function filterQs() {
+    return "&q=" + encodeURIComponent(busca) + "&f=" + encodeURIComponent(tipo) +
+      Object.keys(limits).map(function (s) { return "&m=" + encodeURIComponent(s + ":" + limits[s]); }).join("");
+  }
+  function applyFilters() {
+    Object.keys(open).forEach(showList);
+    sig = ""; refreshLists(true);
+    try { history.replaceState(null, "", "/inbox-equipe?" + qs + pendingQs() + "&q=" + encodeURIComponent(busca) + "&f=" + encodeURIComponent(tipo)); } catch (err) {}
+  }
+  var searchTimer, searchEl = document.getElementById("teamSearch");
+  searchEl.addEventListener("input", function () {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(function () { busca = searchEl.value.trim(); applyFilters(); }, 350);
+  });
+  searchEl.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); clearTimeout(searchTimer); busca = searchEl.value.trim(); applyFilters(); } });
+  document.querySelectorAll(".team-filter").forEach(function (b) {
+    b.addEventListener("click", function () {
+      tipo = b.dataset.f;
+      document.querySelectorAll(".team-filter").forEach(function (o) { o.classList.toggle("pill-on", o === b); });
+      applyFilters();
+    });
+  });
   var open = {};  // seller -> {lead, sig}
 
   function col(seller) { return grid.querySelector('.team-col[data-seller="' + seller + '"]'); }
@@ -121,6 +165,14 @@
       var nameEl = item.querySelector(".name");
       colEl.querySelector("[data-quick-replies]").dataset.leadName = nameEl ? nameEl.textContent.replace(/[★👥]/g, "").trim() : "";
       showThread(colEl.dataset.seller, item.dataset.lead);
+      if (tipo === "naolidas" || item.dataset.unread === "1") setTimeout(function () { sig = ""; refreshLists(true); }, 800);  // ficou lida
+      return;
+    }
+    var more = e.target.closest("[data-more]");
+    if (more) {
+      more.disabled = true; more.textContent = "Carregando…";
+      limits[more.dataset.more] = parseInt(more.dataset.limit, 10) + {{ per_column }};
+      sig = ""; refreshLists(true);
       return;
     }
     if (e.target.closest(".team-back")) showList(e.target.closest(".team-col").dataset.seller);
@@ -154,15 +206,21 @@
   // listas e números de cada coluna: a cada 10s, sem fechar a conversa que estiver aberta
   function refreshLists(force) {
     if (document.hidden && !force) return;
-    fetch("/inbox-equipe/atualizar?" + qs + pendingQs() + "&sig=" + encodeURIComponent(sig), { headers: { accept: "application/json" } })
+    fetch("/inbox-equipe/atualizar?" + qs + pendingQs() + filterQs() + "&sig=" + encodeURIComponent(sig), { headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d || d.changed === false) return;
+        if (d.naolidas_total !== undefined) {
+          var tot = document.getElementById("teamUnreadTotal");
+          tot.textContent = d.naolidas_total; tot.classList.toggle("zero", !d.naolidas_total);
+        }
         var tmp = document.createElement("div"); tmp.innerHTML = d.html;
         tmp.querySelectorAll(".team-col").forEach(function (fresh) {
           var c = col(fresh.dataset.seller); if (!c) return;
           c.querySelector(".team-col-head").innerHTML = fresh.querySelector(".team-col-head").innerHTML;
-          c.querySelector(".team-col-list").innerHTML = fresh.querySelector(".team-col-list").innerHTML;
+          var list = c.querySelector(".team-col-list"), top = list.scrollTop;
+          list.innerHTML = fresh.querySelector(".team-col-list").innerHTML;
+          list.scrollTop = top;
         });
         sig = d.sig;
       })
@@ -215,16 +273,6 @@
   }, 5000);
 })();
 </script>
-<div class="ctx-menu" id="ctxMenu" hidden>
-  <button type="button" data-action="nao-lida">Marcar como não lida</button>
-  <button type="button" data-action="lida">Marcar como lida</button>
-  <button type="button" data-fav="1">⭐ Favoritar</button>
-  <button type="button" data-fav="0">☆ Remover dos favoritos</button>
-  <hr class="tag-sep">
-  <button type="button" data-tag="cliente">🏷️ É cliente</button>
-  <button type="button" data-tag="outro">🏷️ É outro (não é venda)</button>
-  <button type="button" data-tag="">🏷️ Voltar pra lead</button>
-</div>
 <script>
   window.QUICK_REPLIES = {{ quick_replies|tojson }};
   window.QUICK_REPLIES_ME = {{ user.name|tojson }};

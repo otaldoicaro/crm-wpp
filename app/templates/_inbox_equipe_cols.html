@@ -21,8 +21,14 @@
         </div>
       </a>
     {% else %}
-      <div class="kanban-empty" style="padding:20px">{{ "✅ Ninguém aguardando resposta." if col.pending_only else "Sem conversas ainda." }}</div>
+      <div class="kanban-empty" style="padding:20px">{% if col.busca %}Nada encontrado pra "{{ col.busca }}".{% elif col.tipo == "naolidas" %}✅ Nenhuma conversa não lida.{% elif col.pending_only %}✅ Ninguém aguardando resposta.{% else %}Sem conversas ainda.{% endif %}</div>
     {% endfor %}
+    {% if col.truncated %}
+    <div class="list-more">
+      <button type="button" class="btn ghost small" data-more="{{ col.seller.id }}" data-limit="{{ col.limit }}">Ver mais conversas</button>
+      <div class="muted">Mostrando {{ col.convs|length }}</div>
+    </div>
+    {% endif %}
   </div>
   <div class="team-col-thread" hidden>
     <div class="team-thread-head"></div>

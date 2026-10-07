@@ -386,7 +386,17 @@ def inbox_thread(
     return _render_inbox(request, db, tenant, user, lead_id)
 
 
-INBOX_LIST_LIMIT = 60  # com milhares de leads/mês a lista inteira pesaria; o resto se acha pela busca
+INBOX_LIST_LIMIT = 60  # com milhares de leads/mês a lista inteira pesaria; "Ver mais" traz mais 60 por clique
+INBOX_LIST_MAX = 1000
+
+
+def _list_limit(raw, step: int = INBOX_LIST_LIMIT) -> int:
+    """Quantas conversas mostrar (cresce com o "Ver mais"; sempre múltiplo do passo, com teto)."""
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return step
+    return max(step, min(INBOX_LIST_MAX, value - value % step))
 
 
 def _inbox_query(
@@ -434,11 +444,11 @@ def _inbox_query(
     return query, removed_ids
 
 
-def _first_per_lead(rows) -> list:
+def _first_per_lead(rows, limit: int = INBOX_LIST_LIMIT) -> list:
     """Um item por lead (um lead pode ter conversa em mais de um número), o mais recente primeiro."""
     picked, seen = [], set()
     for row in rows:
-        if row.lead_id not in seen and len(picked) < INBOX_LIST_LIMIT:
+        if row.lead_id not in seen and len(picked) < limit:
             seen.add(row.lead_id)
             picked.append(row)
     return picked
@@ -471,6 +481,7 @@ def _inbox_context(
     vendedor: str = "",
     tipo: str = "",
     lidas: str = "",
+    limit: int = INBOX_LIST_LIMIT,
 ) -> dict:
     if user.role != "admin":
         numero = vendedor = ""
@@ -483,7 +494,8 @@ def _inbox_context(
     conversations = _first_per_lead(
         query.options(joinedload(Conversation.lead).joinedload(Lead.assigned_user))  # sem 1 consulta por item
         .order_by(Conversation.last_message_at.desc())
-        .limit(INBOX_LIST_LIMIT * 2)
+        .limit(limit * 2),
+        limit,
     )
 
     selected_lead = None
@@ -515,7 +527,9 @@ def _inbox_context(
             "favorites": inbox_state.favorite_ids(db, user, [c.lead_id for c in conversations]),
             "tags": inbox_state.TAGS,
             "tag_label": inbox_state.TAG_LABEL,
-            "list_truncated": len(conversations) >= INBOX_LIST_LIMIT,
+            "list_truncated": len(conversations) >= limit and limit < INBOX_LIST_MAX,
+            "list_limit": limit,
+            "list_step": INBOX_LIST_LIMIT,
             "busca": busca,
             "numero": numero,
             "vendedor": vendedor,
@@ -555,7 +569,9 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     inbox_state.ensure_baseline(db, user)
     if selected_lead_id:
         inbox_state.mark_read(db, user.id, selected_lead_id)
-    ctx = _inbox_context(db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas)
+    ctx = _inbox_context(
+        db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas, _list_limit(qp.get("qtd"))
+    )
     ctx["quick_replies"] = replies_for_js(db, tenant, user)
     response = templates.TemplateResponse(request, "inbox.html", ctx)
     response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}", httponly=True, samesite="lax")
@@ -629,6 +645,7 @@ def inbox_refresh(
     vendedor: str = "",
     tipo: str = "",
     lidas: str = "",
+    qtd: str = "",
     ls: str = "",
     ms: str = "",
     db: Session = Depends(get_db),
@@ -641,18 +658,20 @@ def inbox_refresh(
     # checagem rápida (2 consultas leves): só monta a tela se algo mudou
     if user.role != "admin":
         numero = vendedor = ""
+    limit = _list_limit(qtd)
     query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas)
     rows = _first_per_lead(
         query.with_entities(Conversation.id, Conversation.lead_id, Conversation.last_message_at)
         .order_by(Conversation.last_message_at.desc())
-        .limit(INBOX_LIST_LIMIT * 2)
+        .limit(limit * 2),
+        limit,
     )
     current_msg_sig = _msg_sig(db, lead or None)
     if _list_sig(rows) == ls and current_msg_sig == ms:
         return JSONResponse({"changed": False})  # nada novo: resposta mínima, sem desenhar nada
     if lead and current_msg_sig != ms:
         inbox_state.mark_read(db, user.id, lead)  # chegou mensagem na conversa que está aberta: já foi vista
-    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo, lidas)
+    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo, lidas, limit)
     return JSONResponse(
         {
             "list_sig": ctx["list_sig"],
@@ -675,18 +694,28 @@ def _pending_only(query):
     return inbox_state.unanswered_filter(query).filter(Lead.archived_at.is_(None), Lead.tag != "outro")
 
 
-def _team_columns(db: Session, tenant: Tenant, user: User, seller_ids: list, pending_ids=frozenset()) -> list:
+def _team_columns(
+    db: Session, tenant: Tenant, user: User, seller_ids: list, pending_ids=frozenset(), busca: str = "", tipo: str = "",
+    limits: Optional[dict] = None,
+) -> list:
+    """Colunas da visão da equipe. `busca` e `tipo` ("naolidas") filtram todas as listas;
+    `limits` = quantas conversas cada coluna mostra (cresce com o "Ver mais" da coluna)."""
     people = {p.id: p for p in team_members(db, tenant.id)}
+    limits = limits or {}
     now = datetime.datetime.utcnow()
     today = local_to_utc(to_local(now).replace(hour=0, minute=0, second=0, microsecond=0))
     columns = []
     for seller_id in [s for s in seller_ids if s in people][:TEAM_VIEW_MAX]:
         query, _ = _inbox_query(db, tenant, user, "", "", seller_id)
-        list_query = _pending_only(query) if seller_id in pending_ids else query
+        list_query, _ = _inbox_query(db, tenant, user, busca, "", seller_id, tipo)
+        if seller_id in pending_ids:
+            list_query = _pending_only(list_query)
+        limit = limits.get(seller_id, TEAM_VIEW_PER_COLUMN)
         convs = _first_per_lead(
             list_query.options(joinedload(Conversation.lead))
             .order_by(Conversation.last_message_at.desc())
-            .limit(TEAM_VIEW_PER_COLUMN * 2)
+            .limit(limit * 2),
+            limit,
         )
         open_leads = db.query(Lead).filter(
             Lead.tenant_id == tenant.id, Lead.assigned_user_id == seller_id, Lead.deleted_at.is_(None),
@@ -701,8 +730,10 @@ def _team_columns(db: Session, tenant: Tenant, user: User, seller_ids: list, pen
         ).count()
         today_count = query.filter(Conversation.last_message_at >= today).count()
         columns.append({
-            "seller": people[seller_id], "convs": convs[:TEAM_VIEW_PER_COLUMN], "waiting": waiting,
+            "seller": people[seller_id], "convs": convs, "waiting": waiting,
             "today": today_count, "pending_only": seller_id in pending_ids,
+            "truncated": len(convs) >= limit and limit < INBOX_LIST_MAX, "limit": limit,
+            "busca": busca, "tipo": tipo,
         })
     # não lidas (de quem está olhando) de todas as colunas numa consulta só
     all_ids = [c.lead_id for col in columns for c in col["convs"]]
@@ -729,6 +760,19 @@ def _team_sig(db: Session, tenant: Tenant, user: User, seller_ids: list) -> str:
     )
 
 
+def _team_unread_total(db: Session, tenant: Tenant, user: User, seller_ids: list) -> int:
+    """Conversas não lidas (por quem está olhando) somando as colunas abertas."""
+    if not seller_ids:
+        return 0
+    query, _ = _inbox_query(db, tenant, user, "", "", "", "naolidas")
+    return (
+        query.filter(Lead.assigned_user_id.in_(seller_ids[:TEAM_VIEW_MAX]))
+        .with_entities(func.count(func.distinct(Conversation.lead_id)))
+        .scalar()
+        or 0
+    )
+
+
 TEAM_PENDING_COOKIE = "inbox_equipe_pend"
 
 
@@ -737,6 +781,21 @@ def _team_pending(request: Request) -> frozenset:
     if "p" in request.query_params or "pset" in request.query_params:
         return frozenset(v for v in request.query_params.getlist("p") if v)
     return frozenset(v for v in request.cookies.get(TEAM_PENDING_COOKIE, "").split(",") if v)
+
+
+TEAM_FILTERS = ("", "naolidas")
+
+
+def _team_filters(request: Request) -> tuple:
+    """Lupa (q), "Não lidas" (f) e quantas conversas cada coluna mostra (m=<vendedor>:<qtd>)."""
+    qp = request.query_params
+    tipo = qp.get("f", "")
+    limits = {}
+    for item in qp.getlist("m"):
+        seller, _, qty = item.partition(":")
+        if seller:
+            limits[seller] = _list_limit(qty, TEAM_VIEW_PER_COLUMN)
+    return qp.get("q", "").strip()[:80], tipo if tipo in TEAM_FILTERS else "", limits
 
 
 def _team_selection(request: Request) -> list:
@@ -758,7 +817,8 @@ def team_inbox(
         raise HTTPException(status_code=403, detail="Só o admin vê a visão da equipe")
     selected = _team_selection(request)
     pending = _team_pending(request)
-    columns = _team_columns(db, tenant, user, selected, pending)
+    busca, tipo, limits = _team_filters(request)
+    columns = _team_columns(db, tenant, user, selected, pending, busca, tipo, limits)
     response = templates.TemplateResponse(
         request,
         "inbox_equipe.html",
@@ -771,6 +831,10 @@ def team_inbox(
             "columns": columns,
             "sig": _team_sig(db, tenant, user, selected),
             "max": TEAM_VIEW_MAX,
+            "busca": busca,
+            "tipo": tipo,
+            "per_column": TEAM_VIEW_PER_COLUMN,
+            "naolidas_total": _team_unread_total(db, tenant, user, selected),
             "quick_replies": replies_for_js(db, tenant, user),
         },
     )
@@ -823,10 +887,11 @@ def team_inbox_refresh(
     current = _team_sig(db, tenant, user, selected)
     if current == sig:
         return JSONResponse({"changed": False})
+    busca, tipo, limits = _team_filters(request)
     html = templates.get_template("_inbox_equipe_cols.html").render(
-        {"columns": _team_columns(db, tenant, user, selected, pending), "request": request}
+        {"columns": _team_columns(db, tenant, user, selected, pending, busca, tipo, limits), "request": request}
     )
-    response = JSONResponse({"sig": current, "html": html})
+    response = JSONResponse({"sig": current, "html": html, "naolidas_total": _team_unread_total(db, tenant, user, selected)})
     response.set_cookie(TEAM_PENDING_COOKIE, ",".join(pending), httponly=True, samesite="lax")
     return response
 
