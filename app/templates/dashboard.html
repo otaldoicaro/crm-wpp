@@ -25,6 +25,21 @@
   </div>
 </div>
 
+{% macro funnel_view(f) -%}
+<div class="cfunnel">
+  {% set top = f.steps[0].count or 1 %}
+  {% for st in f.steps %}
+  {% if not loop.first %}<div class="cfunnel-rate">↓ {{ (st.rate|string).replace(".", ",") ~ "%" if st.rate is not none else "—" }} <span class="muted">{{ st.rate_label }}</span></div>{% endif %}
+  <div class="cfunnel-step">
+    <div class="cfunnel-bar" style="width: {{ [100 * st.count / top, 6]|max }}%"><b>{{ st.count }}</b></div>
+    <span class="cfunnel-label">{{ st.label }}</span>
+  </div>
+  {% endfor %}
+  <div class="cfunnel-overall">Conversão total (leads → vendas): <b>{{ (f.overall|string).replace(".", ",") ~ "%" if f.overall is not none else "—" }}</b></div>
+</div>
+{%- endmacro %}
+
+{% if is_admin %}
 <form method="get" action="/dashboard" class="seller-filter">
   <input type="hidden" name="date_range" value="{{ date_range }}">
   <input type="hidden" name="date_from" value="{{ date_from }}">
@@ -36,6 +51,9 @@
     </select>
   </label>
 </form>
+{% else %}
+<div class="section-title"><h3 style="margin:0">Números gerais da equipe</h3></div>
+{% endif %}
 
 <div class="stat-grid">
   <a class="stat-card c-gold {{ 'accent' if card == 'all' }}" href="/dashboard?card=all&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
@@ -74,7 +92,26 @@
 </div>
 <p class="muted" style="margin-top:-8px">Clique num card acima pra filtrar a lista de leads embaixo. Os filtros de data no topo valem pra tudo nesta página.</p>
 
-<div class="section-title"><h3 style="margin:0">Tempo de atendimento</h3></div>
+<div class="section-title"><h3 style="margin:0">Funil comercial{{ "" if seller or not is_admin else " — equipe toda" }}</h3></div>
+<div class="card">
+  {{ funnel_view(commercial_funnel) }}
+  <p class="muted" style="margin:10px 0 0; font-size:.78rem">Conta a etapa mais avançada que cada lead já alcançou: quem negociou e depois foi perdido continua contando como negociação. Leads de antes desta versão contam pela etapa em que estão hoje.</p>
+</div>
+
+{% if my_stats %}
+<div class="section-title"><h3 style="margin:0">Seus números</h3></div>
+<div class="my-numbers">
+  <div class="card">{{ funnel_view(my_stats.funnel) }}</div>
+  <div class="stat-grid rt-grid my-rt">
+    <div class="stat-card c-info"><div class="stat-label">Seu 1º atendimento (mediana)</div><div class="stat-value">{{ my_stats.row.median_first|duracao }}</div><div class="muted">equipe: {{ team_row.median_first|duracao }}</div></div>
+    <div class="stat-card c-success"><div class="stat-label">Respondidos em até 15 min</div><div class="stat-value">{{ my_stats.row.within_15 ~ "%" if my_stats.row.within_15 is not none else "—" }}</div><div class="muted">equipe: {{ team_row.within_15 ~ "%" if team_row.within_15 is not none else "—" }}</div></div>
+    <div class="stat-card c-danger"><div class="stat-label">Aguardando seu 1º atendimento</div><div class="stat-value">{{ my_stats.row.waiting }}</div></div>
+    <div class="stat-card c-gold"><div class="stat-label">Sua receita</div><div class="stat-value">R$ {{ "{:,.0f}".format(my_stats.row.revenue).replace(",", ".") }}</div><div class="muted">{{ my_stats.row.won }} venda(s) · conversão {{ my_stats.row.conversion }}% (equipe {{ team_row.conversion }}%)</div></div>
+  </div>
+</div>
+{% endif %}
+
+<div class="section-title"><h3 style="margin:0">Tempo de atendimento{{ " — equipe toda" if not is_admin }}</h3></div>
 <div class="stat-grid rt-grid">
   <div class="stat-card c-info">
     {{ m.stat_icon("clock") }}
@@ -116,14 +153,14 @@
 </div>
 
 {% if not seller %}
-<div class="section-title"><h3 style="margin:0">Funil por vendedor</h3></div>
+<div class="section-title"><h3 style="margin:0">{{ "Funil por vendedor" if is_admin else "Você x equipe" }}</h3></div>
 <div class="card">
   <div style="overflow-x:auto;">
   <table class="table-simple seller-table">
     <thead><tr><th>Vendedor</th><th>Leads</th>{% for st in stages %}<th>{{ st.name }}</th>{% endfor %}<th>Conversão</th><th>Receita</th><th title="Mediana do tempo até a 1ª resposta">1º atend.</th><th title="Leads em aberto ainda sem resposta">Aguardando</th></tr></thead>
     <tbody>
     {% for r in seller_rows %}
-      <tr style="cursor:pointer" onclick="window.location='/dashboard?seller={{ r.user.id }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}'">
+      <tr {% if is_admin %}style="cursor:pointer" onclick="window.location='/dashboard?seller={{ r.user.id }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}'"{% endif %}>
         <td><b>{{ r.user.name }}</b>{% if not r.user.is_active %} <span class="muted">(inativo)</span>{% elif not r.user.accepting_leads %} <span class="muted">(pausado)</span>{% endif %}</td>
         <td><b>{{ r.total }}</b></td>
         {% for st in stages %}<td class="{{ 'muted' if not r.by_stage[st.id] }}">{{ r.by_stage[st.id] }}</td>{% endfor %}
@@ -133,10 +170,19 @@
         <td class="{{ 'rt-late-cell' if r.waiting else 'muted' }}">{{ r.waiting }}</td>
       </tr>
     {% endfor %}
+      <tr class="team-total-row">
+        <td><b>Equipe toda</b></td>
+        <td><b>{{ team_row.total }}</b></td>
+        {% for st in stages %}<td>{{ team_row.by_stage[st.id] }}</td>{% endfor %}
+        <td><span class="conv-pill">{{ team_row.conversion }}%</span></td>
+        <td>R$ {{ "{:,.0f}".format(team_row.revenue).replace(",", ".") }}</td>
+        <td>{{ team_row.median_first|duracao }}</td>
+        <td>{{ team_row.waiting }}</td>
+      </tr>
     </tbody>
   </table>
   </div>
-  <p class="muted" style="margin:10px 0 0">Clique num vendedor pra ver o dashboard só dele.{% if unassigned %} {{ unassigned }} lead(s) sem vendedor no período.{% endif %}</p>
+  {% if is_admin %}<p class="muted" style="margin:10px 0 0">Só vendedores (admins não entram). Clique num vendedor pra ver o dashboard só dele.{% if unassigned %} {{ unassigned }} lead(s) sem vendedor no período.{% endif %}</p>{% endif %}
 </div>
 {% endif %}
 
@@ -244,7 +290,7 @@ document.querySelectorAll(".traffic-camp .camp-row").forEach(function (row) {
 });
 </script>
 
-<div class="section-title" id="leads"><h3 style="margin:0">{{ "Vendas que formam a receita" if card == "receita" else "Leads" }} ({{ table_leads|length }}){% if card == "receita" %} · R$ {{ "{:,.0f}".format(table_leads|sum(attribute="deal_value")).replace(",", ".") }}{% endif %}</h3></div>
+<div class="section-title" id="leads"><h3 style="margin:0">{{ "Vendas que formam a receita" if card == "receita" else "Leads" }}{{ " (seus)" if not is_admin }} ({{ table_leads|length }}){% if card == "receita" %} · R$ {{ "{:,.0f}".format(table_leads|sum(attribute="deal_value")).replace(",", ".") }}{% endif %}</h3></div>
 <div class="card">
   <form method="get" action="/dashboard" style="margin-bottom:14px;">
     <input type="hidden" name="card" value="{{ card }}">

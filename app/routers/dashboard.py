@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app.services import evolution_client, inbox_state, media_store, messaging, meta_spend, response_times, traffic
+from app.services import evolution_client, funnel, inbox_state, media_store, messaging, meta_spend, response_times, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -38,6 +38,14 @@ def _stage_colors(stages: list[PipelineStage]) -> dict[str, str]:
 LEAD_CARD_LOAD = (selectinload(Lead.attribution), selectinload(Lead.conversations), joinedload(Lead.assigned_user))
 
 PIPELINE_COL_LIMIT = 30  # cartões por coluna; "ver mais" soma de 30 em 30
+
+
+def _visible_lead(db: Session, tenant: Tenant, user: User, lead_id: str) -> Optional[Lead]:
+    """Lead pelo id, se esta pessoa pode ver: admin vê todos; vendedor só os dele."""
+    query = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id)
+    if user.role != "admin":
+        query = query.filter(Lead.assigned_user_id == user.id)
+    return query.first()
 
 
 def _period_bounds(date_range: str, date_from: str, date_to: str):
@@ -77,6 +85,8 @@ def pipeline_view(
         base = base.filter(Lead.created_at >= range_from)
     if range_to:
         base = base.filter(Lead.created_at <= range_to)
+    if user.role != "admin":
+        seller = user.id  # cada vendedor vê só o pipeline dele
     if seller:
         base = base.filter(Lead.assigned_user_id == seller)
 
@@ -136,6 +146,8 @@ def archived_view(
     user: User = Depends(current_user_required),
 ):
     query = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.archived_at.isnot(None), Lead.deleted_at.is_(None))
+    if user.role != "admin":
+        query = query.filter(Lead.assigned_user_id == user.id)
     busca = busca.strip()
     if busca:
         digits = "".join(ch for ch in busca if ch.isdigit())
@@ -170,7 +182,7 @@ def toggle_archive(
     user: User = Depends(current_user_required),
 ):
     """Arquiva (sai do Pipeline) ou restaura um lead manualmente."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    lead = _visible_lead(db, tenant, user, lead_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     lead.archived_at = None if lead.archived_at else datetime.datetime.utcnow()
@@ -187,7 +199,7 @@ def delete_lead(
     user: User = Depends(current_user_required),
 ):
     """Manda o lead pra Lixeira (some de tudo). Fica registrado quem excluiu e quando."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    lead = _visible_lead(db, tenant, user, lead_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     lead.deleted_at = datetime.datetime.utcnow()
@@ -263,7 +275,7 @@ def restore_lead(
 ):
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Só o admin pode restaurar da Lixeira")
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    lead = _visible_lead(db, tenant, user, lead_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     lead.deleted_at = None
@@ -280,7 +292,7 @@ def lead_detail(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    lead = _visible_lead(db, tenant, user, lead_id)
     if not lead:
         return RedirectResponse(url="/")
 
@@ -318,7 +330,7 @@ def update_lead(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    lead = _visible_lead(db, tenant, user, lead_id)
     stage = db.query(PipelineStage).filter(PipelineStage.id == stage_id, PipelineStage.tenant_id == tenant.id).first()
     if not lead:
         return RedirectResponse(url="/", status_code=302)
@@ -333,7 +345,7 @@ def update_lead(
     except ValueError:
         lead.deal_value = None
     if stage:
-        lead.stage_id = stage.id
+        funnel.set_stage(lead, stage)
     db.add(lead)
     db.commit()
 
@@ -354,10 +366,10 @@ def change_stage(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    lead = _visible_lead(db, tenant, user, lead_id)
     stage = db.query(PipelineStage).filter(PipelineStage.id == stage_id, PipelineStage.tenant_id == tenant.id).first()
     if lead and stage:
-        lead.stage_id = stage.id
+        funnel.set_stage(lead, stage)
         db.add(lead)
         db.commit()
         if stage.conversion_event_name:
@@ -392,13 +404,15 @@ def campaign_leads(
         query = query.filter(Lead.created_at >= range_from)
     if range_to:
         query = query.filter(Lead.created_at <= range_to)
+    if user.role != "admin":
+        seller = user.id  # vendedor vê só os leads dele de cada campanha
     if seller:
         query = query.filter(Lead.assigned_user_id == seller)
     leads = query.options(*LEAD_CARD_LOAD).all()
     tree = traffic.build(
         db, tenant.id, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
-        {st.id for st in stages if st.conversion_event_name or st.is_won}, {st.id for st in stages if st.is_won},
+        funnel.is_qualified(stages), {st.id for st in stages if st.is_won},
     )
     trail = traffic.find(tree, c, s, a)
     if trail is None:
@@ -588,7 +602,7 @@ def _inbox_context(
         if selected_lead and selected_lead.conversations:
             messages = selected_lead.all_messages
             active_conversation = selected_lead.active_conversation
-            other_numbers = [
+            other_numbers = [] if user.role != "admin" else [
                 n
                 for n in db.query(WhatsAppNumber)
                 .filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
@@ -632,7 +646,8 @@ def _inbox_context(
             "active_conversation": active_conversation,
             "other_numbers": other_numbers,
             "platform": resolve_platform(selected_lead.attribution) if selected_lead else None,
-            "transfer_people": _transfer_options(db, tenant, selected_lead) if selected_lead and not selected_lead.is_group else [],
+            "transfer_people": _transfer_options(db, tenant, selected_lead)
+            if selected_lead and not selected_lead.is_group and user.role == "admin" else [],
             "stages": db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
             if selected_lead and not selected_lead.is_group else [],
             "can_settle": bool(selected_lead and not selected_lead.is_group and response_times.waiting_since(selected_lead)),
@@ -693,7 +708,7 @@ def inbox_mark_read(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    if db.query(Lead.id).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first():
+    if _visible_lead(db, tenant, user, lead_id):
         inbox_state.mark_read(db, user.id, lead_id)
     return JSONResponse({"ok": True})
 
@@ -706,7 +721,7 @@ def inbox_favorite(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    if db.query(Lead.id).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first():
+    if _visible_lead(db, tenant, user, lead_id):
         inbox_state.set_favorite(db, user.id, lead_id, valor == "1")
     return JSONResponse({"ok": True})
 
@@ -761,7 +776,7 @@ def set_lead_stage(
     if stage.is_won and value <= 0:
         return JSONResponse({"ok": False, "error": f"pra marcar como {stage.name}, preencha o valor da venda"}, status_code=400)
     changed = lead.stage_id != stage.id
-    lead.stage_id = stage.id
+    funnel.set_stage(lead, stage)
     if value > 0:
         lead.deal_value = value
     if stage.is_lost:
@@ -807,6 +822,8 @@ def transfer_lead(
     """Passa o lead (com a conversa inteira) pra outro vendedor. O histórico todo continua no
     CRM: quem recebe abre a conversa e vê tudo, desde a 1ª mensagem. Com `trocar_numero`, as
     próximas mensagens saem pelo WhatsApp do novo vendedor."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Só o admin passa conversas pra outro vendedor")
     lead = _lead_for_action(db, tenant, user, lead_id)
     target = next((p for p in team_members(db, tenant.id, only_active=True) if p.id == para), None)
     if target is None:
@@ -852,7 +869,7 @@ def inbox_mark_unread(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    if db.query(Lead.id).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first():
+    if _visible_lead(db, tenant, user, lead_id):
         inbox_state.mark_unread(db, user.id, lead_id)
     return JSONResponse({"ok": True})
 
@@ -868,7 +885,7 @@ def set_lead_tag(
     user: User = Depends(current_user_required),
 ):
     """Etiqueta do contato: Lead / Cliente / Outro (qualquer pessoa da equipe pode mudar)."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    lead = _visible_lead(db, tenant, user, lead_id)
     if not lead or tag not in inbox_state.TAG_LABEL:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     lead.tag = tag
@@ -1124,7 +1141,7 @@ def team_thread(
     current = _msg_sig(db, lead_id)
     if ms and current == ms:
         return JSONResponse({"changed": False})
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    lead = _visible_lead(db, tenant, user, lead_id)
     if not lead:
         raise HTTPException(status_code=404)
     inbox_state.mark_read(db, user.id, lead_id)
@@ -1133,7 +1150,7 @@ def team_thread(
     head = templates.get_template("_team_thread_head.html").render({
         "lead": lead, "closed": closed, "truncated": len(lead.all_messages) > TEAM_THREAD_LAST,
         "can_settle": not lead.is_group and bool(response_times.waiting_since(lead)),
-        "transfer_people": [] if lead.is_group else _transfer_options(db, tenant, lead),
+        "transfer_people": [] if lead.is_group or user.role != "admin" else _transfer_options(db, tenant, lead),
         "stages": [] if lead.is_group else db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all(),
     })
     body = templates.get_template("_inbox_messages.html").render({"messages": messages})
@@ -1198,7 +1215,7 @@ def lead_avatar(
     if _fresh(none_marker):
         return _blank_avatar(86400)
 
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    lead = _visible_lead(db, tenant, user, lead_id)
     conversation = lead.active_conversation if lead else None
     number = conversation.whatsapp_number if conversation else None
     if not lead or not number or number.provider != "evolution":
@@ -1239,7 +1256,7 @@ def get_media(
         raise HTTPException(status_code=404, detail="Mídia não encontrada")
 
     conversation = db.get(Conversation, message.conversation_id)
-    if not conversation or conversation.tenant_id != tenant.id:
+    if not conversation or conversation.tenant_id != tenant.id or not _visible_lead(db, tenant, user, conversation.lead_id):
         raise HTTPException(status_code=404, detail="Mídia não encontrada")
 
     # 1º a cópia própria (sobrevive a número bloqueado); senão busca no WhatsApp
@@ -1264,7 +1281,7 @@ def reply_lead(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    lead = _visible_lead(db, tenant, user, lead_id)
     if not lead or not lead.conversations:
         return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
@@ -1289,8 +1306,10 @@ def switch_number(
 ):
     """Continuar a conversa por outro número (ex: o número do vendedor caiu ou
     foi bloqueado). O histórico continua o mesmo; só as próximas mensagens
-    saem pelo número escolhido."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    saem pelo número escolhido. Só admin."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Só o admin troca o WhatsApp de envio")
+    lead = _visible_lead(db, tenant, user, lead_id)
     number = db.get(WhatsAppNumber, whatsapp_number_id)
     if not lead or not number or number.tenant_id != tenant.id:
         raise HTTPException(status_code=404, detail="Lead ou número não encontrado")
@@ -1326,7 +1345,7 @@ def reply_lead_media(
     """Envia foto/vídeo/documento pro lead. Chamado via fetch() do Inbox (não
     é um form comum) pra dar pra mostrar 'enviando...' sem recarregar a
     página até a resposta da Meta confirmar."""
-    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    lead = _visible_lead(db, tenant, user, lead_id)
     if not lead or not lead.conversations:
         return JSONResponse({"ok": False, "error": "conversa não encontrada"}, status_code=404)
 
@@ -1437,6 +1456,9 @@ def dashboard_view(
 ):
     sellers = team_members(db, tenant.id)
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
+    is_admin = user.role == "admin"
+    if not is_admin:
+        seller = ""  # vendedor vê os números gerais da equipe + os dele (nunca os de outro vendedor)
 
     now = datetime.datetime.utcnow()
     range_to: Optional[datetime.datetime] = None
@@ -1511,28 +1533,40 @@ def dashboard_view(
         "idle": rt_open["idle"],
     }
 
-    # funil lado a lado por vendedor (mesmo período; ignora o filtro de vendedor)
+    def seller_row(person, mine: list) -> dict:
+        won = [lead for lead in mine if lead.stage_id in won_stage_ids]
+        mine_open = [l for l in mine if l.stage_id not in won_stage_ids and l.stage_id not in lost_stage_ids]
+        mine_rt = response_times.summary(mine)
+        return {
+            "user": person,
+            "total": len(mine),
+            "by_stage": {st.id: sum(1 for lead in mine if lead.stage_id == st.id) for st in stages},
+            "won": len(won),
+            "conversion": round(len(won) / len(mine) * 100) if mine else 0,
+            "revenue": sum(lead.deal_value or 0 for lead in won),
+            "median_first": mine_rt["median_first"],
+            "within_15": mine_rt["within_15"],
+            "waiting": response_times.summary(mine_open)["never_answered"],
+            "idle": response_times.summary(mine_open)["idle"],
+        }
+
+    # funil lado a lado por vendedor: só vendedores de fato (admin não entra); o vendedor
+    # logado vê só a linha dele + a linha da equipe toda
     seller_rows = []
     for s in sellers:
+        if s.role != "agent" or (not is_admin and s.id != user.id):
+            continue
         mine = [lead for lead in all_period_leads if lead.assigned_user_id == s.id]
         if not mine and not s.is_active:
             continue
-        won = [lead for lead in mine if lead.stage_id in won_stage_ids]
-        mine_rt = response_times.summary(mine)
-        mine_open = [l for l in mine if l.stage_id not in won_stage_ids and l.stage_id not in lost_stage_ids]
-        seller_rows.append(
-            {
-                "user": s,
-                "total": len(mine),
-                "by_stage": {st.id: sum(1 for lead in mine if lead.stage_id == st.id) for st in stages},
-                "won": len(won),
-                "conversion": round(len(won) / len(mine) * 100) if mine else 0,
-                "revenue": sum(lead.deal_value or 0 for lead in won),
-                "median_first": mine_rt["median_first"],
-                "waiting": response_times.summary(mine_open)["never_answered"],
-            }
-        )
+        seller_rows.append(seller_row(s, mine))
     seller_rows.sort(key=lambda r: (r["won"], r["total"]), reverse=True)
+    team_row = seller_row(None, all_period_leads)
+    commercial_funnel = funnel.summary(leads, stages)
+    my_numbers = None
+    if not is_admin:
+        mine = [lead for lead in all_period_leads if lead.assigned_user_id == user.id]
+        my_numbers = {"row": seller_row(user, mine), "funnel": funnel.summary(mine, stages)}
     unassigned = sum(1 for lead in all_period_leads if not lead.assigned_user_id)
 
     platform_counts: dict[str, dict] = {}
@@ -1552,7 +1586,7 @@ def dashboard_view(
     top_campaigns = sorted(campaign_counts.items(), key=lambda kv: kv[1]["count"], reverse=True)[:8]
 
     # ---- lista filtrável de leads (cards clicaveis + pills + busca) ----
-    table_leads = leads
+    table_leads = leads if is_admin else [lead for lead in leads if lead.assigned_user_id == user.id]
     if card == "new_24h":
         table_leads = [lead for lead in table_leads if lead.created_at >= last_24h]
     elif card == "no_contact":
@@ -1583,11 +1617,10 @@ def dashboard_view(
     stage_by_id = {s.id: s for s in stages}
 
     # ---- tráfego: gasto dos anúncios x leads e vendas, por campanha > conjunto > anúncio ----
-    qualified_stage_ids = {s.id for s in stages if s.conversion_event_name or s.is_won}
     traffic_data = traffic.build(
         db, tenant.id, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
-        qualified_stage_ids, set(won_stage_ids),
+        funnel.is_qualified(stages), set(won_stage_ids),
     )
 
     return templates.TemplateResponse(
@@ -1625,6 +1658,10 @@ def dashboard_view(
             "rt_box": rt_box,
             "unassigned": unassigned,
             "traffic": traffic_data,
+            "is_admin": is_admin,
+            "team_row": team_row,
+            "commercial_funnel": commercial_funnel,
+            "my_stats": my_numbers,
             "meta_accounts": tenant.meta_ad_accounts,
         },
     )

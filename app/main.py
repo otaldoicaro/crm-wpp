@@ -8,7 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
 
 from app.db import SessionLocal, sync_indexes, sync_schema
-from app.services import archiver, media_store, meta_spend, response_times
+from app.services import archiver, funnel, media_store, meta_spend, people, response_times
 from app.routers import (
     admin_setup,
     auth_router,
@@ -30,6 +30,9 @@ app = FastAPI(title="CRM Multi-Tenant WhatsApp + Site")
 sync_schema()
 sync_indexes()
 media_store.setup()
+with SessionLocal() as _fdb:
+    funnel.setup(_fdb)  # etapa "Negociando" + etapa mais avançada dos leads antigos
+    people.admins_out_of_rotation(_fdb)  # admin só no rodízio se alguém ligar e confirmar
 archiver.schedule()
 meta_spend.schedule()  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)
 webhooks_evolution.clean_legacy_placeholders()

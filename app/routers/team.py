@@ -10,6 +10,7 @@
 
 import datetime
 import secrets
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -130,6 +131,8 @@ def _apply_roles(db: Session, tenant: Tenant, user: User, form: dict) -> None:
         role = form.get(f"role_{member.id}")
         if role in ("agent", "admin") and role != member.role:
             member.role = role
+            if role == "admin":  # virou admin: sai do rodízio (dá pra ligar de novo, confirmando)
+                member.accepting_leads, member.rodizio_confirmed_at = False, None
             db.add(member)
     db.commit()
 
@@ -140,6 +143,7 @@ def team_action(
     action: str,
     repassar_leads: str = Form(""),
     remover_whatsapp: str = Form(""),
+    confirmar: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -156,6 +160,11 @@ def team_action(
         db.commit()
         return RedirectResponse(url="/equipe", status_code=302)
     elif action == "rodizio":
+        if not member.accepting_leads and member.role == "admin":
+            # admin fora do rodízio é o padrão: pra ligar precisa confirmar na tela
+            if confirmar != "1":
+                return RedirectResponse(url="/equipe?erro=" + quote("Confirme pra colocar um admin no rodízio."), status_code=302)
+            member.rodizio_confirmed_at = datetime.datetime.utcnow()
         member.accepting_leads = not member.accepting_leads
     elif action == "ativo" and member.id != user.id:
         member.is_active = not member.is_active
@@ -168,7 +177,7 @@ def team_action(
     elif action == "restaurar" and member.removed_at:
         member.removed_at = None
         member.is_active = True
-        member.accepting_leads = True
+        member.accepting_leads = member.role != "admin"
     db.add(member)
     db.commit()
     return RedirectResponse(url="/equipe", status_code=302)

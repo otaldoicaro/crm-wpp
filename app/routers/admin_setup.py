@@ -66,8 +66,9 @@ def bootstrap_tenant(payload: BootstrapIn, x_setup_token: Optional[str] = Header
                 ("Novo", 0, "", False, False),
                 ("Em atendimento", 1, "", False, False),
                 ("Qualificado", 2, "Qualified", False, False),
-                ("Ganho", 3, "Purchase", True, False),
-                ("Perdido", 4, "", False, True),
+                ("Negociando", 3, "", False, False),
+                ("Ganho", 4, "Purchase", True, False),
+                ("Perdido", 5, "", False, True),
             ]
             for name, order, event_name, is_won, is_lost in default_stages:
                 db.add(

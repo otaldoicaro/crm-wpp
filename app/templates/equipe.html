@@ -67,8 +67,11 @@
         </td>
         <td>
           {% if u.is_active %}
-          <form method="post" action="/equipe/{{ u.id }}/rodizio" style="margin:0">
-            <button class="btn small {{ '' if u.accepting_leads else 'ghost' }}" type="submit">{{ "No rodízio" if u.accepting_leads else "Pausado" }}</button>
+          {% set wa = n.label ~ " (" ~ n.phone_number ~ ")" if n else "nenhum WhatsApp conectado" %}
+          <form method="post" action="/equipe/{{ u.id }}/rodizio" style="margin:0"
+            {% if u.role == "admin" and not u.accepting_leads %}onsubmit='if (!confirm({{ ("ATENÇÃO: " ~ u.name ~ " é ADMIN.\n\nColocar no rodízio de atendimento?\n\nLeads novos e o link rotativo vão passar a cair pra ele(a), no WhatsApp: " ~ wa ~ ".\n\nConfira se é isso mesmo antes de continuar.")|tojson }})) return false; this.confirmar.value = "1";'{% endif %}>
+            <input type="hidden" name="confirmar" value="">
+            <button class="btn small {{ '' if u.accepting_leads else 'ghost' }}" type="submit" title="{{ 'Admin fica fora do rodízio por padrão' if u.role == 'admin' and not u.accepting_leads }}">{{ "No rodízio" if u.accepting_leads else ("Fora do rodízio (admin)" if u.role == "admin" else "Pausado") }}</button>
           </form>
           {% endif %}
         </td>

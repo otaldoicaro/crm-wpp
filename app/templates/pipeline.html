@@ -32,6 +32,7 @@
     <input type="date" name="date_to" value="{{ date_to }}">
     <button type="submit" class="pill" style="{{ 'background:var(--y); color:var(--ink);' if date_range == 'custom' }} border:0; cursor:pointer;">Aplicar</button>
   </form>
+{% if user.role == "admin" %}
   <form method="get" action="/" class="pipeline-filter-form">
     <input type="hidden" name="date_range" value="{{ date_range }}">
     <input type="hidden" name="date_from" value="{{ date_from }}">
@@ -41,6 +42,7 @@
       {{ m.seller_options(sellers, seller) }}
     </select>
   </form>
+  {% endif %}
 </div>
 
 <div class="kanban">

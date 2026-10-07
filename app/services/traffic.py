@@ -40,7 +40,7 @@ def _finish(node: dict) -> dict:
     return node
 
 
-def build(db, tenant_id: str, leads: list, date_from, date_to, qualified_ids: set, won_ids: set) -> dict:
+def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won_ids: set) -> dict:
     """{"campaigns": [...], "total": {...}, "has_spend": bool}. Cada campanha tem
     "children" (conjuntos) e cada conjunto tem "children" (anúncios)."""
     # nomes e ids conhecidos (todo o histórico, pra casar leads de qualquer data)
@@ -88,7 +88,7 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, qualified_ids: se
         for node in nodes:
             node["lead_ids"].append(lead.id)
             node["leads"] += 1
-            if lead.stage_id in qualified_ids:
+            if is_qualified(lead):
                 node["qualified"] += 1
             if lead.stage_id in won_ids:
                 node["won"] += 1

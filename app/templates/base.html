@@ -44,6 +44,13 @@
     setTimeout(function () { var t = document.querySelector(".toast"); if (t) t.remove(); }, 4500);
   </script>
   {% endif %}
+  {% if request and request.query_params.get("erro") %}
+  <div class="toast" role="alert">⚠️ {{ request.query_params.get("erro") }}</div>
+  <script>
+    history.replaceState(null, "", location.pathname);
+    setTimeout(function () { var t = document.querySelector(".toast"); if (t) t.remove(); }, 6000);
+  </script>
+  {% endif %}
   {% if request and request.query_params.get("transferido") %}
   <div class="toast" role="status">↪ Conversa transferida. Ela aparece agora no Inbox de quem recebeu, com o histórico completo.</div>
   <script>

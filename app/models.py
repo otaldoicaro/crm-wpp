@@ -75,6 +75,8 @@ class User(Base):
     # O cadastro fica (histórico de quem atendeu/enviou), e dá pra restaurar em "Removidos".
     removed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     accepting_leads: Mapped[bool] = mapped_column(Boolean, default=True)  # pausa individual na fila
+    # admin só entra no rodízio se alguém ligar na mão (e confirmar): quando foi confirmado
+    rodizio_confirmed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     max_open_leads: Mapped[int] = mapped_column(Integer, default=0)  # 0 = sem limite
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
@@ -156,6 +158,9 @@ class Lead(Base):
     first_response_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     last_inbound_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     last_outbound_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    # etapa mais avançada que o lead já alcançou (ordem da etapa). Um lead "Perdido" depois de
+    # negociar continua contando como negociação no funil do Dashboard.
+    reached_order: Mapped[int] = mapped_column(Integer, default=0)
     # "✓ Encerrar atendimento" (ou o vendedor reagiu à mensagem do cliente pelo celular): o que o
     # cliente mandou até aqui não precisa de resposta, então não conta como "aguardando"
     settled_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
