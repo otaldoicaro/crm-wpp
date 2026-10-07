@@ -157,46 +157,92 @@
   </table>
 </div>
 
-<div class="section-title"><h3 style="margin:0">Tráfego pago — campanha, conjunto e anúncio</h3></div>
+{% macro money(v, cents=False) -%}
+{%- if v is none or (not v and v != 0) %}—{% else %}R$ {{ ("{:,.2f}" if cents else "{:,.0f}").format(v).replace(",", "X").replace(".", ",").replace("X", ".") }}{% endif -%}
+{%- endmacro %}
+{% macro traffic_cells(n) -%}
+  <td class="num">{{ money(n.spend) if n.spend else "—" }}</td>
+  <td class="num">{{ n.leads }}</td>
+  <td class="num">{{ money(n.cpl, True) if n.cpl else "—" }}</td>
+  <td class="num">{{ n.qualified }}</td>
+  <td class="num">{{ money(n.cost_per_qualified, True) if n.cost_per_qualified else "—" }}</td>
+  <td class="num">{{ n.won }}</td>
+  <td class="num">{{ money(n.cac, True) if n.cac else "—" }}</td>
+  <td class="num">{{ money(n.revenue) if n.revenue else "—" }}</td>
+  <td class="num">{{ money(n.ticket) if n.ticket else "—" }}</td>
+  <td class="num {{ 'roas-good' if n.roas and n.roas >= 1 else ('roas-bad' if n.roas is not none else '') }}">{{ ("%.1fx"|format(n.roas)).replace(".", ",") if n.roas is not none else "—" }}</td>
+{%- endmacro %}
+<div class="section-title" id="trafego"><h3 style="margin:0">Tráfego pago x comercial</h3></div>
+{% set period_qs = "date_range=" ~ (date_range|urlencode) ~ "&date_from=" ~ (date_from|urlencode) ~ "&date_to=" ~ (date_to|urlencode) ~ "&seller=" ~ (seller|urlencode) %}
 <div class="card">
-  {% if not has_spend_data %}
-  <p class="muted" style="margin-top:0">
-    Ainda não há dados de investimento conectados — as colunas de custo aparecem vazias.
-    A estrutura já está pronta pra receber (tabela <code>campaign_spend</code>, endpoint <code>/admin/import-spend</code>);
-    falta só decidir a fonte (Windsor.ai, API do Meta/Google Ads, ou importação manual) e conectar.
-  </p>
+  {% set t = traffic.total %}
+  {% if traffic.has_spend %}
+  <div class="traffic-kpis">
+    <div><span>Investimento</span><b>{{ money(t.spend) }}</b></div>
+    <div><span>Leads de anúncio</span><b>{{ t.leads }}</b></div>
+    <div><span>Custo por lead</span><b>{{ money(t.cpl, True) if t.cpl else "—" }}</b></div>
+    <div><span>Vendas</span><b>{{ t.won }}</b></div>
+    <div><span>Custo por venda (CAC)</span><b>{{ money(t.cac, True) if t.cac else "—" }}</b></div>
+    <div><span>Faturamento</span><b>{{ money(t.revenue) }}</b></div>
+    <div><span>Retorno (ROAS)</span><b class="{{ 'roas-good' if t.roas and t.roas >= 1 else 'roas-bad' }}">{{ ("%.1fx"|format(t.roas)).replace(".", ",") if t.roas is not none else "—" }}</b></div>
+  </div>
+  <p class="muted traffic-note">Clique numa campanha pra ver os conjuntos e anúncios. ROAS = faturamento ÷ investimento (2,0x = cada R$ 1 investido virou R$ 2 em vendas). Gasto atualizado do Meta a cada 3h.{% if seller %} <b>Atenção:</b> com vendedor filtrado, leads e vendas são só dele, mas o investimento é o da campanha inteira.{% endif %}</p>
+  {% else %}
+  <p class="muted" style="margin-top:0">O investimento ainda não chegou do Meta. Ele é buscado sozinho a cada 3h (na 1ª vez, os últimos 90 dias). Enquanto isso, a tabela mostra leads e vendas de cada campanha.</p>
   {% endif %}
   <div style="overflow-x:auto;">
-  <table class="table-simple">
+  <table class="table-simple traffic-table">
     <thead><tr>
-      <th>Plataforma</th><th>Campanha</th><th>Conjunto/Termo</th><th>Anúncio</th>
-      <th>Leads</th><th>Qualificados</th><th>Vendas</th><th>Faturamento</th>
-      <th>Gasto</th><th>CPL</th><th>Custo/Qualificado</th><th>CAC</th><th>Ticket médio</th>
+      <th>Campanha</th><th class="num">Investido</th><th class="num">Leads</th><th class="num">CPL</th><th class="num">Qualif.</th>
+      <th class="num">Custo/qualif.</th><th class="num">Vendas</th><th class="num">CAC</th><th class="num">Faturamento</th>
+      <th class="num">Ticket médio</th><th class="num">ROAS</th>
     </tr></thead>
-    <tbody>
-      {% for r in traffic_rows %}
-      <tr>
-        <td>{{ r.platform }}</td>
-        <td>{{ r.campaign }}</td>
-        <td class="muted">{{ r.adset or "—" }}</td>
-        <td class="muted">{{ r.ad or "—" }}</td>
-        <td>{{ r.leads }}</td>
-        <td>{{ r.qualified }}</td>
-        <td>{{ r.won }}</td>
-        <td>R$ {{ "%.0f"|format(r.revenue) }}</td>
-        <td>{{ "R$ %.2f"|format(r.spend) if r.spend else "—" }}</td>
-        <td>{{ "R$ %.2f"|format(r.cpl) if r.cpl else "—" }}</td>
-        <td>{{ "R$ %.2f"|format(r.cost_per_qualified) if r.cost_per_qualified else "—" }}</td>
-        <td>{{ "R$ %.2f"|format(r.cac) if r.cac else "—" }}</td>
-        <td>{{ "R$ %.2f"|format(r.ticket_medio) if r.ticket_medio else "—" }}</td>
+    {% for c in traffic.campaigns %}
+    <tbody class="traffic-camp">
+      <tr class="camp-row" tabindex="0" title="Ver conjuntos e anúncios">
+        <td><span class="caret">▸</span> <span class="plat">{{ c.platform }}</span> {{ c.name }}{% if c.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&{{ period_qs }}">ver {{ c.leads }} leads →</a>{% endif %}</td>
+        {{ traffic_cells(c) }}
       </tr>
-      {% else %}
-      <tr><td colspan="13" class="muted">Sem campanhas identificadas ainda (aparece assim que leads de anúncio começarem a chegar).</td></tr>
+      {% for a in c.children %}
+      <tr class="adset-row" hidden>
+        <td><span class="lvl">Conjunto</span> {{ a.name }}{% if a.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&s={{ a.key|urlencode }}&{{ period_qs }}">ver leads →</a>{% endif %}</td>
+        {{ traffic_cells(a) }}
+      </tr>
+      {% for ad in a.children %}
+      <tr class="ad-row" hidden>
+        <td><span class="lvl">Anúncio</span> {{ ad.name }}{% if ad.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&s={{ a.key|urlencode }}&a={{ ad.key|urlencode }}&{{ period_qs }}">ver leads →</a>{% endif %}</td>
+        {{ traffic_cells(ad) }}
+      </tr>
+      {% endfor %}
       {% endfor %}
     </tbody>
+    {% else %}
+    <tbody><tr><td colspan="11" class="muted">Sem campanhas no período (aparece assim que leads de anúncio chegarem ou o investimento for buscado).</td></tr></tbody>
+    {% endfor %}
   </table>
   </div>
+  {% if user.role == "admin" %}
+  <details class="traffic-accounts">
+    <summary class="muted">⚙ Contas de anúncio do Meta deste cliente: {{ meta_accounts or "detectando pelos anúncios dos leads…" }}</summary>
+    <form method="post" action="/dashboard/meta-contas">
+      <input name="contas" value="{{ meta_accounts }}" placeholder="ex: 1234567890 (vários separados por vírgula)">
+      <button class="btn small" type="submit">Salvar e buscar o investimento agora</button>
+      <div class="muted">Normalmente é detectado sozinho. Só mexa se faltar alguma conta (o número fica no Gerenciador de Anúncios, ao lado do nome da conta).</div>
+    </form>
+  </details>
+  {% endif %}
 </div>
+<script>
+document.querySelectorAll(".traffic-camp .camp-row").forEach(function (row) {
+  function toggle() {
+    var body = row.parentNode, open = !body.classList.contains("open");
+    body.classList.toggle("open", open);
+    body.querySelectorAll(".adset-row, .ad-row").forEach(function (r) { r.hidden = !open; });
+  }
+  row.addEventListener("click", function (e) { if (!e.target.closest("a")) toggle(); });
+  row.addEventListener("keydown", function (e) { if (e.key === "Enter") toggle(); });
+});
+</script>
 
 <div class="section-title" id="leads"><h3 style="margin:0">{{ "Vendas que formam a receita" if card == "receita" else "Leads" }} ({{ table_leads|length }}){% if card == "receita" %} · R$ {{ "{:,.0f}".format(table_leads|sum(attribute="deal_value")).replace(",", ".") }}{% endif %}</h3></div>
 <div class="card">

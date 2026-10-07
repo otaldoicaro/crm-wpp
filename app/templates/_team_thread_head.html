@@ -7,6 +7,16 @@
   <b>{{ lead.name or lead.phone }}</b>{% if lead.tag %} <span class="tag-badge {{ lead.tag }}">{{ "Cliente" if lead.tag == "cliente" else "Outro" }}</span>{% endif %}
   <div class="muted">{{ lead.phone }}</div>
   {{ m.tempo_atendimento(lead, closed=closed) }}
+  {% if stages %}
+  <form class="mini-stage" data-lead="{{ lead.id }}">
+    <select name="stage_id" aria-label="Etapa do funil">
+      {% for st in stages %}<option value="{{ st.id }}" data-won="{{ 1 if st.is_won else 0 }}" {{ "selected" if lead.stage_id == st.id }}>{{ st.name }}</option>{% endfor %}
+    </select>
+    <input name="deal_value" inputmode="decimal" placeholder="R$ valor" value="{{ ('%.2f'|format(lead.deal_value)).replace('.', ',') if lead.deal_value else '' }}">
+    <button class="btn small" type="submit" hidden>Salvar</button>
+    <span class="muted mini-stage-status"></span>
+  </form>
+  {% endif %}
   <div class="thread-actions">
     {% if can_settle %}<button type="button" class="btn ghost small team-settle" data-lead="{{ lead.id }}" title="O cliente só agradeceu / o assunto acabou: não precisa responder">✓ Encerrar atendimento</button>{% endif %}
     {% if transfer_people %}

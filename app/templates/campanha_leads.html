@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Leads da campanha{% endblock %}
+{% block content %}
+{% macro money(v) -%}R$ {{ "{:,.0f}".format(v).replace(",", ".") }}{%- endmacro %}
+<div class="kanban-toolbar">
+  <div>
+    <div class="muted camp-trail">{% for n in trail %}{{ ["Campanha", "Conjunto", "Anúncio"][loop.index0] }}: <b>{{ n.name }}</b>{% if not loop.last %} › {% endif %}{% endfor %}</div>
+    <h2 style="margin:4px 0 0">{{ node.leads }} leads · {{ node.qualified }} qualificados · {{ node.won }} vendas{% if node.revenue %} · {{ money(node.revenue) }}{% endif %}</h2>
+    <span class="muted">{% if node.spend %}Investido {{ money(node.spend) }}{% if node.cpl %} · CPL R$ {{ ("%.2f"|format(node.cpl)).replace(".", ",") }}{% endif %}{% if node.cac %} · CAC R$ {{ ("%.2f"|format(node.cac)).replace(".", ",") }}{% endif %}{% if node.roas is not none %} · ROAS {{ ("%.1fx"|format(node.roas)).replace(".", ",") }}{% endif %} · {% endif %}Clique num lead pra ler a conversa e ver se ele é qualificado de verdade.</span>
+  </div>
+  <a class="btn ghost small" href="{{ back }}">← Voltar pro Dashboard</a>
+</div>
+
+<div class="tipo-chips camp-stage-chips">
+  <button type="button" class="pill pill-on" data-stage="">Todas ({{ leads|length }})</button>
+  {% for st in stages %}{% if stage_counts[st.id] %}<button type="button" class="pill" data-stage="{{ st.id }}">{{ st.name }} ({{ stage_counts[st.id] }})</button>{% endif %}{% endfor %}
+</div>
+
+<div class="camp-layout">
+  <div class="card camp-list" id="campList">
+    {% for lead in leads %}
+    {% set st = stage_by_id.get(lead.stage_id) %}
+    <a class="inbox-list-item" href="/inbox/{{ lead.id }}" data-lead="{{ lead.id }}" data-stage="{{ lead.stage_id }}" data-name="{{ lead.name or '' }}">
+      {{ m.avatar(lead) }}
+      <div class="inbox-list-item-body">
+        <div class="row1"><span class="name">{{ lead.name or lead.phone }}</span><span class="time">{{ lead.created_at|hora("%d/%m %H:%M") }}</span></div>
+        <div class="row2">
+          <span class="stage-pill {{ 'won' if st and st.is_won else ('lost' if st and st.is_lost else '') }}">{{ st.name if st else "—" }}</span>
+          {% if lead.deal_value and st and st.is_won %}<b class="camp-value">{{ money(lead.deal_value) }}</b>{% endif %}
+          <span class="muted camp-seller">{{ lead.assigned_user.name if lead.assigned_user else "sem vendedor" }}</span>
+        </div>
+        {{ m.tempo_atendimento(lead, closed=st and (st.is_won or st.is_lost)) }}
+      </div>
+    </a>
+    {% else %}
+    <p class="muted" style="padding:16px">Nenhum lead.</p>
+    {% endfor %}
+  </div>
+  <div class="card camp-thread" id="campThread">
+    <div class="inbox-empty" id="campEmpty">Selecione um lead à esquerda pra ver a conversa</div>
+    <div class="team-thread-head" id="campHead" hidden></div>
+    <div class="inbox-messages team-thread-msgs" id="campMsgs" hidden></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var list = document.getElementById("campList"), head = document.getElementById("campHead"), msgs = document.getElementById("campMsgs");
+  var current = null, sig = "";
+  function load(lead, force) {
+    var url = "/inbox-equipe/conversa/" + lead + (!force && sig ? "?ms=" + encodeURIComponent(sig) : "");
+    return fetch(url, { headers: { accept: "application/json" } })
+      .then(function (r) {
+        if (r.status === 403) return { denied: true };
+        return r.ok ? r.json() : null;
+      })
+      .then(function (d) {
+        if (!d || current !== lead || d.changed === false) return;
+        document.getElementById("campEmpty").hidden = !d.denied;
+        if (d.denied) { document.getElementById("campEmpty").textContent = "Essa conversa é de outro vendedor."; head.hidden = msgs.hidden = true; return; }
+        head.hidden = msgs.hidden = false;
+        head.innerHTML = d.head;
+        var back = head.querySelector(".team-back"); if (back) back.remove();
+        msgs.innerHTML = d.html;
+        if (force) msgs.scrollTop = msgs.scrollHeight;
+        sig = d.sig;
+      });
+  }
+  list.addEventListener("click", function (e) {
+    var item = e.target.closest(".inbox-list-item");
+    if (!item || e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    list.querySelectorAll(".inbox-list-item.active").forEach(function (i) { i.classList.remove("active"); });
+    item.classList.add("active");
+    current = item.dataset.lead; sig = "";
+    msgs.innerHTML = '<p class="muted" style="padding:12px">Carregando…</p>';
+    load(current, true);
+    if (window.innerWidth < 900) document.getElementById("campThread").scrollIntoView({ behavior: "smooth" });
+  });
+  // ✓ encerrar / ↪ passar (mesmos botões da visão da equipe)
+  head.addEventListener("click", function (e) {
+    var btn = e.target.closest(".team-settle"); if (!btn) return;
+    fetch("/leads/" + btn.dataset.lead + "/encerrar", { method: "POST", body: new URLSearchParams({ ajax: "1" }) }).then(function () { load(current, true); });
+  });
+  head.addEventListener("change", function (e) {
+    var sel = e.target.closest(".team-transfer"); if (!sel || !sel.value) return;
+    if (!confirm("Passar esta conversa para " + sel.options[sel.selectedIndex].text + " no CRM?")) { sel.value = ""; return; }
+    fetch("/leads/" + sel.dataset.lead + "/transferir", { method: "POST", body: new URLSearchParams({ para: sel.value, ajax: "1" }) }).then(function () { load(current, true); });
+  });
+  setInterval(function () { if (current && !document.hidden) load(current, false); }, 5000);
+  // mudou a etapa na conversa: atualiza o selo do lead na lista
+  document.addEventListener("lead-stage-saved", function (e) {
+    var item = list.querySelector('.inbox-list-item[data-lead="' + e.detail.lead + '"]'); if (!item) return;
+    item.dataset.stage = e.detail.stage;
+    var pill = item.querySelector(".stage-pill"); pill.textContent = e.detail.name; pill.className = "stage-pill";
+  });
+  // filtro por etapa
+  document.querySelectorAll(".camp-stage-chips .pill").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      document.querySelectorAll(".camp-stage-chips .pill").forEach(function (c) { c.classList.toggle("pill-on", c === chip); });
+      list.querySelectorAll(".inbox-list-item").forEach(function (i) { i.hidden = chip.dataset.stage && i.dataset.stage !== chip.dataset.stage; });
+    });
+  });
+})();
+</script>
+<script src="/static/stage-mini.js?v={{ asset_version }}"></script>
+{% endblock %}

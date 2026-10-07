@@ -8,7 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
 
 from app.db import SessionLocal, sync_indexes, sync_schema
-from app.services import archiver, media_store, response_times
+from app.services import archiver, media_store, meta_spend, response_times
 from app.routers import (
     admin_setup,
     auth_router,
@@ -31,6 +31,7 @@ sync_schema()
 sync_indexes()
 media_store.setup()
 archiver.schedule()
+meta_spend.schedule()  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)
 webhooks_evolution.clean_legacy_placeholders()
 with SessionLocal() as _db:
     response_times.backfill(_db)

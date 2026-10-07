@@ -41,6 +41,9 @@ class Tenant(Base):
     theme: Mapped[str] = mapped_column(String(40), default="junta")
     # segredo do link de convite (/convite/{token}) pra vendedor criar o próprio login; vazio = sem link
     invite_token: Mapped[str] = mapped_column(String(40), default="", index=True)
+    # contas de anúncio do Meta deste cliente ("123,456", sem o act_): descobertas sozinhas pelos
+    # anúncios dos leads, ou preenchidas no Dashboard. Os gastos são buscados dessas contas.
+    meta_ad_accounts: Mapped[str] = mapped_column(String(300), default="")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     users: Mapped[list["User"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
@@ -345,6 +348,11 @@ class CampaignSpend(Base):
     impressions: Mapped[int] = mapped_column(Integer, default=0)
     clicks: Mapped[int] = mapped_column(Integer, default=0)
     source: Mapped[str] = mapped_column(String(40), default="manual")  # manual | windsor_ai | meta_api | google_ads_api
+    # ids do Meta (vazios em importação manual): o lead de anúncio traz o ad_id, então o gasto
+    # casa com o lead pelo id mesmo se a campanha for renomeada
+    campaign_id: Mapped[str] = mapped_column(String(40), default="", index=True)
+    adset_id: Mapped[str] = mapped_column(String(40), default="")
+    ad_id: Mapped[str] = mapped_column(String(40), default="", index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
 

@@ -43,4 +43,12 @@ if not contas: print('  (nenhuma! atribua a conta de anúncios ao usuário do si
 ok, sem = backfill_campaign_names()
 print(f'Leads atualizados com nome de campanha: {ok}' + (f' | sem acesso ao anúncio: {sem}' if sem else ''))
 " || fail "token inválido ou sem permissão ads_read"
+
+say "Buscando o investimento dos anúncios (últimos 90 dias; pode levar 1 minuto)"
+docker exec crm-app python -c "
+from app.services import meta_spend
+for cliente, linhas in meta_spend.sync_all(days=meta_spend.FIRST_SYNC_DAYS).items():
+    print('  -', cliente, '->', (str(linhas) + ' linhas de gasto') if isinstance(linhas, int) else linhas)
+print('Depois disso o CRM atualiza sozinho a cada 3h.')
+"
 say "Pronto!"

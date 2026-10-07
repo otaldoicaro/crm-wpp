@@ -3,6 +3,7 @@ import datetime
 import os
 import re
 import threading
+from urllib.parse import urlencode
 import time
 from typing import Optional
 
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app.services import evolution_client, inbox_state, media_store, messaging, response_times
+from app.services import evolution_client, inbox_state, media_store, messaging, meta_spend, response_times, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -364,6 +365,81 @@ def change_stage(
     if ajax:
         return JSONResponse({"ok": True})
     return RedirectResponse(url="/", status_code=302)
+
+
+@router.get("/dashboard/campanha", response_class=HTMLResponse)
+def campaign_leads(
+    request: Request,
+    c: str = "",
+    s: str = "",
+    a: str = "",
+    date_range: str = "30d",
+    date_from: str = "",
+    date_to: str = "",
+    seller: str = "",
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Os leads de uma campanha (ou conjunto/anúncio) do Dashboard, com a etapa de cada um;
+    clicando, a conversa abre do lado pra ver se o lead é qualificado de verdade."""
+    stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
+    range_from, range_to = _period_bounds(date_range, date_from, date_to)
+    query = db.query(Lead).filter(
+        Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag != "outro", Lead.is_group.is_(False)
+    )
+    if range_from:
+        query = query.filter(Lead.created_at >= range_from)
+    if range_to:
+        query = query.filter(Lead.created_at <= range_to)
+    if seller:
+        query = query.filter(Lead.assigned_user_id == seller)
+    leads = query.options(*LEAD_CARD_LOAD).all()
+    tree = traffic.build(
+        db, tenant.id, leads,
+        to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
+        {st.id for st in stages if st.conversion_event_name or st.is_won}, {st.id for st in stages if st.is_won},
+    )
+    trail = traffic.find(tree, c, s, a)
+    if trail is None:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada nesse período")
+    node = trail[-1]
+    wanted = set(node["lead_ids"])
+    chosen = sorted((lead for lead in leads if lead.id in wanted), key=lambda lead: lead.created_at, reverse=True)
+    stage_by_id = {st.id: st for st in stages}
+    return templates.TemplateResponse(
+        request,
+        "campanha_leads.html",
+        {
+            "tenant": tenant,
+            "user": user,
+            "active_nav": "dashboard",
+            "trail": trail,
+            "node": node,
+            "leads": chosen,
+            "stages": stages,
+            "stage_by_id": stage_by_id,
+            "stage_counts": {st.id: sum(1 for lead in chosen if lead.stage_id == st.id) for st in stages},
+            "back": "/dashboard?" + urlencode({"date_range": date_range, "date_from": date_from, "date_to": date_to, "seller": seller}) + "#trafego",
+        },
+    )
+
+
+@router.post("/dashboard/meta-contas")
+def set_meta_accounts(
+    contas: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Contas de anúncio do Meta deste cliente (normalmente detectadas sozinhas)."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403)
+    ids = [p for p in re.split(r"[\s,;]+", contas.replace("act_", "")) if p.isdigit()]
+    tenant.meta_ad_accounts = ",".join(dict.fromkeys(ids))
+    db.commit()
+    threading.Thread(target=meta_spend.sync_all, kwargs={"days": meta_spend.FIRST_SYNC_DAYS}, daemon=True).start()
+    return RedirectResponse(url="/dashboard?salvo=1#trafego", status_code=302)
 
 
 @router.get("/inbox", response_class=HTMLResponse)
@@ -1039,8 +1115,11 @@ def team_thread(
     user: User = Depends(current_user_required),
 ):
     """Conversa aberta dentro de uma coluna da visão da equipe. Com `ms` (assinatura
-    que a coluna já tem) só desenha de novo se chegou/saiu mensagem."""
-    if user.role != "admin":
+    que a coluna já tem) só desenha de novo se chegou/saiu mensagem. Também usada na
+    tela "leads da campanha" (aí o vendedor pode abrir as conversas dos leads dele)."""
+    if user.role != "admin" and not db.query(Lead.id).filter(
+        Lead.id == lead_id, Lead.tenant_id == tenant.id, Lead.assigned_user_id == user.id
+    ).first():
         raise HTTPException(status_code=403)
     current = _msg_sig(db, lead_id)
     if ms and current == ms:
@@ -1055,6 +1134,7 @@ def team_thread(
         "lead": lead, "closed": closed, "truncated": len(lead.all_messages) > TEAM_THREAD_LAST,
         "can_settle": not lead.is_group and bool(response_times.waiting_since(lead)),
         "transfer_people": [] if lead.is_group else _transfer_options(db, tenant, lead),
+        "stages": [] if lead.is_group else db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all(),
     })
     body = templates.get_template("_inbox_messages.html").render({"messages": messages})
     return JSONResponse({"sig": current, "head": head, "html": body})
@@ -1502,63 +1582,13 @@ def dashboard_view(
         table_leads = sorted(table_leads, key=lambda lead: lead.created_at, reverse=True)[:150]
     stage_by_id = {s.id: s for s in stages}
 
-    # ---- tráfego: cruza leads (por campanha/conjunto/anúncio) com gasto importado ----
+    # ---- tráfego: gasto dos anúncios x leads e vendas, por campanha > conjunto > anúncio ----
     qualified_stage_ids = {s.id for s in stages if s.conversion_event_name or s.is_won}
-    spend_query = db.query(CampaignSpend).filter(CampaignSpend.tenant_id == tenant.id)
-    if range_from:
-        spend_query = spend_query.filter(CampaignSpend.date >= range_from.date())
-    if range_to:
-        spend_query = spend_query.filter(CampaignSpend.date <= range_to.date())
-    spend_rows = spend_query.all()
-    spend_by_key: dict[tuple, float] = {}
-    for row in spend_rows:
-        key = (row.platform, row.campaign, row.adset, row.ad)
-        spend_by_key[key] = spend_by_key.get(key, 0.0) + row.spend
-    has_spend_data = bool(spend_rows)
-
-    traffic_groups: dict[tuple, dict] = {}
-    for lead in leads:
-        platform = resolve_platform(lead.attribution)
-        campaign = lead.attribution.utm_campaign if lead.attribution else ""
-        adset = lead.attribution.utm_term if lead.attribution else ""
-        ad = lead.attribution.utm_content if lead.attribution else ""
-        if not campaign:
-            continue
-        key = (platform, campaign, adset, ad)
-        g = traffic_groups.setdefault(
-            key,
-            {
-                "platform": PLATFORM_LABEL[platform],
-                "campaign": campaign,
-                "adset": adset,
-                "ad": ad,
-                "leads": 0,
-                "qualified": 0,
-                "won": 0,
-                "revenue": 0.0,
-            },
-        )
-        g["leads"] += 1
-        if lead.stage_id in qualified_stage_ids:
-            g["qualified"] += 1
-        if lead.stage_id in won_stage_ids:
-            g["won"] += 1
-            g["revenue"] += lead.deal_value or 0
-
-    traffic_rows = []
-    for key, g in traffic_groups.items():
-        spend = spend_by_key.get(key, 0.0)
-        traffic_rows.append(
-            {
-                **g,
-                "spend": spend,
-                "cpl": (spend / g["leads"]) if g["leads"] else None,
-                "cost_per_qualified": (spend / g["qualified"]) if g["qualified"] else None,
-                "cac": (spend / g["won"]) if g["won"] else None,
-                "ticket_medio": (g["revenue"] / g["won"]) if g["won"] else None,
-            }
-        )
-    traffic_rows.sort(key=lambda r: r["leads"], reverse=True)
+    traffic_data = traffic.build(
+        db, tenant.id, leads,
+        to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
+        qualified_stage_ids, set(won_stage_ids),
+    )
 
     return templates.TemplateResponse(
         request,
@@ -1594,7 +1624,7 @@ def dashboard_view(
             "seller_rows": seller_rows,
             "rt_box": rt_box,
             "unassigned": unassigned,
-            "traffic_rows": traffic_rows,
-            "has_spend_data": has_spend_data,
+            "traffic": traffic_data,
+            "meta_accounts": tenant.meta_ad_accounts,
         },
     )
