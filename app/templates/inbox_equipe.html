@@ -28,6 +28,9 @@
 
 {% if columns %}
 <div class="team-toolbar">
+  <select id="teamOrder" class="inbox-order" aria-label="Ordem das conversas">
+    {% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if ordem == key }}>↕ {{ label }}</option>{% endfor %}
+  </select>
   <label class="team-search">🔍
     <input type="search" id="teamSearch" value="{{ busca }}" placeholder="Buscar nome ou telefone em todas as colunas..." autocomplete="off">
   </label>
@@ -94,9 +97,10 @@
   grid.querySelectorAll(".pend-toggle.on").forEach(function (b) { pending[b.dataset.seller] = b.dataset.mode; });
   function pendingQs() { return "&pset=1" + Object.keys(pending).map(function (s) { return "&p=" + encodeURIComponent(s + ":" + pending[s]); }).join(""); }
   // lupa, "Não lidas" e "Ver mais" de cada coluna
-  var busca = {{ busca|tojson }}, limits = {};
+  var busca = {{ busca|tojson }}, limits = {}, ordem = {{ ordem|tojson }};
+  document.getElementById("teamOrder").addEventListener("change", function (e) { ordem = e.target.value; applyFilters(); });
   function filterQs() {
-    return "&q=" + encodeURIComponent(busca) +
+    return "&q=" + encodeURIComponent(busca) + "&ordem=" + encodeURIComponent(ordem) +
       Object.keys(limits).map(function (s) { return "&m=" + encodeURIComponent(s + ":" + limits[s]); }).join("");
   }
   function applyFilters() {
@@ -106,7 +110,7 @@
   }
   function syncUrl() {  // recarregar a página mantém a busca e os filtros das colunas
     try {
-      history.replaceState(null, "", "/inbox-equipe?" + qs + pendingQs() + "&q=" + encodeURIComponent(busca));
+      history.replaceState(null, "", "/inbox-equipe?" + qs + pendingQs() + "&q=" + encodeURIComponent(busca) + "&ordem=" + encodeURIComponent(ordem));
     } catch (err) {}
   }
   var searchTimer, searchEl = document.getElementById("teamSearch");

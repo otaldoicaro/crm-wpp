@@ -898,7 +898,7 @@ def _inbox_context(
             .all()
             if user.role == "admin"
             else [],
-            "filter_sellers": team_members(db, tenant.id) if user.role == "admin" else [],
+            "filter_sellers": [p for p in team_members(db, tenant.id) if p.role == "agent"] if user.role == "admin" else [],
             "has_removed": bool(removed_ids) if user.role == "admin" else False,
             "msg_sig": _msg_sig(db, selected_lead.id) if selected_lead else "0",
             "tenant": tenant,
@@ -960,8 +960,10 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
         etapa = ""
     ordem = qp.get("ordem", saved[4]) if qp.get("ordem", saved[4]) in dict(ORDER_LABELS) else "recentes"
     # filtro lembrado de um vendedor/número que foi excluído depois: volta pra "todos"
-    if vendedor not in ("", "sem", "removidos") and not db.query(User.id).filter(User.id == vendedor, User.tenant_id == tenant.id).first():
-        vendedor = ""
+    if vendedor not in ("", "sem", "removidos") and not db.query(User.id).filter(
+        User.id == vendedor, User.tenant_id == tenant.id, User.role == "agent"
+    ).first():
+        vendedor = ""  # vendedor excluído, ou um admin (o filtro mostra só vendedores)
     if numero and not db.query(WhatsAppNumber.id).filter(WhatsAppNumber.id == numero, WhatsAppNumber.tenant_id == tenant.id).first():
         numero = ""
     inbox_state.ensure_baseline(db, user)
@@ -1317,7 +1319,7 @@ def _pending_only(query, mode: str = "pend"):
 
 def _team_columns(
     db: Session, tenant: Tenant, user: User, seller_ids: list, modes: Optional[dict] = None, busca: str = "",
-    limits: Optional[dict] = None,
+    limits: Optional[dict] = None, ordem: str = "recentes",
 ) -> list:
     """Colunas da visão da equipe. `modes` = filtro de cada coluna (ver TEAM_MODES); `busca`
     filtra todas as listas; `limits` = quantas conversas cada coluna mostra ("Ver mais")."""
@@ -1343,7 +1345,7 @@ def _team_columns(
         limit = limits.get(seller_id, TEAM_VIEW_PER_COLUMN)
         convs = _first_per_lead(
             list_query.options(joinedload(Conversation.lead))
-            .order_by(Conversation.last_message_at.desc())
+            .order_by(*_inbox_order(ordem))
             .limit(limit * 2),
             limit,
         )
@@ -1452,7 +1454,8 @@ def team_inbox(
     selected = _team_selection(request)
     pending = _team_pending(request)
     busca, limits = _team_filters(request)
-    columns = _team_columns(db, tenant, user, selected, pending, busca, limits)
+    ordem = _order_choice(request, "equipe_ordem")
+    columns = _team_columns(db, tenant, user, selected, pending, busca, limits, ordem)
     response = templates.TemplateResponse(
         request,
         "inbox_equipe.html",
@@ -1467,11 +1470,14 @@ def team_inbox(
             "max": TEAM_VIEW_MAX,
             "busca": busca,
             "per_column": TEAM_VIEW_PER_COLUMN,
+            "ordem": ordem,
+            "order_labels": ORDER_LABELS,
             "quick_replies": replies_for_js(db, tenant, user),
         },
     )
     response.set_cookie(TEAM_VIEW_COOKIE, ",".join(selected), httponly=True, samesite="lax")
     response.set_cookie(TEAM_PENDING_COOKIE, _modes_cookie(pending), httponly=True, samesite="lax")
+    response.set_cookie("equipe_ordem", ordem, httponly=True, samesite="lax")
     return response
 
 
@@ -1528,8 +1534,9 @@ def team_inbox_refresh(
     if current == sig:
         return JSONResponse({"changed": False})
     busca, limits = _team_filters(request)
+    ordem = _order_choice(request, "equipe_ordem")
     html = templates.get_template("_inbox_equipe_cols.html").render(
-        {"columns": _team_columns(db, tenant, user, selected, pending, busca, limits), "request": request}
+        {"columns": _team_columns(db, tenant, user, selected, pending, busca, limits, ordem), "request": request}
     )
     response = JSONResponse({"sig": current, "html": html})
     response.set_cookie(TEAM_PENDING_COOKIE, _modes_cookie(pending), httponly=True, samesite="lax")

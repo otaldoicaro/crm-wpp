@@ -59,6 +59,7 @@
   {% endif %}
 </div>
 
+<div class="team-scroll-hint muted" id="pipeScrollHint" hidden>↔ Role pro lado (ou Shift + rodinha do mouse) pra ver as outras etapas</div>
 <div class="kanban" data-keep-scroll="quadro">
   {% for stage in stages %}
   <div class="kanban-col" data-stage-id="{{ stage.id }}" data-auto="{{ 1 if auto_stage(stage) else 0 }}" data-lost="{{ 1 if stage.is_lost else 0 }}" id="col-{{ stage.id }}">
@@ -100,6 +101,29 @@
   {% endfor %}
 </div>
 
+<script>
+// colunas se ajustam à tela (igual à visão da equipe): cabem quantas der com no mínimo 250px,
+// esticam pra preencher a largura e vão até o fim da tela; barra pro lado só se não couber.
+(function () {
+  var board = document.querySelector(".kanban"); if (!board) return;
+  var hint = document.getElementById("pipeScrollHint");
+  var MIN_COL = 250, GAP = 14;
+  function fit() {
+    var total = board.querySelectorAll(".kanban-col").length || 1;
+    var width = board.clientWidth;
+    var perScreen = Math.max(1, Math.min(total, Math.floor((width + GAP) / (MIN_COL + GAP))));
+    board.style.setProperty("--colw", Math.floor((width - GAP * (perScreen - 1)) / perScreen) + "px");
+    hint.hidden = total <= perScreen;  // antes de medir a altura (o aviso ocupa espaço)
+    var top = board.getBoundingClientRect().top + window.scrollY;
+    var bottom = parseFloat(getComputedStyle(board).paddingBottom) + parseFloat(getComputedStyle(document.querySelector("main") || document.body).paddingBottom || 0);
+    board.style.setProperty("--colh", Math.max(380, window.innerHeight - top - bottom - 20) + "px");
+  }
+  var timer;
+  window.addEventListener("resize", function () { clearTimeout(timer); timer = setTimeout(fit, 80); });
+  fit();
+  window.addEventListener("load", fit);
+})();
+</script>
 <script>
 (function () {
   let draggedId = null;

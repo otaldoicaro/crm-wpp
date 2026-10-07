@@ -661,3 +661,7 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .search-snippet { font-size: .84rem; }
 .search-snippet mark { background: var(--y); color: var(--ink); border-radius: 3px; padding: 0 2px; }
 .msg-found { outline: 3px solid var(--y); outline-offset: 2px; }
+/* Pipeline ocupando a tela: largura/altura calculadas no pipeline.html (--colw / --colh) */
+.kanban { align-items: stretch; }
+.kanban .kanban-col { min-width: var(--colw, 270px); max-width: var(--colw, 270px); height: var(--colh, calc(100vh - 190px)); max-height: none; }
+.kanban .kanban-cards { flex: 1; min-height: 0; }
