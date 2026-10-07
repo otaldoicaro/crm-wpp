@@ -148,6 +148,25 @@ def load(key: str) -> tuple[Optional[bytes], Optional[str]]:
         return None, None  # expirou (retenção) ou armazenamento fora do ar
 
 
+def store_sent_copy(message_id: str, content: bytes, mime_type: str) -> None:
+    """Cópia de uma mídia que a equipe enviou. Roda depois da resposta (o vendedor não
+    espera o upload pro armazenamento pra ver a foto enviada)."""
+    key = save(message_id, content, mime_type)
+    if not key:
+        return
+    from app.db import SessionLocal
+    from app.models import Message
+
+    db = SessionLocal()
+    try:
+        message = db.get(Message, message_id)
+        if message is not None:
+            message.media_stored_key = key
+            db.commit()
+    finally:
+        db.close()
+
+
 def backup_message_media(message_id: str) -> None:
     """Baixa a mídia de uma mensagem recebida no WhatsApp e guarda a cópia.
     Roda em segundo plano depois do webhook responder (download pode demorar)."""

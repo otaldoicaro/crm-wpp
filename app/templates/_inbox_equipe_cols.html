@@ -4,8 +4,13 @@
   <div class="team-col-head">
     <div><b>{{ col.seller.name }}</b> <span class="role-badge {{ 'admin' if col.seller.role == 'admin' else 'agent' }}">{{ "Admin" if col.seller.role == "admin" else "Vendedor" }}</span></div>
     <div class="team-col-stats">
-      <button type="button" class="rt-tag pend-toggle {{ 'late' if col.waiting else '' }} {{ 'on' if col.pending_only }}" data-seller="{{ col.seller.id }}" title="{{ 'Mostrar todas as conversas' if col.pending_only else 'Mostrar só quem está aguardando resposta' }}">{{ "✕ " if col.pending_only }}⏳ {{ col.waiting }} aguardando resposta</button>
-      <button type="button" class="rt-tag unread-toggle {{ 'has' if col.unread_count }} {{ 'on' if col.unread_only }}" data-seller="{{ col.seller.id }}" title="{{ 'Mostrar todas as conversas' if col.unread_only else 'Mostrar só as conversas que você ainda não abriu' }}">{{ "✕ " if col.unread_only }}🟢 {{ col.unread_count }} não lidas</button>
+      {% for mode, icon, label, n, tip in (
+        ("pend", "⏳", "aguardando resposta", col.waiting, "Todas as conversas esperando resposta do vendedor"),
+        ("naovistas", "🙈", "não vistas", col.unseen, "Esperando resposta e o vendedor nem abriu a conversa (no CRM ou no celular)"),
+        ("vistas", "👀", "vistas sem resposta", col.seen_waiting, "O vendedor abriu/leu, mas ainda não respondeu"),
+      ) %}
+      <button type="button" class="rt-tag pend-toggle {{ 'late' if n and mode != 'vistas' else ('wait' if n else '') }} {{ 'on' if col.mode == mode }}" data-seller="{{ col.seller.id }}" data-mode="{{ mode }}" title="{{ 'Mostrar todas as conversas' if col.mode == mode else tip }}">{{ "✕ " if col.mode == mode }}{{ icon }} {{ n }} {{ label }}</button>
+      {% endfor %}
       <span class="rt-tag">💬 {{ col.today }} conversas hoje</span>
     </div>
   </div>
@@ -13,7 +18,7 @@
     {% for conv in col.convs %}
       {% set lead = conv.lead %}
       {% set n_unread = col.unread.get(lead.id) %}
-      <a class="inbox-list-item {{ 'unread' if n_unread is not none }}" href="/inbox/{{ lead.id }}?vendedor={{ col.seller.id }}&numero=" data-lead="{{ lead.id }}" data-unread="{{ 1 if n_unread is not none else 0 }}" data-tag="{{ lead.tag }}" data-fav="{{ 1 if lead.id in col.favorites else 0 }}" data-group="{{ 1 if lead.is_group else 0 }}">
+      <a class="inbox-list-item {{ 'unread' if n_unread is not none }}" href="/inbox/{{ lead.id }}?vendedor={{ col.seller.id }}&numero=" data-lead="{{ lead.id }}" data-unread="{{ 1 if n_unread is not none else 0 }}" data-tag="{{ lead.tag }}" data-fav="{{ 1 if lead.id in col.favorites else 0 }}" data-group="{{ 1 if lead.is_group else 0 }}" data-waiting="{{ 1 if not lead.is_group and rt.waiting_since(lead) else 0 }}">
         {{ m.avatar(lead) }}
         <div class="inbox-list-item-body">
           <div class="row1"><span class="name">{% if lead.is_group %}👥 {% endif %}{% if lead.id in col.favorites %}<span class="fav-star">★</span> {% endif %}{{ lead.name or lead.phone }}{% if lead.tag %} <span class="tag-badge {{ lead.tag }}">{{ "Cliente" if lead.tag == "cliente" else "Outro" }}</span>{% endif %}</span><span class="time">{{ conv.last_message_at|hora("%d/%m %H:%M") }}</span></div>
@@ -22,7 +27,7 @@
         </div>
       </a>
     {% else %}
-      <div class="kanban-empty" style="padding:20px">{% if col.busca %}Nada encontrado pra "{{ col.busca }}".{% elif col.unread_only %}✅ Nenhuma conversa não lida.{% elif col.pending_only %}✅ Ninguém aguardando resposta.{% else %}Sem conversas ainda.{% endif %}</div>
+      <div class="kanban-empty" style="padding:20px">{% if col.busca %}Nada encontrado pra "{{ col.busca }}".{% elif col.mode == "naovistas" %}✅ Nenhuma conversa esperando sem ser vista.{% elif col.mode == "vistas" %}✅ Nenhuma conversa vista e sem resposta.{% elif col.mode %}✅ Ninguém aguardando resposta.{% else %}Sem conversas ainda.{% endif %}</div>
     {% endfor %}
     {% if col.truncated %}
     <div class="list-more">

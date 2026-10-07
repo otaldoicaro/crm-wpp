@@ -7,5 +7,14 @@
   <b>{{ lead.name or lead.phone }}</b>{% if lead.tag %} <span class="tag-badge {{ lead.tag }}">{{ "Cliente" if lead.tag == "cliente" else "Outro" }}</span>{% endif %}
   <div class="muted">{{ lead.phone }}</div>
   {{ m.tempo_atendimento(lead, closed=closed) }}
+  <div class="thread-actions">
+    {% if can_settle %}<button type="button" class="btn ghost small team-settle" data-lead="{{ lead.id }}" title="O cliente só agradeceu / o assunto acabou: não precisa responder">✓ Encerrar atendimento</button>{% endif %}
+    {% if transfer_people %}
+    <select class="team-transfer" data-lead="{{ lead.id }}" aria-label="Transferir para outro vendedor">
+      <option value="">↪ Transferir para…</option>
+      {% for t in transfer_people %}<option value="{{ t.user.id }}" data-number="{{ t.number.label if t.number else '' }}">{{ t.user.name }}{{ " (Admin)" if t.user.role == "admin" }}</option>{% endfor %}
+    </select>
+    {% endif %}
+  </div>
   {% if truncated %}<div class="muted" style="font-size:.72rem">Mostrando as últimas mensagens — a conversa completa está no Inbox.</div>{% endif %}
 </div>

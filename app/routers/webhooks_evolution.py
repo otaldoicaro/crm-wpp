@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.config import EVOLUTION_WEBHOOK_TOKEN
 from app.db import SessionLocal
 from app.models import Conversation, Lead, Message, WhatsAppNumber
-from app.services import evolution_client
+from app.services import evolution_client, inbox_state, response_times
 from app.services.inbound import ingest_inbound, message_exists, record_outbound_from_phone
 from app.services.msgsecret import decrypt_edit, secret_b64, text_from_message, to_bytes
 from app.services.media_store import backup_message_media
@@ -191,11 +191,62 @@ async def receive_evolution_event(request: Request, background: BackgroundTasks)
     if EVOLUTION_WEBHOOK_TOKEN and request.query_params.get("token") != EVOLUTION_WEBHOOK_TOKEN:
         return JSONResponse({"ok": False}, status_code=403)
     payload = await request.json()
+    if _normalize_event(payload.get("event", "")) == "messages.update" and not _self_read_updates(payload.get("data")):
+        return JSONResponse({"ok": True})  # confirmações de entrega/leitura das NOSSAS mensagens: nada a fazer
     # o trabalho com banco roda numa thread separada: se rodasse aqui (no laço
     # principal), cada mensagem recebida travava o CRM inteiro enquanto o banco respondia
     for message_id in await run_in_threadpool(_process_event, payload):
         background.add_task(backup_message_media, message_id)
     return JSONResponse({"ok": True})
+
+
+READ_STATUSES = {"READ", "PLAYED"}
+
+
+def _self_read_updates(data) -> list:
+    """Leituras feitas pelo próprio vendedor (abriu a conversa no celular): status READ
+    numa mensagem que o CLIENTE mandou. O resto (entregue/lido pelo cliente) é ignorado."""
+    items = data if isinstance(data, list) else [data or {}]
+    return [
+        i for i in items
+        if isinstance(i, dict) and not i.get("fromMe") and i.get("status") in READ_STATUSES
+        and i.get("keyId") and not str(i.get("remoteJid", "")).endswith("@g.us")
+    ]
+
+
+def _apply_self_reads(db: Session, number: WhatsAppNumber, data) -> None:
+    """Marca "visto pelo vendedor" nos leads cujas mensagens ele leu no celular."""
+    for item in _self_read_updates(data):
+        message = db.query(Message).filter(Message.wa_message_id == item["keyId"], Message.direction == "in").first()
+        if message is None:
+            continue
+        conversation = db.get(Conversation, message.conversation_id)
+        lead = db.get(Lead, conversation.lead_id) if conversation and conversation.tenant_id == number.tenant_id else None
+        if lead is None:
+            continue
+        # leu a última mensagem do cliente: visto agora; leu uma antiga: visto até ela
+        newest = lead.last_inbound_at is None or message.created_at >= lead.last_inbound_at - datetime.timedelta(seconds=5)
+        inbox_state.mark_seen_by_seller(lead, datetime.datetime.utcnow() if newest else message.created_at)
+    db.commit()
+
+
+def _apply_reaction(db: Session, number: WhatsAppNumber, item: dict) -> bool:
+    """Vendedor reagiu (👍, 🙏...) pelo celular a uma mensagem do cliente: conta como
+    "atendimento encerrado" — o cliente só agradeceu, não precisa de resposta em texto."""
+    reaction = (item.get("message") or {}).get("reactionMessage")
+    if not reaction:
+        return False
+    if (item.get("key") or {}).get("fromMe") and reaction.get("text"):
+        target = (reaction.get("key") or {}).get("id", "")
+        message = db.query(Message).filter(Message.wa_message_id == target).first() if target else None
+        conversation = db.get(Conversation, message.conversation_id) if message else None
+        if conversation and conversation.tenant_id == number.tenant_id:
+            lead = db.get(Lead, conversation.lead_id)
+            if lead and not lead.is_group:
+                response_times.settle(lead, number.owner_user_id)
+                inbox_state.mark_seen_by_seller(lead)
+                db.commit()
+    return True
 
 
 def _process_event(payload: dict) -> list:
@@ -229,6 +280,10 @@ def _process_event_db(db: Session, payload: dict) -> list:
             db.commit()
         return []
 
+    if event == "messages.update":
+        _apply_self_reads(db, number, data)
+        return []
+
     if event != "messages.upsert":
         return []
 
@@ -249,7 +304,7 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
         _handle_group_message(db, number, item)
         return None  # grupo: sem cópia de mídia (grupo movimentado encheria o armazenamento)
 
-    if _apply_edit_or_delete(db, number, item):
+    if _apply_edit_or_delete(db, number, item) or _apply_reaction(db, number, item):
         return None
 
     phone = _phone_from_key(key, item)

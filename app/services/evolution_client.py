@@ -21,7 +21,8 @@ from app.config import EVOLUTION_API_KEY, EVOLUTION_API_URL, EVOLUTION_WEBHOOK_T
 
 logger = logging.getLogger("evolution_client")
 
-WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "CONNECTION_UPDATE"]
+# MESSAGES_UPDATE: só pra saber quando o vendedor leu a mensagem do cliente no celular
+WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"]
 
 
 class EvolutionError(Exception):

@@ -153,6 +153,12 @@ class Lead(Base):
     first_response_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     last_inbound_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     last_outbound_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    # "✓ Encerrar atendimento" (ou o vendedor reagiu à mensagem do cliente pelo celular): o que o
+    # cliente mandou até aqui não precisa de resposta, então não conta como "aguardando"
+    settled_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    settled_by_user_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    # última vez que o vendedor do lead viu a conversa (abriu no CRM ou leu no celular)
+    seen_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # o que a pessoa preencheu nos formulários (LP/site), um bloco por envio, mais recente primeiro
     form_details: Mapped[str] = mapped_column(Text, default="")
     # foto de perfil do WhatsApp (URL temporária do WhatsApp; renovada a cada 24h em /leads/{id}/avatar)

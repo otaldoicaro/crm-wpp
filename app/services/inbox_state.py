@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import datetime
+from typing import Optional
 
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Conversation, InboxRead, Lead, Message, User
+from app.services import response_times
 
 TAGS = [("", "Lead"), ("cliente", "Cliente"), ("outro", "Outro")]
 TAG_LABEL = dict(TAGS)
@@ -33,6 +35,9 @@ def mark_read(db: Session, user_id: str, lead_id: str) -> None:
     row = _read_row(db, user_id, lead_id)
     row.last_read_at = datetime.datetime.utcnow()
     row.manual_unread = False
+    lead = db.get(Lead, lead_id)
+    if lead is not None and lead.assigned_user_id == user_id:
+        mark_seen_by_seller(lead, row.last_read_at)  # o próprio vendedor abriu (admin olhando não conta)
     db.commit()
 
 
@@ -62,6 +67,7 @@ def unread_map(db: Session, user: User, lead_ids: list) -> dict:
             Message.created_at > baseline,
             or_(read.c.last_read_at.is_(None), Message.created_at > read.c.last_read_at),
             or_(Lead.last_outbound_at.is_(None), Message.created_at > Lead.last_outbound_at),
+            or_(Lead.settled_at.is_(None), Message.created_at > Lead.settled_at),
         )
         .group_by(Conversation.lead_id)
         .all()
@@ -77,11 +83,23 @@ def unread_map(db: Session, user: User, lead_ids: list) -> dict:
 def unanswered_filter(query):
     """Conversas em que a última mensagem é do cliente e ninguém da equipe respondeu depois
     (aberta ou não). Usa as colunas do lead: rápido, sem varrer mensagens. Grupos ficam de fora."""
-    return query.filter(
-        Lead.is_group.is_(False),
-        Lead.last_inbound_at.isnot(None),
-        or_(Lead.last_outbound_at.is_(None), Lead.last_inbound_at > Lead.last_outbound_at),
-    )
+    return query.filter(Lead.is_group.is_(False), response_times.awaiting_reply_sql())
+
+
+def unseen_filter(query):
+    """Aguardando resposta e o vendedor do lead nem abriu a conversa (CRM ou celular)."""
+    return unanswered_filter(query).filter(or_(Lead.seen_at.is_(None), Lead.seen_at < Lead.last_inbound_at))
+
+
+def seen_unanswered_filter(query):
+    """Aguardando resposta, mas o vendedor já abriu/leu e não respondeu."""
+    return unanswered_filter(query).filter(Lead.seen_at >= Lead.last_inbound_at)
+
+
+def mark_seen_by_seller(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
+    when = when or datetime.datetime.utcnow()
+    if lead.seen_at is None or when > lead.seen_at:
+        lead.seen_at = when
 
 
 def unread_filter(query, user: User):
@@ -95,6 +113,7 @@ def unread_filter(query, user: User):
                 Lead.last_inbound_at > baseline,
                 or_(read.c.last_read_at.is_(None), Lead.last_inbound_at > read.c.last_read_at),
                 or_(Lead.last_outbound_at.is_(None), Lead.last_inbound_at > Lead.last_outbound_at),
+                or_(Lead.settled_at.is_(None), Lead.last_inbound_at > Lead.settled_at),
             ),
         )
     )

@@ -60,6 +60,8 @@
   {% if fr is not none %}<span class="rt-tag" title="Tempo até a nossa 1ª resposta">⏱ 1º atend.: {{ fr|duracao }}</span>{% endif %}
   {% if waiting %}
     <span class="rt-tag {{ 'late' if (agora() - waiting) > rt.WAITING_ALERT else 'wait' }}" title="Cliente esperando resposta nossa">⏳ aguardando há {{ waiting|ha }}</span>
+  {% elif rt.is_settled(lead) %}
+    <span class="rt-tag" title="Atendimento encerrado (o cliente não precisava de resposta)">✓ encerrado há {{ lead.settled_at|ha }}</span>
   {% elif lead.last_outbound_at %}
     <span class="rt-tag {{ 'late' if not closed and (agora() - lead.last_outbound_at) > rt.IDLE_ALERT }}" title="Nossa última mensagem pro cliente">💬 última resposta há {{ lead.last_outbound_at|ha }}</span>
   {% endif %}

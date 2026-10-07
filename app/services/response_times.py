@@ -8,7 +8,7 @@ import logging
 import statistics
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 
 from app.models import Conversation, Lead, Message
 
@@ -35,8 +35,30 @@ def first_response(lead: Lead) -> Optional[datetime.timedelta]:
     return max(lead.first_response_at - lead.created_at, datetime.timedelta(0))
 
 
+def is_settled(lead: Lead) -> bool:
+    """Atendimento encerrado depois da última mensagem do cliente (não precisa responder)."""
+    return bool(lead.settled_at and (lead.last_inbound_at is None or lead.settled_at >= lead.last_inbound_at))
+
+
+def settle(lead: Lead, user_id: Optional[str] = None) -> None:
+    lead.settled_at = datetime.datetime.utcnow()
+    lead.settled_by_user_id = user_id
+
+
+def awaiting_reply_sql():
+    """Mesma regra de waiting_since, em SQL: cliente falou por último e ninguém respondeu nem
+    encerrou depois. Usada no "Não respondidas", "aguardando resposta" e afins."""
+    return and_(
+        Lead.last_inbound_at.isnot(None),
+        or_(Lead.last_outbound_at.is_(None), Lead.last_inbound_at > Lead.last_outbound_at),
+        or_(Lead.settled_at.is_(None), Lead.last_inbound_at > Lead.settled_at),
+    )
+
+
 def waiting_since(lead: Lead) -> Optional[datetime.datetime]:
     """Desde quando o cliente espera resposta nossa (None = não está esperando)."""
+    if is_settled(lead):
+        return None
     if lead.first_response_at is None:
         return lead.created_at
     if lead.last_inbound_at and (lead.last_outbound_at is None or lead.last_inbound_at > lead.last_outbound_at):
@@ -52,7 +74,7 @@ def summary(leads: list) -> dict:
         "median_first": datetime.timedelta(seconds=statistics.median(times)) if times else None,
         "within_15": round(100 * sum(1 for t in times if t <= 15 * 60) / len(times)) if times else None,
         "answered": len(times),
-        "never_answered": sum(1 for l in leads if l.first_response_at is None),
+        "never_answered": sum(1 for l in leads if l.first_response_at is None and not is_settled(l)),
         "idle": sum(1 for l in leads if l.last_outbound_at and now - l.last_outbound_at > IDLE_ALERT),
     }
 

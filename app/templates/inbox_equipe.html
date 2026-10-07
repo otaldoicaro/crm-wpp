@@ -43,6 +43,7 @@
 <div class="ctx-menu" id="ctxMenu" hidden>
   <button type="button" data-action="nao-lida">Marcar como não lida</button>
   <button type="button" data-action="lida">Marcar como lida</button>
+  <button type="button" data-settle>✓ Encerrar atendimento</button>
   <button type="button" data-fav="1">⭐ Favoritar</button>
   <button type="button" data-fav="0">☆ Remover dos favoritos</button>
   <hr class="tag-sep">
@@ -88,17 +89,14 @@
   window.addEventListener("load", fit);  // a barra de rolagem da página pode aparecer depois
   var sig = {{ sig|tojson }};
   var qs = boxes.filter(function (b) { return b.checked; }).map(function (b) { return "v=" + encodeURIComponent(b.value); }).join("&");
-  // colunas em "só aguardando resposta" (clique no ⏳ do cabeçalho da coluna)
-  var pending = {};
-  grid.querySelectorAll(".pend-toggle.on").forEach(function (b) { pending[b.dataset.seller] = true; });
-  function pendingQs() { return "&pset=1" + Object.keys(pending).map(function (s) { return "&p=" + encodeURIComponent(s); }).join(""); }
+  // filtro de cada coluna (clique em ⏳ aguardando / 🙈 não vistas / 👀 vistas sem resposta)
+  var pending = {};  // vendedor -> modo
+  grid.querySelectorAll(".pend-toggle.on").forEach(function (b) { pending[b.dataset.seller] = b.dataset.mode; });
+  function pendingQs() { return "&pset=1" + Object.keys(pending).map(function (s) { return "&p=" + encodeURIComponent(s + ":" + pending[s]); }).join(""); }
   // lupa, "Não lidas" e "Ver mais" de cada coluna
-  // colunas em "só não lidas" (clique no 🟢 do cabeçalho da coluna)
-  var unreadCols = {};
-  grid.querySelectorAll(".unread-toggle.on").forEach(function (b) { unreadCols[b.dataset.seller] = true; });
   var busca = {{ busca|tojson }}, limits = {};
   function filterQs() {
-    return "&q=" + encodeURIComponent(busca) + Object.keys(unreadCols).map(function (s) { return "&u=" + encodeURIComponent(s); }).join("") +
+    return "&q=" + encodeURIComponent(busca) +
       Object.keys(limits).map(function (s) { return "&m=" + encodeURIComponent(s + ":" + limits[s]); }).join("");
   }
   function applyFilters() {
@@ -108,8 +106,7 @@
   }
   function syncUrl() {  // recarregar a página mantém a busca e os filtros das colunas
     try {
-      history.replaceState(null, "", "/inbox-equipe?" + qs + pendingQs() + "&q=" + encodeURIComponent(busca) +
-        Object.keys(unreadCols).map(function (s) { return "&u=" + encodeURIComponent(s); }).join(""));
+      history.replaceState(null, "", "/inbox-equipe?" + qs + pendingQs() + "&q=" + encodeURIComponent(busca));
     } catch (err) {}
   }
   var searchTimer, searchEl = document.getElementById("teamSearch");
@@ -163,7 +160,7 @@
       var nameEl = item.querySelector(".name");
       colEl.querySelector("[data-quick-replies]").dataset.leadName = nameEl ? nameEl.textContent.replace(/[★👥]/g, "").trim() : "";
       showThread(colEl.dataset.seller, item.dataset.lead);
-      if (unreadCols[colEl.dataset.seller] || item.dataset.unread === "1") setTimeout(function () { sig = ""; refreshLists(true); }, 800);  // ficou lida
+      if (pending[colEl.dataset.seller] === "naovistas" || item.dataset.unread === "1") setTimeout(function () { sig = ""; refreshLists(true); }, 800);  // ficou lida
       return;
     }
     var more = e.target.closest("[data-more]");
@@ -174,23 +171,33 @@
       return;
     }
     if (e.target.closest(".team-back")) showList(e.target.closest(".team-col").dataset.seller);
-    var unr = e.target.closest(".unread-toggle");
-    if (unr) {
-      var who = unr.dataset.seller;
-      if (unreadCols[who]) delete unreadCols[who]; else unreadCols[who] = true;
-      unr.classList.toggle("on", !!unreadCols[who]);
-      showList(who);
-      sig = ""; refreshLists(true); syncUrl();
-      return;
-    }
     var pend = e.target.closest(".pend-toggle");
     if (pend) {
-      var seller = pend.dataset.seller;
-      if (pending[seller]) delete pending[seller]; else pending[seller] = true;
-      pend.classList.toggle("on", !!pending[seller]);
+      var seller = pend.dataset.seller, mode = pend.dataset.mode;
+      if (pending[seller] === mode) delete pending[seller]; else pending[seller] = mode;
+      pend.parentNode.querySelectorAll(".pend-toggle").forEach(function (b) { b.classList.toggle("on", pending[seller] === b.dataset.mode); });
       showList(seller);
       sig = ""; refreshLists(true); syncUrl();
     }
+  });
+  // ✓ encerrar e ↪ transferir (no topo da conversa aberta na coluna)
+  grid.addEventListener("click", function (e) {
+    var btn = e.target.closest(".team-settle"); if (!btn) return;
+    if (!confirm("Encerrar o atendimento? A conversa sai do “aguardando resposta” e não conta mais tempo. Se o cliente mandar mensagem de novo, volta a contar.")) return;
+    var seller = btn.closest(".team-col").dataset.seller;
+    fetch("/leads/" + btn.dataset.lead + "/encerrar", { method: "POST", body: new URLSearchParams({ ajax: "1" }) })
+      .then(function () { loadThread(seller, btn.dataset.lead, true); sig = ""; refreshLists(true); });
+  });
+  grid.addEventListener("change", function (e) {
+    var sel = e.target.closest(".team-transfer"); if (!sel || !sel.value) return;
+    var opt = sel.options[sel.selectedIndex];
+    if (!confirm("Transferir esta conversa para " + opt.text + "?\n\nEla aparece na hora no Inbox dele(a), com todo o histórico.")) { sel.value = ""; return; }
+    var num = opt.dataset.number;
+    var trocar = num && confirm("Continuar a conversa pelo WhatsApp de " + opt.text + " (" + num + ")?\n\nOK = as próximas mensagens saem pelo número dele(a)\nCancelar = continua pelo número atual") ? "1" : "";
+    var seller = sel.closest(".team-col").dataset.seller;
+    fetch("/leads/" + sel.dataset.lead + "/transferir", { method: "POST", body: new URLSearchParams({ para: sel.value, trocar_numero: trocar, ajax: "1" }) })
+      .then(function (r) { if (!r.ok) throw 0; showList(seller); sig = ""; refreshLists(true); })
+      .catch(function () { alert("Não foi possível transferir. Tente de novo."); sel.value = ""; });
   });
   grid.addEventListener("submit", function (e) {
     var form = e.target.closest(".team-reply"); if (!form) return;
@@ -238,6 +245,7 @@
     var unread = item.dataset.unread === "1";
     menu.querySelector('[data-action="nao-lida"]').hidden = unread;
     menu.querySelector('[data-action="lida"]').hidden = !unread;
+    menu.querySelector("[data-settle]").hidden = item.dataset.waiting !== "1";
     var isGroup = item.dataset.group === "1";
     menu.querySelectorAll("[data-tag]").forEach(function (b) { b.hidden = isGroup || b.dataset.tag === (item.dataset.tag || ""); });
     menu.querySelector(".tag-sep").hidden = isGroup;
@@ -263,6 +271,7 @@
     if (!target) return;
     var b = e.target, req;
     if (b.dataset.fav !== undefined) req = fetch("/inbox/" + target + "/favorita", { method: "POST", body: new URLSearchParams({ valor: b.dataset.fav }) });
+    else if (b.dataset.settle !== undefined) req = fetch("/leads/" + target + "/encerrar", { method: "POST", body: new URLSearchParams({ ajax: "1" }) });
     else if (b.dataset.tag !== undefined) req = fetch("/leads/" + target + "/tag", { method: "POST", body: new URLSearchParams({ tag: b.dataset.tag, ajax: "1" }) });
     else if (b.dataset.action) req = fetch("/inbox/" + target + "/" + b.dataset.action, { method: "POST" });
     else return;

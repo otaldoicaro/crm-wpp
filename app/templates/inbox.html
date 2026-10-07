@@ -54,7 +54,23 @@
             </select>
           </label>
         </form>
-        {{ m.tempo_atendimento(selected_lead, closed=selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost)) }}{% endif %}
+        {{ m.tempo_atendimento(selected_lead, closed=selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost)) }}
+        <div class="thread-actions">
+          {% if can_settle %}
+          <form method="post" action="/leads/{{ selected_lead.id }}/encerrar" onsubmit="return confirm('Encerrar o atendimento? A conversa sai do “aguardando resposta” e não conta mais tempo. Se o cliente mandar mensagem de novo, volta a contar.')">
+            <button class="btn ghost small" type="submit" title="O cliente só agradeceu / o assunto acabou: não precisa responder">✓ Encerrar atendimento</button>
+          </form>
+          {% endif %}
+          {% if transfer_people %}
+          <form method="post" action="/leads/{{ selected_lead.id }}/transferir" class="transfer-form">
+            <input type="hidden" name="trocar_numero" value="">
+            <select name="para" aria-label="Transferir para outro vendedor">
+              <option value="">↪ Transferir para…</option>
+              {% for t in transfer_people %}<option value="{{ t.user.id }}" data-number="{{ t.number.label if t.number else '' }}">{{ t.user.name }}{{ " (Admin)" if t.user.role == "admin" }}</option>{% endfor %}
+            </select>
+          </form>
+          {% endif %}
+        </div>{% endif %}
         {% if active_conversation %}
         {% set active_number = active_conversation.whatsapp_number %}
         <div class="via-number">
@@ -79,6 +95,19 @@
       <div class="form-details">{{ selected_lead.form_details }}</div>
     </details>
     {% endif %}
+<script>
+// transferir: confirma e pergunta se as próximas mensagens saem pelo WhatsApp de quem recebe
+document.querySelectorAll(".transfer-form select").forEach(function (sel) {
+  sel.addEventListener("change", function () {
+    var opt = sel.options[sel.selectedIndex];
+    if (!sel.value) return;
+    if (!confirm("Transferir esta conversa para " + opt.text + "?\n\nEla aparece na hora no Inbox dele(a), com todo o histórico, e o tempo de resposta passa a contar pra ele(a).")) { sel.value = ""; return; }
+    var num = opt.dataset.number;
+    sel.form.trocar_numero.value = num && confirm("Continuar a conversa pelo WhatsApp de " + opt.text + " (" + num + ")?\n\nOK = as próximas mensagens saem pelo número dele(a)\nCancelar = continua pelo número atual (ele(a) responde pelo CRM)") ? "1" : "";
+    sel.form.submit();
+  });
+});
+</script>
     <div class="inbox-messages" id="inboxMessages">
       {% include "_inbox_messages.html" %}
     </div>
@@ -181,13 +210,32 @@
         renderTray();
         input.focus();
       }
-      function uploadOne(file, caption) {
+      // foto grande do celular (3-8 MB): reduz pra 1600px antes de mandar — o WhatsApp reduz
+      // de qualquer jeito, e assim o envio fica bem mais rápido
+      function shrink(file) {
+        if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 400 * 1024 || !window.createImageBitmap) return Promise.resolve(file);
+        return createImageBitmap(file).then(function (bmp) {
+          var scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+          var canvas = document.createElement("canvas");
+          canvas.width = Math.round(bmp.width * scale); canvas.height = Math.round(bmp.height * scale);
+          canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+          return new Promise(function (resolve) {
+            canvas.toBlob(function (blob) {
+              if (!blob || blob.size >= file.size) return resolve(file);
+              resolve(new File([blob], (file.name || "imagem").replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }));
+            }, "image/jpeg", 0.85);
+          });
+        }).catch(function () { return file; });
+      }
+      function uploadOne(original, caption) {
+        return shrink(original).then(function (file) {
         var formData = new FormData();
         formData.append("file", file, file.name || "arquivo");
         formData.append("caption", caption);
         return fetch("/leads/{{ selected_lead.id }}/reply-media", { method: "POST", body: formData })
           .then(function (r) { return r.json(); })
           .catch(function () { return { ok: false, error: "sem conexão com o CRM" }; });
+        });
       }
       // Enviar com anexos: manda um por um (o texto digitado vira a legenda do primeiro)
       replyForm.addEventListener("submit", function (e) {
@@ -209,10 +257,16 @@
           });
         });
         chain.then(function () {
-          if (!failed.length) { window.location.reload(); return; }
-          attachStatus.textContent = "Não foi enviado — " + failed.join(" | ");
           attachToggle.disabled = false;
           sendBtn.disabled = false;
+          if (!failed.length) {
+            // sem recarregar a página: só limpa os anexos e atualiza a conversa
+            staged = []; input.value = ""; renderTray();
+            attachStatus.style.display = "none";
+            if (window.__inboxRefreshNow) window.__inboxRefreshNow(); else window.location.reload();
+            return;
+          }
+          attachStatus.textContent = "Não foi enviado — " + failed.join(" | ");
         });
       });
 
@@ -313,6 +367,7 @@
 <div class="ctx-menu" id="ctxMenu" hidden>
   <button type="button" data-action="nao-lida">Marcar como não lida</button>
   <button type="button" data-action="lida">Marcar como lida</button>
+  <button type="button" data-settle>✓ Encerrar atendimento</button>
   <button type="button" data-fav="1">⭐ Favoritar</button>
   <button type="button" data-fav="0">☆ Remover dos favoritos</button>
   <hr class="tag-sep">
@@ -336,6 +391,7 @@
     menu.querySelector('[data-fav="0"]').hidden = item.dataset.fav !== "1";
     menu.querySelector('[data-action="nao-lida"]').hidden = unread;
     menu.querySelector('[data-action="lida"]').hidden = !unread;
+    menu.querySelector("[data-settle]").hidden = item.dataset.waiting !== "1";
     menu.hidden = false;
     menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
     menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
@@ -364,6 +420,14 @@
       menu.hidden = true;
       fetch("/inbox/" + target + "/favorita", { method: "POST", body: new URLSearchParams({ valor: e.target.dataset.fav }) })
         .then(function () { if (window.__inboxRefreshNow) window.__inboxRefreshNow(); });
+      return;
+    }
+    if (e.target.dataset.settle !== undefined && target) {
+      menu.hidden = true;
+      var open = {{ (selected_lead.id if selected_lead else "")|tojson }};
+      fetch("/leads/" + target + "/encerrar", { method: "POST", body: new URLSearchParams({ ajax: "1" }) }).then(function () {
+        if (target === open) window.location.reload(); else if (window.__inboxRefreshNow) window.__inboxRefreshNow();
+      });
       return;
     }
     if (e.target.dataset.tag !== undefined && target) {

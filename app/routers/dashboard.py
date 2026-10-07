@@ -6,7 +6,7 @@ import time
 from typing import Optional
 
 import requests
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -504,6 +504,8 @@ def _inbox_context(
     other_numbers = []
     if selected_lead_id:
         selected_lead = db.query(Lead).filter(Lead.id == selected_lead_id, Lead.tenant_id == tenant.id).first()
+        if selected_lead and user.role != "admin" and selected_lead.assigned_user_id != user.id:
+            selected_lead = None  # vendedor só abre conversa de lead dele (ex: link antigo de um lead transferido)
         if selected_lead and selected_lead.conversations:
             messages = selected_lead.all_messages
             active_conversation = selected_lead.active_conversation
@@ -551,8 +553,28 @@ def _inbox_context(
             "active_conversation": active_conversation,
             "other_numbers": other_numbers,
             "platform": resolve_platform(selected_lead.attribution) if selected_lead else None,
+            "transfer_people": _transfer_options(db, tenant, selected_lead) if selected_lead and not selected_lead.is_group else [],
+            "can_settle": bool(selected_lead and not selected_lead.is_group and response_times.waiting_since(selected_lead)),
             "platform_label": PLATFORM_LABEL[resolve_platform(selected_lead.attribution)] if selected_lead else None,
     }
+
+
+def _transfer_options(db: Session, tenant: Tenant, lead: Lead) -> list:
+    """Pra quem dá pra transferir: equipe ativa (menos quem já atende), com o WhatsApp
+    conectado de cada um (pra oferecer "continuar pelo número dele")."""
+    numbers = {
+        n.owner_user_id: n
+        for n in db.query(WhatsAppNumber).filter(
+            WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True), WhatsAppNumber.owner_user_id.isnot(None)
+        )
+        if n.provider != "evolution" or n.connection_state == "open"
+    }
+    current = lead.active_conversation.whatsapp_number_id if lead.active_conversation else None
+    return [
+        {"user": p, "number": numbers[p.id] if p.id in numbers and numbers[p.id].id != current else None}
+        for p in team_members(db, tenant.id, only_active=True)
+        if p.id != lead.assigned_user_id
+    ]
 
 
 INBOX_FILTER_COOKIE = "inbox_filtro"
@@ -566,6 +588,11 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     vendedor = qp.get("vendedor", saved[1]) if "numero" in qp or "vendedor" in qp else saved[1]
     tipo = qp.get("tipo", saved[2])
     lidas = qp.get("lidas", saved[3])
+    # filtro lembrado de um vendedor/número que foi excluído depois: volta pra "todos"
+    if vendedor not in ("", "sem", "removidos") and not db.query(User.id).filter(User.id == vendedor, User.tenant_id == tenant.id).first():
+        vendedor = ""
+    if numero and not db.query(WhatsAppNumber.id).filter(WhatsAppNumber.id == numero, WhatsAppNumber.tenant_id == tenant.id).first():
+        numero = ""
     inbox_state.ensure_baseline(db, user)
     if selected_lead_id:
         inbox_state.mark_read(db, user.id, selected_lead_id)
@@ -601,6 +628,94 @@ def inbox_favorite(
     if db.query(Lead.id).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first():
         inbox_state.set_favorite(db, user.id, lead_id, valor == "1")
     return JSONResponse({"ok": True})
+
+
+def _lead_for_action(db: Session, tenant: Tenant, user: User, lead_id: str) -> Lead:
+    """Lead que esta pessoa pode mexer: admin mexe em todos, vendedor só nos dele."""
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None)).first()
+    if not lead or (user.role != "admin" and lead.assigned_user_id != user.id):
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    return lead
+
+
+def _add_note(db: Session, lead: Lead, text: str) -> None:
+    """Aviso no meio da conversa (só no CRM, o cliente não recebe): transferência, encerramento."""
+    conversation = lead.active_conversation
+    if conversation is not None:
+        db.add(Message(conversation_id=conversation.id, direction="note", body=text))
+
+
+@router.post("/leads/{lead_id}/encerrar")
+def settle_lead(
+    lead_id: str,
+    voltar: str = Form(""),
+    ajax: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """"✓ Encerrar atendimento": o cliente só agradeceu/finalizou, não precisa de resposta.
+    Sai do "aguardando resposta" e do "Não respondidas" até ele mandar mensagem de novo."""
+    lead = _lead_for_action(db, tenant, user, lead_id)
+    response_times.settle(lead, user.id)
+    if lead.assigned_user_id == user.id:
+        inbox_state.mark_seen_by_seller(lead)
+    _add_note(db, lead, f"✓ Atendimento encerrado por {user.name} (sem resposta necessária)")
+    db.commit()
+    if ajax:
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url=voltar if voltar.startswith("/") else f"/inbox/{lead_id}", status_code=302)
+
+
+@router.post("/leads/{lead_id}/transferir")
+def transfer_lead(
+    lead_id: str,
+    para: str = Form(...),
+    trocar_numero: str = Form(""),
+    ajax: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Passa o lead (com a conversa inteira) pra outro vendedor. O histórico todo continua no
+    CRM: quem recebe abre a conversa e vê tudo, desde a 1ª mensagem. Com `trocar_numero`, as
+    próximas mensagens saem pelo WhatsApp do novo vendedor."""
+    lead = _lead_for_action(db, tenant, user, lead_id)
+    target = next((p for p in team_members(db, tenant.id, only_active=True) if p.id == para), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Vendedor não encontrado")
+    previous = lead.assigned_user.name if lead.assigned_user else "ninguém"
+    lead.assigned_user_id = target.id
+    lead.seen_at = None  # o novo vendedor ainda não viu
+    for conversation in lead.conversations:
+        conversation.assigned_user_id = target.id
+    note = f"↪ Transferido de {previous} para {target.name} por {user.name}"
+    if trocar_numero:
+        number = (
+            db.query(WhatsAppNumber)
+            .filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.owner_user_id == target.id, WhatsAppNumber.is_active.is_(True))
+            .first()
+        )
+        if number is not None:
+            previous_conv = lead.active_conversation
+            conversation = next((c for c in lead.conversations if c.whatsapp_number_id == number.id), None)
+            if conversation is None:
+                conversation = Conversation(
+                    tenant_id=tenant.id, lead_id=lead.id, whatsapp_number_id=number.id, assigned_user_id=target.id,
+                    last_preview=previous_conv.last_preview if previous_conv else "",  # a lista mostra a última mensagem de verdade
+                )
+                db.add(conversation)
+            conversation.last_message_at = datetime.datetime.utcnow()  # vira a conversa ativa
+            db.flush()
+            db.refresh(lead)
+            note += f" — próximas mensagens pelo WhatsApp {number.label}"
+    _add_note(db, lead, note)
+    db.commit()
+    inbox_state.mark_unread(db, target.id, lead.id)  # chega destacado no Inbox de quem recebeu
+    if ajax:
+        return JSONResponse({"ok": True})
+    # vendedor que passou o lead adiante não enxerga mais a conversa
+    return RedirectResponse(url=f"/inbox/{lead_id}" if user.role == "admin" else "/inbox?transferido=1", status_code=302)
 
 
 @router.post("/inbox/{lead_id}/nao-lida")
@@ -689,29 +804,39 @@ TEAM_VIEW_PER_COLUMN = 30
 TEAM_VIEW_COOKIE = "inbox_equipe"
 
 
-def _pending_only(query):
-    """Mesma regra do contador "aguardando resposta" do cabeçalho da coluna."""
-    return inbox_state.unanswered_filter(query).filter(Lead.archived_at.is_(None), Lead.tag != "outro")
+# filtros de cada coluna (clique nos contadores do cabeçalho), do ponto de vista do VENDEDOR:
+#   pend      = ⏳ aguardando resposta (todas)
+#   naovistas = 🙈 aguardando e ele nem abriu a conversa (no CRM ou no celular)
+#   vistas    = 👀 aguardando, ele abriu/leu e não respondeu
+TEAM_MODES = {
+    "pend": inbox_state.unanswered_filter,
+    "naovistas": inbox_state.unseen_filter,
+    "vistas": inbox_state.seen_unanswered_filter,
+}
+
+
+def _pending_only(query, mode: str = "pend"):
+    """Mesma regra dos contadores do cabeçalho da coluna."""
+    return TEAM_MODES.get(mode, inbox_state.unanswered_filter)(query).filter(Lead.archived_at.is_(None), Lead.tag != "outro")
 
 
 def _team_columns(
-    db: Session, tenant: Tenant, user: User, seller_ids: list, pending_ids=frozenset(), busca: str = "",
-    unread_ids=frozenset(), limits: Optional[dict] = None,
+    db: Session, tenant: Tenant, user: User, seller_ids: list, modes: Optional[dict] = None, busca: str = "",
+    limits: Optional[dict] = None,
 ) -> list:
-    """Colunas da visão da equipe. `busca` filtra todas as listas; `unread_ids` = colunas em
-    "só não lidas"; `limits` = quantas conversas cada coluna mostra (cresce com o "Ver mais")."""
+    """Colunas da visão da equipe. `modes` = filtro de cada coluna (ver TEAM_MODES); `busca`
+    filtra todas as listas; `limits` = quantas conversas cada coluna mostra ("Ver mais")."""
     people = {p.id: p for p in team_members(db, tenant.id)}
-    limits = limits or {}
-    unread_counts = _team_unread_counts(db, tenant, user, seller_ids)
+    limits, modes = limits or {}, modes or {}
     now = datetime.datetime.utcnow()
     today = local_to_utc(to_local(now).replace(hour=0, minute=0, second=0, microsecond=0))
     columns = []
     for seller_id in [s for s in seller_ids if s in people][:TEAM_VIEW_MAX]:
         query, _ = _inbox_query(db, tenant, user, "", "", seller_id)
-        tipo = "naolidas" if seller_id in unread_ids else ""
-        list_query, _ = _inbox_query(db, tenant, user, busca, "", seller_id, tipo)
-        if seller_id in pending_ids:
-            list_query = _pending_only(list_query)
+        list_query, _ = _inbox_query(db, tenant, user, busca, "", seller_id)
+        mode = modes.get(seller_id, "")
+        if mode:
+            list_query = _pending_only(list_query, mode)
         limit = limits.get(seller_id, TEAM_VIEW_PER_COLUMN)
         convs = _first_per_lead(
             list_query.options(joinedload(Conversation.lead))
@@ -723,19 +848,13 @@ def _team_columns(
             Lead.tenant_id == tenant.id, Lead.assigned_user_id == seller_id, Lead.deleted_at.is_(None),
             Lead.archived_at.is_(None), Lead.tag != "outro", Lead.is_group.is_(False),
         )
-        waiting = open_leads.filter(
-            or_(
-                Lead.first_response_at.is_(None),
-                and_(Lead.last_inbound_at.isnot(None), or_(Lead.last_outbound_at.is_(None), Lead.last_inbound_at > Lead.last_outbound_at)),
-            ),
-            Lead.last_inbound_at.isnot(None),
-        ).count()
+        waiting = open_leads.filter(response_times.awaiting_reply_sql()).count()
+        unseen = inbox_state.unseen_filter(open_leads).count() if waiting else 0
         today_count = query.filter(Conversation.last_message_at >= today).count()
         columns.append({
-            "seller": people[seller_id], "convs": convs, "waiting": waiting,
-            "today": today_count, "pending_only": seller_id in pending_ids,
-            "truncated": len(convs) >= limit and limit < INBOX_LIST_MAX, "limit": limit,
-            "busca": busca, "unread_only": seller_id in unread_ids, "unread_count": unread_counts.get(seller_id, 0),
+            "seller": people[seller_id], "convs": convs, "waiting": waiting, "unseen": unseen,
+            "seen_waiting": waiting - unseen, "today": today_count, "mode": mode,
+            "truncated": len(convs) >= limit and limit < INBOX_LIST_MAX, "limit": limit, "busca": busca,
         })
     # não lidas (de quem está olhando) de todas as colunas numa consulta só
     all_ids = [c.lead_id for col in columns for c in col["convs"]]
@@ -752,47 +871,43 @@ def _team_sig(db: Session, tenant: Tenant, user: User, seller_ids: list) -> str:
         return ""
     query, _ = _inbox_query(db, tenant, user, "", "", "")
     rows = dict(
-        (seller, (n, last))
-        for seller, n, last in query.filter(Lead.assigned_user_id.in_(seller_ids))
-        .with_entities(Lead.assigned_user_id, func.count(Conversation.id), func.max(Conversation.last_message_at))
+        (row[0], row[1:])
+        for row in query.filter(Lead.assigned_user_id.in_(seller_ids))
+        .with_entities(
+            Lead.assigned_user_id,
+            func.count(Conversation.id),
+            # mensagem nova, vendedor leu no celular, atendimento encerrado: qualquer um muda a assinatura
+            func.max(Conversation.last_message_at),
+            func.max(Lead.seen_at),
+            func.max(Lead.settled_at),
+        )
         .group_by(Lead.assigned_user_id)
     )
-    return "|".join(
-        f"{s}:{rows.get(s, (0, None))[0]}:{rows[s][1].isoformat() if s in rows and rows[s][1] else ''}" for s in seller_ids
-    )
-
-
-def _team_unread_counts(db: Session, tenant: Tenant, user: User, seller_ids: list) -> dict:
-    """Conversas não lidas (por quem está olhando) de cada coluna, numa consulta só."""
-    if not seller_ids:
-        return {}
-    query, _ = _inbox_query(db, tenant, user, "", "", "", "naolidas")
-    return dict(
-        query.filter(Lead.assigned_user_id.in_(seller_ids[:TEAM_VIEW_MAX]))
-        .with_entities(Lead.assigned_user_id, func.count(func.distinct(Conversation.lead_id)))
-        .group_by(Lead.assigned_user_id)
-        .all()
-    )
+    def stamp(values) -> str:
+        return ":".join(v.isoformat() if hasattr(v, "isoformat") else str(v or "") for v in values)
+    return "|".join(f"{s}:{stamp(rows.get(s, (0,)))}" for s in seller_ids)
 
 
 TEAM_PENDING_COOKIE = "inbox_equipe_pend"
 
 
-def _team_pending(request: Request) -> frozenset:
-    """Colunas filtradas em "só aguardando resposta" (?p=<vendedor>; lembrado em cookie)."""
+def _team_pending(request: Request) -> dict:
+    """Filtro de cada coluna: ?p=<vendedor>:<modo> (modo em TEAM_MODES; sem modo = "pend").
+    Lembrado em cookie."""
     if "p" in request.query_params or "pset" in request.query_params:
-        return frozenset(v for v in request.query_params.getlist("p") if v)
-    return frozenset(v for v in request.cookies.get(TEAM_PENDING_COOKIE, "").split(",") if v)
+        raw = request.query_params.getlist("p")
+    else:
+        raw = request.cookies.get(TEAM_PENDING_COOKIE, "").split(",")
+    modes = {}
+    for item in raw:
+        seller, _, mode = item.partition(":")
+        if seller:
+            modes[seller] = mode if mode in TEAM_MODES else "pend"
+    return modes
 
 
-TEAM_UNREAD_COOKIE = "inbox_equipe_naolidas"
-
-
-def _team_unread_only(request: Request) -> frozenset:
-    """Colunas filtradas em "só não lidas" (?u=<vendedor>; lembrado em cookie)."""
-    if "u" in request.query_params or "pset" in request.query_params:
-        return frozenset(v for v in request.query_params.getlist("u") if v)
-    return frozenset(v for v in request.cookies.get(TEAM_UNREAD_COOKIE, "").split(",") if v)
+def _modes_cookie(modes: dict) -> str:
+    return ",".join(f"{seller}:{mode}" for seller, mode in modes.items())
 
 
 def _team_filters(request: Request) -> tuple:
@@ -826,8 +941,7 @@ def team_inbox(
     selected = _team_selection(request)
     pending = _team_pending(request)
     busca, limits = _team_filters(request)
-    unread_only = _team_unread_only(request)
-    columns = _team_columns(db, tenant, user, selected, pending, busca, unread_only, limits)
+    columns = _team_columns(db, tenant, user, selected, pending, busca, limits)
     response = templates.TemplateResponse(
         request,
         "inbox_equipe.html",
@@ -846,8 +960,7 @@ def team_inbox(
         },
     )
     response.set_cookie(TEAM_VIEW_COOKIE, ",".join(selected), httponly=True, samesite="lax")
-    response.set_cookie(TEAM_PENDING_COOKIE, ",".join(pending), httponly=True, samesite="lax")
-    response.set_cookie(TEAM_UNREAD_COOKIE, ",".join(unread_only), httponly=True, samesite="lax")
+    response.set_cookie(TEAM_PENDING_COOKIE, _modes_cookie(pending), httponly=True, samesite="lax")
     return response
 
 
@@ -875,7 +988,11 @@ def team_thread(
     inbox_state.mark_read(db, user.id, lead_id)
     messages = lead.all_messages[-TEAM_THREAD_LAST:]
     closed = bool(lead.stage and (lead.stage.is_won or lead.stage.is_lost))
-    head = templates.get_template("_team_thread_head.html").render({"lead": lead, "closed": closed, "truncated": len(lead.all_messages) > TEAM_THREAD_LAST})
+    head = templates.get_template("_team_thread_head.html").render({
+        "lead": lead, "closed": closed, "truncated": len(lead.all_messages) > TEAM_THREAD_LAST,
+        "can_settle": not lead.is_group and bool(response_times.waiting_since(lead)),
+        "transfer_people": [] if lead.is_group else _transfer_options(db, tenant, lead),
+    })
     body = templates.get_template("_inbox_messages.html").render({"messages": messages})
     return JSONResponse({"sig": current, "head": head, "html": body})
 
@@ -896,13 +1013,11 @@ def team_inbox_refresh(
     if current == sig:
         return JSONResponse({"changed": False})
     busca, limits = _team_filters(request)
-    unread_only = _team_unread_only(request)
     html = templates.get_template("_inbox_equipe_cols.html").render(
-        {"columns": _team_columns(db, tenant, user, selected, pending, busca, unread_only, limits), "request": request}
+        {"columns": _team_columns(db, tenant, user, selected, pending, busca, limits), "request": request}
     )
     response = JSONResponse({"sig": current, "html": html})
-    response.set_cookie(TEAM_UNREAD_COOKIE, ",".join(unread_only), httponly=True, samesite="lax")
-    response.set_cookie(TEAM_PENDING_COOKIE, ",".join(pending), httponly=True, samesite="lax")
+    response.set_cookie(TEAM_PENDING_COOKIE, _modes_cookie(pending), httponly=True, samesite="lax")
     return response
 
 
@@ -992,7 +1107,9 @@ def get_media(
     if content is None:
         raise HTTPException(status_code=404, detail="Mídia indisponível (expirou ou o número foi desconectado)")
 
-    return Response(content=content, media_type=mime_type)
+    # a mídia de uma mensagem nunca muda: o navegador guarda e não baixa de novo a cada
+    # atualização da conversa (antes cada mensagem nova recarregava todas as fotos)
+    return Response(content=content, media_type=mime_type, headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @router.post("/leads/{lead_id}/reply")
@@ -1057,6 +1174,7 @@ def switch_number(
 def reply_lead_media(
     lead_id: str,
     file: UploadFile,
+    background: BackgroundTasks,
     caption: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
@@ -1097,11 +1215,7 @@ def reply_lead_media(
         media_kind,
         secret=secret,
     )
-    stored_key = media_store.save(message.id, content, mime_type)
-    if stored_key:
-        message.media_stored_key = stored_key
-        db.add(message)
-        db.commit()
+    background.add_task(media_store.store_sent_copy, message.id, content, mime_type)
     return JSONResponse({"ok": True})
 
 
