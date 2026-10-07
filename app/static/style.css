@@ -485,3 +485,7 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .team-toolbar .pill { cursor: pointer; font: inherit; font-size: .82rem; }
 .team-search { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 220px; max-width: 460px; margin: 0; }
 .team-search input { flex: 1; border-radius: 999px; padding: 8px 14px; }
+.unread-toggle { border: 1px solid transparent; cursor: pointer; font-family: inherit; box-shadow: none; }
+.unread-toggle:hover { border-color: currentColor; }
+.unread-toggle.has { color: #128c4a; }
+.unread-toggle.on { background: #25d366; color: #fff; }

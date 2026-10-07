@@ -695,18 +695,20 @@ def _pending_only(query):
 
 
 def _team_columns(
-    db: Session, tenant: Tenant, user: User, seller_ids: list, pending_ids=frozenset(), busca: str = "", tipo: str = "",
-    limits: Optional[dict] = None,
+    db: Session, tenant: Tenant, user: User, seller_ids: list, pending_ids=frozenset(), busca: str = "",
+    unread_ids=frozenset(), limits: Optional[dict] = None,
 ) -> list:
-    """Colunas da visão da equipe. `busca` e `tipo` ("naolidas") filtram todas as listas;
-    `limits` = quantas conversas cada coluna mostra (cresce com o "Ver mais" da coluna)."""
+    """Colunas da visão da equipe. `busca` filtra todas as listas; `unread_ids` = colunas em
+    "só não lidas"; `limits` = quantas conversas cada coluna mostra (cresce com o "Ver mais")."""
     people = {p.id: p for p in team_members(db, tenant.id)}
     limits = limits or {}
+    unread_counts = _team_unread_counts(db, tenant, user, seller_ids)
     now = datetime.datetime.utcnow()
     today = local_to_utc(to_local(now).replace(hour=0, minute=0, second=0, microsecond=0))
     columns = []
     for seller_id in [s for s in seller_ids if s in people][:TEAM_VIEW_MAX]:
         query, _ = _inbox_query(db, tenant, user, "", "", seller_id)
+        tipo = "naolidas" if seller_id in unread_ids else ""
         list_query, _ = _inbox_query(db, tenant, user, busca, "", seller_id, tipo)
         if seller_id in pending_ids:
             list_query = _pending_only(list_query)
@@ -733,7 +735,7 @@ def _team_columns(
             "seller": people[seller_id], "convs": convs, "waiting": waiting,
             "today": today_count, "pending_only": seller_id in pending_ids,
             "truncated": len(convs) >= limit and limit < INBOX_LIST_MAX, "limit": limit,
-            "busca": busca, "tipo": tipo,
+            "busca": busca, "unread_only": seller_id in unread_ids, "unread_count": unread_counts.get(seller_id, 0),
         })
     # não lidas (de quem está olhando) de todas as colunas numa consulta só
     all_ids = [c.lead_id for col in columns for c in col["convs"]]
@@ -760,16 +762,16 @@ def _team_sig(db: Session, tenant: Tenant, user: User, seller_ids: list) -> str:
     )
 
 
-def _team_unread_total(db: Session, tenant: Tenant, user: User, seller_ids: list) -> int:
-    """Conversas não lidas (por quem está olhando) somando as colunas abertas."""
+def _team_unread_counts(db: Session, tenant: Tenant, user: User, seller_ids: list) -> dict:
+    """Conversas não lidas (por quem está olhando) de cada coluna, numa consulta só."""
     if not seller_ids:
-        return 0
+        return {}
     query, _ = _inbox_query(db, tenant, user, "", "", "", "naolidas")
-    return (
+    return dict(
         query.filter(Lead.assigned_user_id.in_(seller_ids[:TEAM_VIEW_MAX]))
-        .with_entities(func.count(func.distinct(Conversation.lead_id)))
-        .scalar()
-        or 0
+        .with_entities(Lead.assigned_user_id, func.count(func.distinct(Conversation.lead_id)))
+        .group_by(Lead.assigned_user_id)
+        .all()
     )
 
 
@@ -783,19 +785,25 @@ def _team_pending(request: Request) -> frozenset:
     return frozenset(v for v in request.cookies.get(TEAM_PENDING_COOKIE, "").split(",") if v)
 
 
-TEAM_FILTERS = ("", "naolidas")
+TEAM_UNREAD_COOKIE = "inbox_equipe_naolidas"
+
+
+def _team_unread_only(request: Request) -> frozenset:
+    """Colunas filtradas em "só não lidas" (?u=<vendedor>; lembrado em cookie)."""
+    if "u" in request.query_params or "pset" in request.query_params:
+        return frozenset(v for v in request.query_params.getlist("u") if v)
+    return frozenset(v for v in request.cookies.get(TEAM_UNREAD_COOKIE, "").split(",") if v)
 
 
 def _team_filters(request: Request) -> tuple:
-    """Lupa (q), "Não lidas" (f) e quantas conversas cada coluna mostra (m=<vendedor>:<qtd>)."""
+    """Lupa (q) e quantas conversas cada coluna mostra (m=<vendedor>:<qtd>)."""
     qp = request.query_params
-    tipo = qp.get("f", "")
     limits = {}
     for item in qp.getlist("m"):
         seller, _, qty = item.partition(":")
         if seller:
             limits[seller] = _list_limit(qty, TEAM_VIEW_PER_COLUMN)
-    return qp.get("q", "").strip()[:80], tipo if tipo in TEAM_FILTERS else "", limits
+    return qp.get("q", "").strip()[:80], limits
 
 
 def _team_selection(request: Request) -> list:
@@ -817,8 +825,9 @@ def team_inbox(
         raise HTTPException(status_code=403, detail="Só o admin vê a visão da equipe")
     selected = _team_selection(request)
     pending = _team_pending(request)
-    busca, tipo, limits = _team_filters(request)
-    columns = _team_columns(db, tenant, user, selected, pending, busca, tipo, limits)
+    busca, limits = _team_filters(request)
+    unread_only = _team_unread_only(request)
+    columns = _team_columns(db, tenant, user, selected, pending, busca, unread_only, limits)
     response = templates.TemplateResponse(
         request,
         "inbox_equipe.html",
@@ -832,14 +841,13 @@ def team_inbox(
             "sig": _team_sig(db, tenant, user, selected),
             "max": TEAM_VIEW_MAX,
             "busca": busca,
-            "tipo": tipo,
             "per_column": TEAM_VIEW_PER_COLUMN,
-            "naolidas_total": _team_unread_total(db, tenant, user, selected),
             "quick_replies": replies_for_js(db, tenant, user),
         },
     )
     response.set_cookie(TEAM_VIEW_COOKIE, ",".join(selected), httponly=True, samesite="lax")
     response.set_cookie(TEAM_PENDING_COOKIE, ",".join(pending), httponly=True, samesite="lax")
+    response.set_cookie(TEAM_UNREAD_COOKIE, ",".join(unread_only), httponly=True, samesite="lax")
     return response
 
 
@@ -887,11 +895,13 @@ def team_inbox_refresh(
     current = _team_sig(db, tenant, user, selected)
     if current == sig:
         return JSONResponse({"changed": False})
-    busca, tipo, limits = _team_filters(request)
+    busca, limits = _team_filters(request)
+    unread_only = _team_unread_only(request)
     html = templates.get_template("_inbox_equipe_cols.html").render(
-        {"columns": _team_columns(db, tenant, user, selected, pending, busca, tipo, limits), "request": request}
+        {"columns": _team_columns(db, tenant, user, selected, pending, busca, unread_only, limits), "request": request}
     )
-    response = JSONResponse({"sig": current, "html": html, "naolidas_total": _team_unread_total(db, tenant, user, selected)})
+    response = JSONResponse({"sig": current, "html": html})
+    response.set_cookie(TEAM_UNREAD_COOKIE, ",".join(unread_only), httponly=True, samesite="lax")
     response.set_cookie(TEAM_PENDING_COOKIE, ",".join(pending), httponly=True, samesite="lax")
     return response
 

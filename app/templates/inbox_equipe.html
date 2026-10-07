@@ -28,10 +28,6 @@
 
 {% if columns %}
 <div class="team-toolbar">
-  <div class="tipo-chips">
-    <button type="button" class="pill team-filter {{ 'pill-on' if not tipo }}" data-f="">Todas</button>
-    <button type="button" class="pill team-filter {{ 'pill-on' if tipo == 'naolidas' }}" data-f="naolidas">Não lidas <span class="unread-total {{ 'zero' if not naolidas_total }}" id="teamUnreadTotal">{{ naolidas_total }}</span></button>
-  </div>
   <label class="team-search">🔍
     <input type="search" id="teamSearch" value="{{ busca }}" placeholder="Buscar nome ou telefone em todas as colunas..." autocomplete="off">
   </label>
@@ -97,15 +93,24 @@
   grid.querySelectorAll(".pend-toggle.on").forEach(function (b) { pending[b.dataset.seller] = true; });
   function pendingQs() { return "&pset=1" + Object.keys(pending).map(function (s) { return "&p=" + encodeURIComponent(s); }).join(""); }
   // lupa, "Não lidas" e "Ver mais" de cada coluna
-  var busca = {{ busca|tojson }}, tipo = {{ tipo|tojson }}, limits = {};
+  // colunas em "só não lidas" (clique no 🟢 do cabeçalho da coluna)
+  var unreadCols = {};
+  grid.querySelectorAll(".unread-toggle.on").forEach(function (b) { unreadCols[b.dataset.seller] = true; });
+  var busca = {{ busca|tojson }}, limits = {};
   function filterQs() {
-    return "&q=" + encodeURIComponent(busca) + "&f=" + encodeURIComponent(tipo) +
+    return "&q=" + encodeURIComponent(busca) + Object.keys(unreadCols).map(function (s) { return "&u=" + encodeURIComponent(s); }).join("") +
       Object.keys(limits).map(function (s) { return "&m=" + encodeURIComponent(s + ":" + limits[s]); }).join("");
   }
   function applyFilters() {
     Object.keys(open).forEach(showList);
     sig = ""; refreshLists(true);
-    try { history.replaceState(null, "", "/inbox-equipe?" + qs + pendingQs() + "&q=" + encodeURIComponent(busca) + "&f=" + encodeURIComponent(tipo)); } catch (err) {}
+    syncUrl();
+  }
+  function syncUrl() {  // recarregar a página mantém a busca e os filtros das colunas
+    try {
+      history.replaceState(null, "", "/inbox-equipe?" + qs + pendingQs() + "&q=" + encodeURIComponent(busca) +
+        Object.keys(unreadCols).map(function (s) { return "&u=" + encodeURIComponent(s); }).join(""));
+    } catch (err) {}
   }
   var searchTimer, searchEl = document.getElementById("teamSearch");
   searchEl.addEventListener("input", function () {
@@ -113,13 +118,6 @@
     searchTimer = setTimeout(function () { busca = searchEl.value.trim(); applyFilters(); }, 350);
   });
   searchEl.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); clearTimeout(searchTimer); busca = searchEl.value.trim(); applyFilters(); } });
-  document.querySelectorAll(".team-filter").forEach(function (b) {
-    b.addEventListener("click", function () {
-      tipo = b.dataset.f;
-      document.querySelectorAll(".team-filter").forEach(function (o) { o.classList.toggle("pill-on", o === b); });
-      applyFilters();
-    });
-  });
   var open = {};  // seller -> {lead, sig}
 
   function col(seller) { return grid.querySelector('.team-col[data-seller="' + seller + '"]'); }
@@ -165,7 +163,7 @@
       var nameEl = item.querySelector(".name");
       colEl.querySelector("[data-quick-replies]").dataset.leadName = nameEl ? nameEl.textContent.replace(/[★👥]/g, "").trim() : "";
       showThread(colEl.dataset.seller, item.dataset.lead);
-      if (tipo === "naolidas" || item.dataset.unread === "1") setTimeout(function () { sig = ""; refreshLists(true); }, 800);  // ficou lida
+      if (unreadCols[colEl.dataset.seller] || item.dataset.unread === "1") setTimeout(function () { sig = ""; refreshLists(true); }, 800);  // ficou lida
       return;
     }
     var more = e.target.closest("[data-more]");
@@ -176,13 +174,22 @@
       return;
     }
     if (e.target.closest(".team-back")) showList(e.target.closest(".team-col").dataset.seller);
+    var unr = e.target.closest(".unread-toggle");
+    if (unr) {
+      var who = unr.dataset.seller;
+      if (unreadCols[who]) delete unreadCols[who]; else unreadCols[who] = true;
+      unr.classList.toggle("on", !!unreadCols[who]);
+      showList(who);
+      sig = ""; refreshLists(true); syncUrl();
+      return;
+    }
     var pend = e.target.closest(".pend-toggle");
     if (pend) {
       var seller = pend.dataset.seller;
       if (pending[seller]) delete pending[seller]; else pending[seller] = true;
       pend.classList.toggle("on", !!pending[seller]);
       showList(seller);
-      sig = ""; refreshLists(true);
+      sig = ""; refreshLists(true); syncUrl();
     }
   });
   grid.addEventListener("submit", function (e) {
@@ -210,10 +217,6 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d || d.changed === false) return;
-        if (d.naolidas_total !== undefined) {
-          var tot = document.getElementById("teamUnreadTotal");
-          tot.textContent = d.naolidas_total; tot.classList.toggle("zero", !d.naolidas_total);
-        }
         var tmp = document.createElement("div"); tmp.innerHTML = d.html;
         tmp.querySelectorAll(".team-col").forEach(function (fresh) {
           var c = col(fresh.dataset.seller); if (!c) return;

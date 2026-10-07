@@ -5,6 +5,7 @@
     <div><b>{{ col.seller.name }}</b> <span class="role-badge {{ 'admin' if col.seller.role == 'admin' else 'agent' }}">{{ "Admin" if col.seller.role == "admin" else "Vendedor" }}</span></div>
     <div class="team-col-stats">
       <button type="button" class="rt-tag pend-toggle {{ 'late' if col.waiting else '' }} {{ 'on' if col.pending_only }}" data-seller="{{ col.seller.id }}" title="{{ 'Mostrar todas as conversas' if col.pending_only else 'Mostrar só quem está aguardando resposta' }}">{{ "✕ " if col.pending_only }}⏳ {{ col.waiting }} aguardando resposta</button>
+      <button type="button" class="rt-tag unread-toggle {{ 'has' if col.unread_count }} {{ 'on' if col.unread_only }}" data-seller="{{ col.seller.id }}" title="{{ 'Mostrar todas as conversas' if col.unread_only else 'Mostrar só as conversas que você ainda não abriu' }}">{{ "✕ " if col.unread_only }}🟢 {{ col.unread_count }} não lidas</button>
       <span class="rt-tag">💬 {{ col.today }} conversas hoje</span>
     </div>
   </div>
@@ -21,7 +22,7 @@
         </div>
       </a>
     {% else %}
-      <div class="kanban-empty" style="padding:20px">{% if col.busca %}Nada encontrado pra "{{ col.busca }}".{% elif col.tipo == "naolidas" %}✅ Nenhuma conversa não lida.{% elif col.pending_only %}✅ Ninguém aguardando resposta.{% else %}Sem conversas ainda.{% endif %}</div>
+      <div class="kanban-empty" style="padding:20px">{% if col.busca %}Nada encontrado pra "{{ col.busca }}".{% elif col.unread_only %}✅ Nenhuma conversa não lida.{% elif col.pending_only %}✅ Ninguém aguardando resposta.{% else %}Sem conversas ainda.{% endif %}</div>
     {% endfor %}
     {% if col.truncated %}
     <div class="list-more">
