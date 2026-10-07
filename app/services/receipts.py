@@ -3,8 +3,8 @@ Claude diz se é um comprovante (PIX, transferência, boleto pago...) e lê o va
 marca a venda sozinho: mostra no topo da conversa "o cliente mandou um comprovante de
 R$ X — confirmar venda?" e o vendedor confirma (ou diz que não é).
 
-Só analisa mídia de leads em negociação (Qualificado em diante, ou que já receberam um preço),
-pra não gastar com foto de peça de quem ainda está perguntando. Sem ANTHROPIC_API_KEY no
+Analisa mídia de negócios em aberto que o time já atendeu. A leitura é grátis (texto do PDF /
+OCR no servidor, ver receipt_text.py); a IA paga só entra se alguém instalar a chave. Sem ANTHROPIC_API_KEY no
 servidor, fica desligado."""
 
 from __future__ import annotations
@@ -123,14 +123,12 @@ def describe(result: dict) -> str:
 
 
 def worth_checking(lead) -> bool:
-    """Lead em negociação (Qualificado em diante, ou já recebeu preço) e ainda em aberto."""
-    from app.services import funnel
-
+    """Negócio em aberto que o time já atendeu (Em atendimento em diante). A leitura grátis
+    é leve, então não precisa esperar o lead chegar em Negociando."""
     stage = lead.stage
     if lead.is_group or stage is None or stage.is_won or stage.is_lost:
         return False
-    qualified = funnel.levels(funnel._stages_cached(lead))["qualified"]
-    return bool(lead.quoted_value) or (lead.reached_order or 0) >= qualified or stage.order >= qualified
+    return lead.first_response_at is not None or bool(lead.quoted_value)
 
 
 def check_message(message_id: str) -> None:
