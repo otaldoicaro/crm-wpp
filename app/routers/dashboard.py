@@ -10,7 +10,7 @@ from typing import Optional
 import requests
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db import get_db
@@ -59,6 +59,23 @@ def _period_bounds(date_range: str, date_from: str, date_to: str):
     return _range_from(datetime.datetime.utcnow(), date_range), None
 
 
+ORDER_LABELS = [("recentes", "Mais recentes primeiro"), ("espera", "Esperando há mais tempo primeiro")]
+
+
+def _waiting_order() -> list:
+    """Ordem "esperando há mais tempo": primeiro quem espera resposta nossa (do que espera há
+    mais tempo pro mais novo), depois o resto. Mesma regra do "⏳ aguardando há X"."""
+    never_answered = and_(Lead.first_response_at.is_(None), Lead.settled_at.is_(None))
+    waiting = or_(never_answered, response_times.awaiting_reply_sql())
+    since = case((Lead.first_response_at.is_(None), Lead.created_at), else_=Lead.last_inbound_at)
+    return [case((waiting, 0), else_=1), since.asc()]
+
+
+def _order_choice(request: Request, cookie: str) -> str:
+    value = request.query_params.get("ordem", request.cookies.get(cookie, "recentes"))
+    return value if value in dict(ORDER_LABELS) else "recentes"
+
+
 @router.get("/", response_class=HTMLResponse)
 def pipeline_view(
     request: Request,
@@ -76,6 +93,7 @@ def pipeline_view(
     arquivados, e no máximo 30 cartões por coluna (o total aparece no topo da coluna)."""
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
     range_from, range_to = _period_bounds(date_range, date_from, date_to)
+    ordem = _order_choice(request, "pipeline_ordem")
 
     base = db.query(Lead).filter(
         Lead.tenant_id == tenant.id, Lead.archived_at.is_(None), Lead.deleted_at.is_(None), Lead.tag != "outro",
@@ -97,7 +115,7 @@ def pipeline_view(
         leads_by_stage[stage.id] = (
             base.filter(Lead.stage_id == stage.id)
             .options(*LEAD_CARD_LOAD)  # carrega origem/conversas/atendente junto (sem 1 consulta por cartão)
-            .order_by(Lead.updated_at.desc())
+            .order_by(*(_waiting_order() + [Lead.updated_at.asc()]) if ordem == "espera" else (Lead.updated_at.desc(),))
             .limit(limit)
             .all()
         )
@@ -109,7 +127,7 @@ def pipeline_view(
         .scalar()
     )
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "pipeline.html",
         {
@@ -133,8 +151,12 @@ def pipeline_view(
             "stage_colors": _stage_colors(stages),
             "lead_platforms": lead_platforms,
             "platform_labels": PLATFORM_LABEL,
+            "ordem": ordem,
+            "order_labels": ORDER_LABELS,
         },
     )
+    response.set_cookie("pipeline_ordem", ordem, httponly=True, samesite="lax")
+    return response
 
 
 @router.get("/arquivados", response_class=HTMLResponse)
@@ -386,6 +408,7 @@ def update_lead(
     stage_id: str = Form(...),
     deal_value: str = Form(""),
     loss_reason: str = Form(""),
+    loss_detail: str = Form(""),
     voltar: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
@@ -399,10 +422,14 @@ def update_lead(
     stage_changed = stage and lead.stage_id != stage.id
     if stage_changed and funnel.is_automatic(stage):
         return RedirectResponse(url=f"/leads/{lead_id}?erro=" + quote(funnel.AUTOMATIC_MSG), status_code=302)
+    loss_error = funnel.check_loss(db, lead, stage, loss_reason) if stage and stage.is_lost and (stage_changed or loss_reason != lead.loss_reason) else None
+    if loss_error:
+        return RedirectResponse(url=f"/leads/{lead_id}?erro=" + quote(loss_error), status_code=302)
     lead.name = name
     lead.phone = phone
     lead.email = email
-    lead.loss_reason = loss_reason
+    if stage and stage.is_lost:
+        lead.loss_reason, lead.loss_detail = loss_reason, loss_detail.strip()
     try:
         lead.deal_value = float(deal_value) if deal_value else None
     except ValueError:
@@ -425,6 +452,8 @@ def change_stage(
     request: Request,
     stage_id: str = Form(...),
     ajax: str = Form(""),
+    loss_reason: str = Form(""),
+    loss_detail: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -435,8 +464,15 @@ def change_stage(
         if ajax:
             return JSONResponse({"ok": False, "error": funnel.AUTOMATIC_MSG}, status_code=400)
         return RedirectResponse(url="/?erro=" + quote(funnel.AUTOMATIC_MSG), status_code=302)
+    loss_error = funnel.check_loss(db, lead, stage, loss_reason) if lead and stage and lead.stage_id != stage.id else None
+    if loss_error:
+        if ajax:
+            return JSONResponse({"ok": False, "error": loss_error}, status_code=400)
+        return RedirectResponse(url="/?erro=" + quote(loss_error), status_code=302)
     if lead and stage:
         funnel.set_stage(lead, stage)
+        if stage.is_lost:
+            lead.loss_reason, lead.loss_detail = loss_reason, loss_detail.strip()
         db.add(lead)
         db.commit()
         if stage.conversion_event_name:
@@ -604,6 +640,12 @@ def _inbox_query(
     return query, removed_ids
 
 
+def _inbox_order(ordem: str) -> list:
+    if ordem == "espera":
+        return _waiting_order() + [Conversation.last_message_at.desc()]
+    return [Conversation.last_message_at.desc()]
+
+
 def _first_per_lead(rows, limit: int = INBOX_LIST_LIMIT) -> list:
     """Um item por lead (um lead pode ter conversa em mais de um número), o mais recente primeiro."""
     picked, seen = [], set()
@@ -642,6 +684,7 @@ def _inbox_context(
     tipo: str = "",
     lidas: str = "",
     limit: int = INBOX_LIST_LIMIT,
+    ordem: str = "recentes",
 ) -> dict:
     if user.role != "admin":
         numero = vendedor = ""
@@ -653,7 +696,7 @@ def _inbox_context(
     naolidas_total = naolidas_query.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
     conversations = _first_per_lead(
         query.options(joinedload(Conversation.lead).joinedload(Lead.assigned_user))  # sem 1 consulta por item
-        .order_by(Conversation.last_message_at.desc())
+        .order_by(*_inbox_order(ordem))
         .limit(limit * 2),
         limit,
     )
@@ -692,6 +735,8 @@ def _inbox_context(
             "list_truncated": len(conversations) >= limit and limit < INBOX_LIST_MAX,
             "list_limit": limit,
             "list_step": INBOX_LIST_LIMIT,
+            "ordem": ordem,
+            "order_labels": ORDER_LABELS,
             "busca": busca,
             "numero": numero,
             "vendedor": vendedor,
@@ -747,11 +792,12 @@ INBOX_FILTER_COOKIE = "inbox_filtro"
 def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]):
     # filtros de número/vendedor ficam lembrados (cookie) ao abrir conversa, responder, etc.
     qp = request.query_params
-    saved = (request.cookies.get(INBOX_FILTER_COOKIE, "") + "|||").split("|")
+    saved = (request.cookies.get(INBOX_FILTER_COOKIE, "") + "||||").split("|")
     numero = qp.get("numero", saved[0]) if "numero" in qp or "vendedor" in qp else saved[0]
     vendedor = qp.get("vendedor", saved[1]) if "numero" in qp or "vendedor" in qp else saved[1]
     tipo = qp.get("tipo", saved[2])
     lidas = qp.get("lidas", saved[3])
+    ordem = qp.get("ordem", saved[4]) if qp.get("ordem", saved[4]) in dict(ORDER_LABELS) else "recentes"
     # filtro lembrado de um vendedor/número que foi excluído depois: volta pra "todos"
     if vendedor not in ("", "sem", "removidos") and not db.query(User.id).filter(User.id == vendedor, User.tenant_id == tenant.id).first():
         vendedor = ""
@@ -761,11 +807,11 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     if selected_lead_id:
         inbox_state.mark_read(db, user.id, selected_lead_id)
     ctx = _inbox_context(
-        db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas, _list_limit(qp.get("qtd"))
+        db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas, _list_limit(qp.get("qtd")), ordem
     )
     ctx["quick_replies"] = replies_for_js(db, tenant, user)
     response = templates.TemplateResponse(request, "inbox.html", ctx)
-    response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}", httponly=True, samesite="lax")
+    response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}|{ordem}", httponly=True, samesite="lax")
     return response
 
 
@@ -828,6 +874,7 @@ def set_lead_stage(
     stage_id: str = Form(...),
     deal_value: str = Form(""),
     loss_reason: str = Form(""),
+    loss_detail: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -846,11 +893,14 @@ def set_lead_stage(
     changed = lead.stage_id != stage.id
     if changed and funnel.is_automatic(stage):
         return JSONResponse({"ok": False, "error": funnel.AUTOMATIC_MSG}, status_code=400)
+    loss_error = funnel.check_loss(db, lead, stage, loss_reason) if changed or loss_reason != lead.loss_reason else None
+    if loss_error:
+        return JSONResponse({"ok": False, "error": loss_error}, status_code=400)
     funnel.set_stage(lead, stage)
     if value > 0:
         lead.deal_value = value
     if stage.is_lost:
-        lead.loss_reason = loss_reason.strip() or lead.loss_reason
+        lead.loss_reason, lead.loss_detail = loss_reason, loss_detail.strip()
     db.commit()
     if changed and stage.conversion_event_name:
         dispatch_stage_conversion(db, lead, stage.conversion_event_name)
@@ -996,6 +1046,7 @@ def inbox_refresh(
     tipo: str = "",
     lidas: str = "",
     qtd: str = "",
+    ordem: str = "recentes",
     ls: str = "",
     ms: str = "",
     db: Session = Depends(get_db),
@@ -1012,7 +1063,7 @@ def inbox_refresh(
     query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas)
     rows = _first_per_lead(
         query.with_entities(Conversation.id, Conversation.lead_id, Conversation.last_message_at)
-        .order_by(Conversation.last_message_at.desc())
+        .order_by(*_inbox_order(ordem))
         .limit(limit * 2),
         limit,
     )
@@ -1021,7 +1072,7 @@ def inbox_refresh(
         return JSONResponse({"changed": False})  # nada novo: resposta mínima, sem desenhar nada
     if lead and current_msg_sig != ms:
         inbox_state.mark_read(db, user.id, lead)  # chegou mensagem na conversa que está aberta: já foi vista
-    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo, lidas, limit)
+    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo, lidas, limit, ordem)
     return JSONResponse(
         {
             "list_sig": ctx["list_sig"],
@@ -1657,6 +1708,15 @@ def dashboard_view(
     seller_rows.sort(key=lambda r: (r["won"], r["total"]), reverse=True)
     team_row = seller_row(None, all_period_leads)
     commercial_funnel = funnel.summary(leads, stages)
+    lost_leads = [lead for lead in leads if lead.stage_id in lost_stage_ids]
+    loss_counts: dict = {}
+    for lead in lost_leads:
+        key = lead.loss_reason or "Sem motivo informado"
+        loss_counts[key] = loss_counts.get(key, 0) + 1
+    loss_rows = [
+        {"reason": r, "count": n, "pct": round(100 * n / len(lost_leads), 1)}
+        for r, n in sorted(loss_counts.items(), key=lambda kv: kv[1], reverse=True)
+    ]
     my_numbers = None
     if not is_admin:
         mine = [lead for lead in all_period_leads if lead.assigned_user_id == user.id]
@@ -1755,6 +1815,8 @@ def dashboard_view(
             "is_admin": is_admin,
             "team_row": team_row,
             "commercial_funnel": commercial_funnel,
+            "loss_rows": loss_rows,
+            "lost_total": len(lost_leads),
             "my_stats": my_numbers,
             "customer_stats": deals.customer_stats(
                 db, tenant.id, won_stage_ids, range_from, range_to, seller=seller, top_owner="" if is_admin else user.id

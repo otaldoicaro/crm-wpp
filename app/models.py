@@ -146,7 +146,8 @@ class Lead(Base):
     assigned_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     whatsapp_number_id: Mapped[Optional[str]] = mapped_column(ForeignKey("whatsapp_numbers.id"), nullable=True)
     deal_value: Mapped[Optional[float]] = mapped_column(nullable=True)  # valor fechado, preenchido na etapa "Ganho"
-    loss_reason: Mapped[str] = mapped_column(String(255), default="")  # motivo, preenchido na etapa "Perdido"
+    loss_reason: Mapped[str] = mapped_column(String(255), default="")  # motivo (lista em funnel.LOSS_REASONS)
+    loss_detail: Mapped[str] = mapped_column(Text, default="")  # o que houve, escrito pelo vendedor
     # etiqueta do contato: "" = lead normal | "cliente" = já é cliente | "outro" = não é venda
     # (fornecedor, conhecido...): "outro" sai do Pipeline e das métricas, a conversa continua no Inbox
     tag: Mapped[str] = mapped_column(String(20), default="", index=True)

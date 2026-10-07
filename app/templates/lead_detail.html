@@ -28,7 +28,7 @@
       <p><label>Etapa<br>
         <select name="stage_id" id="stageSelect">
           {% for stage in stages %}
-            <option value="{{ stage.id }}" {% if lead.stage_id == stage.id %}selected{% elif auto_stage(stage) %}disabled title="O CRM coloca e tira sozinho"{% endif %}>{{ stage.name }}{{ " (automática)" if auto_stage(stage) }}</option>
+            <option value="{{ stage.id }}" data-lost="{{ 1 if stage.is_lost else 0 }}" {% if lead.stage_id == stage.id %}selected{% elif auto_stage(stage) %}disabled title="O CRM coloca e tira sozinho"{% endif %}>{{ stage.name }}{{ " (automática)" if auto_stage(stage) }}</option>
           {% endfor %}
         </select>
       </label></p>
@@ -37,7 +37,9 @@
         <span>⚠️ Você colocou um <b>valor fechado</b>, mas a etapa ainda não está como <b>{{ won_stage_name }}</b>. Sem isso a venda não conta no Dashboard.</span>
         <button type="button" class="btn small" id="setWon">Mudar etapa para {{ won_stage_name }}</button>
       </div>
-      <p><label>Motivo de perda<br><input type="text" name="loss_reason" value="{{ lead.loss_reason }}" placeholder="preencher quando perder"></label></p>
+      <div class="loss-box" id="lossBox">
+        {% with reason=lead.loss_reason, detail=lead.loss_detail, required=False %}{% include "_loss_fields.html" %}{% endwith %}
+      </div>
       <button class="btn" type="submit">Salvar alterações</button>
     </form>
     <script>
@@ -47,7 +49,13 @@
       var value = document.getElementById("dealValue");
       var warning = document.getElementById("stageWarning");
       function inconsistent() { return value.value.trim() !== "" && Number(value.value) > 0 && WON.indexOf(stage.value) === -1; }
-      function refresh() { warning.hidden = !inconsistent(); }
+      var lossBox = document.getElementById("lossBox");
+      function refresh() {
+        warning.hidden = !inconsistent();
+        var lost = stage.options[stage.selectedIndex].dataset.lost === "1";
+        lossBox.hidden = !lost;
+        lossBox.querySelector("select").required = lost;
+      }
       value.addEventListener("input", refresh);
       stage.addEventListener("change", refresh);
       document.getElementById("setWon").addEventListener("click", function () {

@@ -56,6 +56,47 @@ def entry_stage(db, tenant_id: str, with_chat: bool) -> Optional[PipelineStage]:
     )
 
 
+NO_REPLY_REASON = "Não responde mais"
+LOSS_REASONS = [
+    "Não temos a peça",
+    "Preço",
+    "Comprou em outro lugar / concorrente",
+    "Prazo de entrega / disponibilidade",
+    "Frete",
+    "Forma de pagamento / condições",
+    "Peça incompatível / dados do veículo",
+    "Desistiu / só pesquisando",
+    "Resolveu de outro jeito",
+    NO_REPLY_REASON,
+    "Outro",
+]
+FOLLOW_UPS_BEFORE_NO_REPLY = 2  # mensagens do time sem resposta antes de poder marcar "Não responde mais"
+
+
+def check_loss(db, lead: Lead, stage: PipelineStage, reason: str) -> Optional[str]:
+    """Erro (texto pra mostrar) se não dá pra marcar como perdido com esse motivo, senão None."""
+    if not stage.is_lost:
+        return None
+    if reason not in LOSS_REASONS:
+        return "Escolha o motivo da perda."
+    if reason == NO_REPLY_REASON:
+        from app.models import Conversation, Message
+
+        query = (
+            db.query(Message.id)
+            .join(Conversation, Conversation.id == Message.conversation_id)
+            .filter(Conversation.lead_id == lead.id, Message.direction == "out", ~Message.body.like("⚠️ Não enviada%"))
+        )
+        if lead.last_inbound_at:
+            query = query.filter(Message.created_at > lead.last_inbound_at)
+        if query.count() < FOLLOW_UPS_BEFORE_NO_REPLY:
+            return (
+                f"“{NO_REPLY_REASON}” só depois de pelo menos {FOLLOW_UPS_BEFORE_NO_REPLY} follow-ups sem resposta "
+                "(mensagens do time depois da última mensagem do cliente)."
+            )
+    return None
+
+
 def is_automatic(stage) -> bool:
     """Etapas de 1º contato ("Lead sem conversa" e "Novo"): só o CRM coloca leads nelas (quando o
     lead chega); ninguém move um lead pra lá na mão."""

@@ -595,3 +595,22 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .deals-box form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .78rem; }
 .deal-current td { background: var(--y-soft); font-weight: 700; }
 .table-simple th.num, .table-simple td.num { text-align: right; white-space: nowrap; }
+/* motivo de perda */
+.loss-field { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; font-weight: 600; margin-bottom: 8px; }
+.loss-field textarea { font: inherit; font-weight: 400; }
+.loss-box[hidden], .mini-loss[hidden] { display: none !important; }
+.stage-bar .stage-loss { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+.stage-bar .stage-loss .loss-field { flex: 1; min-width: 200px; margin: 0; }
+.stage-bar .stage-loss select, .stage-bar .stage-loss textarea { width: 100%; }
+.mini-loss { width: 100%; }
+.loss-dialog { border: 1px solid var(--line); border-radius: 12px; padding: 18px; width: min(420px, 92vw); background: var(--panel); color: var(--text); }
+.loss-dialog::backdrop { background: rgba(0,0,0,.45); }
+.loss-dialog select, .loss-dialog textarea { width: 100%; }
+.loss-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.loss-error { color: var(--danger); font-size: .8rem; min-height: 1em; }
+.inbox-search { display: flex; flex-direction: column; gap: 6px; }
+.inbox-order { font-size: .78rem; padding: 6px 10px; border-radius: 999px; }
+.loss-row { display: grid; grid-template-columns: minmax(150px, 260px) 1fr auto; align-items: center; gap: 10px; margin-bottom: 8px; font-size: .84rem; }
+.loss-track { background: var(--panel-3); border-radius: 6px; height: 14px; overflow: hidden; }
+.loss-fill { background: var(--danger); height: 100%; border-radius: 6px; opacity: .75; }
+.loss-num { white-space: nowrap; font-size: .8rem; }

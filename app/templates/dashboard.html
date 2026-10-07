@@ -98,6 +98,20 @@
   <p class="muted" style="margin:10px 0 0; font-size:.78rem">Conta a etapa mais avançada que cada lead já alcançou: quem negociou e depois foi perdido continua contando como negociação. Leads de antes desta versão contam pela etapa em que estão hoje.</p>
 </div>
 
+<div class="section-title"><h3 style="margin:0">Motivos de perda{{ " — equipe toda" if not is_admin }} ({{ lost_total }})</h3></div>
+<div class="card">
+  {% for r in loss_rows %}
+  <div class="loss-row">
+    <span class="loss-name">{{ r.reason }}</span>
+    <div class="loss-track"><div class="loss-fill" style="width: {{ [r.pct, 2]|max }}%"></div></div>
+    <span class="loss-num"><b>{{ r.count }}</b> · {{ (r.pct|string).replace(".", ",") }}%</span>
+  </div>
+  {% else %}
+  <p class="muted" style="margin:0">Nenhum lead perdido no período.</p>
+  {% endfor %}
+  {% if is_admin and lost_total %}<p class="muted" style="margin:10px 0 0; font-size:.78rem">Pra ver quem são e o que houve: na lista de leads abaixo, filtre pela etapa “Perdido”.</p>{% endif %}
+</div>
+
 {% if my_stats %}
 <div class="section-title"><h3 style="margin:0">Seus números</h3></div>
 <div class="my-numbers">
@@ -365,7 +379,7 @@ document.querySelectorAll(".traffic-camp .camp-row").forEach(function (row) {
         <td class="muted">{{ (lead.attribution.utm_campaign if lead.attribution else "") or "—" }}</td>
         <td>{{ lead.name or "(sem nome)" }}</td>
         <td class="muted">{{ lead.phone or lead.email }}</td>
-        <td>{{ stage_by_id[lead.stage_id].name if lead.stage_id in stage_by_id else "—" }}</td>
+        <td>{{ stage_by_id[lead.stage_id].name if lead.stage_id in stage_by_id else "—" }}{% if lead.stage_id in stage_by_id and stage_by_id[lead.stage_id].is_lost and lead.loss_reason %}<div class="muted" style="font-size:.72rem" title="{{ lead.loss_detail }}">{{ lead.loss_reason }}{{ " · " ~ lead.loss_detail[:60] if lead.loss_detail }}</div>{% endif %}</td>
         <td>{% if lead.deal_value %}<b>R$ {{ "{:,.0f}".format(lead.deal_value).replace(",", ".") }}</b>{% else %}<span class="muted">—</span>{% endif %}</td>
       </tr>
       {% else %}

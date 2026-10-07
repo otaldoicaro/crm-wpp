@@ -32,6 +32,9 @@
   </div>
   <form class="inbox-search" method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
     <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone..." autocomplete="off">
+    <select name="ordem" onchange="this.form.submit()" aria-label="Ordem das conversas" class="inbox-order">
+      {% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if ordem == key }}>↕ {{ label }}</option>{% endfor %}
+    </select>
   </form>
   <div class="inbox-list" id="inboxList">
     {% include "_inbox_list.html" %}
@@ -63,7 +66,7 @@
             </select>
           </label>
           <label class="stage-value">R$ <input name="deal_value" inputmode="decimal" autocomplete="off" placeholder="valor da venda" value="{{ ('%.2f'|format(selected_lead.deal_value)).replace('.', ',') if selected_lead.deal_value else '' }}"></label>
-          <label class="stage-loss" hidden>Motivo <input name="loss_reason" autocomplete="off" placeholder="por que perdeu? (opcional)" value="{{ selected_lead.loss_reason or '' }}"></label>
+          <div class="stage-loss" hidden>{% with reason=selected_lead.loss_reason, detail=selected_lead.loss_detail, required=False %}{% include "_loss_fields.html" %}{% endwith %}</div>
           <button class="btn small" type="submit" hidden>Salvar</button>
           <span class="stage-status muted"></span>
         </form>
@@ -127,6 +130,7 @@
   var sel = bar.stage_id, value = bar.deal_value, loss = bar.querySelector(".stage-loss"), btn = bar.querySelector("button"), status = bar.querySelector(".stage-status");
   var initial;
   function opt() { return sel.options[sel.selectedIndex]; }
+  function state() { return [sel.value, value.value, bar.loss_reason.value, bar.loss_detail.value].join("|"); }
   // valor no formato brasileiro enquanto digita: 10000,5 -> 10.000,5 (e 10.000,50 ao sair do campo)
   function money(raw, done) {
     var clean = raw.replace(/[^\d,]/g, ""), cut = clean.indexOf(",");
@@ -144,27 +148,28 @@
     var won = opt().dataset.won === "1";
     loss.hidden = opt().dataset.lost !== "1";
     value.parentNode.classList.toggle("needed", won && !value.value.trim());
-    btn.hidden = (sel.value + "|" + value.value + "|" + bar.loss_reason.value) === initial;
+    btn.hidden = state() === initial;
     status.textContent = "";
   }
-  [sel, value, bar.loss_reason].forEach(function (el) { el.addEventListener("input", sync); el.addEventListener("change", sync); });
+  [sel, value, bar.loss_reason, bar.loss_detail].forEach(function (el) { el.addEventListener("input", sync); el.addEventListener("change", sync); });
   sel.addEventListener("change", function () { if (opt().dataset.won === "1" && !value.value.trim()) value.focus(); });
   bar.addEventListener("submit", function (e) {
     e.preventDefault();
     if (opt().dataset.won === "1" && !value.value.trim()) { status.textContent = "Preencha o valor da venda"; value.focus(); return; }
+    if (opt().dataset.lost === "1" && !bar.loss_reason.value) { status.textContent = "Escolha o motivo da perda"; bar.loss_reason.focus(); return; }
     btn.disabled = true; status.textContent = "Salvando…";
     fetch("/leads/" + bar.dataset.lead + "/etapa", { method: "POST", body: new FormData(bar) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.ok) { status.textContent = d.error; return; }
-        initial = sel.value + "|" + value.value + "|" + bar.loss_reason.value;
+        initial = state();
         btn.hidden = true; status.textContent = "✅ Salvo";
         setTimeout(function () { status.textContent = ""; }, 3000);
       })
       .catch(function () { status.textContent = "Não salvou (sem conexão com o CRM)"; })
       .then(function () { btn.disabled = false; });
   });
-  initial = sel.value + "|" + value.value + "|" + bar.loss_reason.value;
+  initial = state();
   sync();
 })();
 // passar pra outro vendedor NO CRM: a conversa continua pelo mesmo WhatsApp (o cliente não
@@ -390,13 +395,14 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   var tipo = {{ tipo|tojson }};
   var lidas = {{ lidas|tojson }};
   var qtd = {{ list_limit }};
+  var ordem = {{ ordem|tojson }};
   var busy = false;
   function nearBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 120; }
   function tick(force) {
     if (busy || (document.hidden && force !== true)) return;
     busy = true;
     var url = "/inbox-atualizar?lead=" + encodeURIComponent(lead) + "&busca=" + encodeURIComponent(busca) +
-      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) + "&lidas=" + encodeURIComponent(lidas) + "&qtd=" + qtd +
+      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) + "&lidas=" + encodeURIComponent(lidas) + "&qtd=" + qtd + "&ordem=" + encodeURIComponent(ordem) +
       "&ls=" + encodeURIComponent(listSig) + "&ms=" + encodeURIComponent(msgSig);
     fetch(url, { headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })

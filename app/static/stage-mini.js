@@ -12,7 +12,9 @@
   function changed(form) {
     form.querySelector("button").hidden = false;
     form.querySelector(".mini-stage-status").textContent = "";
-    var won = form.stage_id.options[form.stage_id.selectedIndex].dataset.won === "1";
+    var opt = form.stage_id.options[form.stage_id.selectedIndex];
+    var won = opt.dataset.won === "1";
+    form.querySelector(".mini-loss").hidden = opt.dataset.lost !== "1";
     form.deal_value.classList.toggle("needed", won && !form.deal_value.value.trim());
   }
   document.addEventListener("input", function (e) {
@@ -25,6 +27,9 @@
     var form = e.target.closest(".mini-stage"); if (!form) return;
     e.preventDefault();
     var status = form.querySelector(".mini-stage-status"), btn = form.querySelector("button");
+    if (form.stage_id.options[form.stage_id.selectedIndex].dataset.lost === "1" && !form.loss_reason.value) {
+      status.textContent = "Escolha o motivo da perda"; form.loss_reason.focus(); return;
+    }
     btn.disabled = true; status.textContent = "Salvando…";
     fetch("/leads/" + form.dataset.lead + "/etapa", { method: "POST", body: new FormData(form) })
       .then(function (r) { return r.json(); })

@@ -32,6 +32,15 @@
     <input type="date" name="date_to" value="{{ date_to }}">
     <button type="submit" class="pill" style="{{ 'background:var(--y); color:var(--ink);' if date_range == 'custom' }} border:0; cursor:pointer;">Aplicar</button>
   </form>
+  <form method="get" action="/" class="pipeline-filter-form">
+    <input type="hidden" name="date_range" value="{{ date_range }}">
+    <input type="hidden" name="date_from" value="{{ date_from }}">
+    <input type="hidden" name="date_to" value="{{ date_to }}">
+    <input type="hidden" name="seller" value="{{ seller }}">
+    <select name="ordem" onchange="this.form.submit()" aria-label="Ordem dos cards" title="Ordem dos cards em cada coluna">
+      {% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if ordem == key }}>↕ {{ label }}</option>{% endfor %}
+    </select>
+  </form>
 {% if user.role == "admin" %}
   <form method="get" action="/" class="pipeline-filter-form">
     <input type="hidden" name="date_range" value="{{ date_range }}">
@@ -47,7 +56,7 @@
 
 <div class="kanban">
   {% for stage in stages %}
-  <div class="kanban-col" data-stage-id="{{ stage.id }}" data-auto="{{ 1 if auto_stage(stage) else 0 }}" id="col-{{ stage.id }}">
+  <div class="kanban-col" data-stage-id="{{ stage.id }}" data-auto="{{ 1 if auto_stage(stage) else 0 }}" data-lost="{{ 1 if stage.is_lost else 0 }}" id="col-{{ stage.id }}">
     <div class="kanban-col-head">
       <span class="dot" style="background: {{ stage_colors[stage.id] }}"></span>
       <h3>{{ stage.name }}</h3>{% if auto_stage(stage) %}<span class="auto-hint" title="O CRM coloca e tira os leads daqui sozinho (1º contato). Não dá pra arrastar pra cá.">⚙ automática</span>{% endif %}
@@ -114,11 +123,38 @@
       const stageId = col.dataset.stageId;
       if (!draggedId || !stageId) return;
       if (col.dataset.auto === "1") { alert("“Lead sem conversa” e “Novo” são só pra leads que acabaram de chegar: o CRM coloca e tira sozinho."); return; }
-      const body = new URLSearchParams({ stage_id: stageId, ajax: "1" });
-      fetch("/leads/" + draggedId + "/stage", { method: "POST", body: body })
-        .then(function () { window.location.reload(); });
+      const lead = draggedId;
+      function move(extra) {
+        const body = new URLSearchParams(Object.assign({ stage_id: stageId, ajax: "1" }, extra || {}));
+        return fetch("/leads/" + lead + "/stage", { method: "POST", body: body })
+          .then(function (r) { return r.json().catch(function () { return { ok: r.ok }; }); })
+          .then(function (d) { if (d && d.ok === false) { alert(d.error); return false; } window.location.reload(); return true; });
+      }
+      if (col.dataset.lost !== "1") { move(); return; }
+      // Perdido: pede o motivo antes de mover
+      const dlg = document.getElementById("lossDialog");
+      dlg.querySelector("form").reset();
+      dlg.querySelector(".loss-error").textContent = "";
+      dlg.onsubmit = function (ev) {
+        ev.preventDefault();
+        const f = dlg.querySelector("form");
+        if (!f.loss_reason.value) { dlg.querySelector(".loss-error").textContent = "Escolha o motivo."; return; }
+        move({ loss_reason: f.loss_reason.value, loss_detail: f.loss_detail.value }).then(function (ok) { if (ok) dlg.close(); });
+      };
+      dlg.showModal();
     });
   });
 })();
 </script>
+<dialog id="lossDialog" class="loss-dialog">
+  <form method="dialog">
+    <h3 style="margin-top:0">Por que o lead foi perdido?</h3>
+    {% with reason="", detail="", required=False %}{% include "_loss_fields.html" %}{% endwith %}
+    <div class="muted loss-error"></div>
+    <div class="loss-actions">
+      <button class="btn ghost small" type="button" onclick="this.closest('dialog').close()">Cancelar</button>
+      <button class="btn small" type="submit">Marcar como perdido</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}

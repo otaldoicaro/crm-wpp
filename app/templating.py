@@ -36,6 +36,7 @@ templates.env.filters["duracao"] = response_times.human
 templates.env.filters["ha"] = response_times.ago
 templates.env.globals["rt"] = response_times
 templates.env.globals["auto_stage"] = funnel.is_automatic  # etapas que só o CRM preenche
+templates.env.globals["LOSS_REASONS"] = funnel.LOSS_REASONS
 templates.env.globals["agora"] = datetime.datetime.utcnow
 templates.env.filters["quebras"] = lambda text: Markup(str(escape(text or "")).replace("\n", "<br>"))
 # "Carlos  Vendedor" e "carlos vendedor" contam como o mesmo nome

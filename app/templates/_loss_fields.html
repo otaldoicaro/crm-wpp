@@ -1,0 +1,11 @@
+{# motivo de perda (lista) + o que houve. Variáveis: reason, detail, required #}
+<label class="loss-field">Motivo da perda
+  <select name="loss_reason" {{ "required" if required }}>
+    <option value="">Escolha o motivo…</option>
+    {% for r in LOSS_REASONS %}<option value="{{ r }}" {{ "selected" if reason == r }}>{{ r }}{{ " (só após follow-ups)" if r == "Não responde mais" }}</option>{% endfor %}
+    {% if reason and reason not in LOSS_REASONS %}<option value="{{ reason }}" selected>{{ reason }} (antigo)</option>{% endif %}
+  </select>
+</label>
+<label class="loss-field">O que houve
+  <textarea name="loss_detail" rows="2" placeholder="Ex: queria o farol original, só temos paralelo">{{ detail or "" }}</textarea>
+</label>
