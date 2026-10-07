@@ -566,12 +566,6 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .mini-stage select { width: auto; max-width: 200px; }
 
 /* funil comercial: leads > qualificados > negociações > vendas */
-.cfunnel { display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
-.cfunnel-step { display: flex; align-items: center; gap: 10px; }
-.cfunnel-bar { background: var(--y); color: var(--ink); border-radius: 8px; padding: 8px 12px; min-width: 56px; font-size: 1.05rem; }
-.cfunnel-step:nth-of-type(2) .cfunnel-bar { opacity: .85; }
-.cfunnel-label { font-weight: 700; font-size: .85rem; white-space: nowrap; }
-.cfunnel-rate { font-size: .78rem; font-weight: 700; padding: 2px 0 2px 14px; color: var(--text); }
 .cfunnel-overall { margin-top: 10px; font-size: .85rem; }
 .my-numbers { display: grid; grid-template-columns: minmax(280px, 1fr) 2fr; gap: 12px; }
 .my-numbers .stat-grid { margin: 0; }
@@ -614,3 +608,20 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .loss-track { background: var(--panel-3); border-radius: 6px; height: 14px; overflow: hidden; }
 .loss-fill { background: var(--danger); height: 100%; border-radius: 6px; opacity: .75; }
 .loss-num { white-space: nowrap; font-size: .8rem; }
+
+/* funil comercial em formato de funil */
+.cfunnel { display: flex; flex-direction: column; gap: 3px; }
+.cf-row { display: grid; grid-template-columns: 1fr 190px; align-items: center; gap: 12px; }
+.cf-cell { display: flex; justify-content: center; }
+.cf-shape { height: 58px; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--ink); background: var(--y); }
+.cf-shape b { font-size: 1.35rem; }
+.cf-shape span { font-weight: 700; font-size: .85rem; }
+.cf-2 { background: #f5b82e; } .cf-3 { background: #ee9b2a; } .cf-4 { background: #2f9e5b; color: #fff; }
+.cf-side { font-size: .82rem; }
+.cf-side b { font-size: 1rem; }
+@media (max-width: 700px) { .cf-row { grid-template-columns: 1fr 110px; } .cf-shape b { font-size: 1.1rem; } .cf-shape span { font-size: .72rem; } }
+.my-numbers .cf-row { grid-template-columns: 1fr 120px; }
+.my-numbers .cf-shape { height: 46px; }
+.my-numbers .cf-shape b { font-size: 1.05rem; }
+.my-numbers .cf-shape span { font-size: .72rem; }
+.my-numbers .cf-side { font-size: .72rem; }

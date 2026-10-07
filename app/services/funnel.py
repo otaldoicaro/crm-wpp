@@ -64,7 +64,7 @@ LOSS_REASONS = [
     "Prazo de entrega / disponibilidade",
     "Frete",
     "Forma de pagamento / condições",
-    "Peça incompatível / dados do veículo",
+    "Não informou o veículo",
     "Desistiu / só pesquisando",
     "Resolveu de outro jeito",
     NO_REPLY_REASON,

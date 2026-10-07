@@ -2,7 +2,7 @@
 <label class="loss-field">Motivo da perda
   <select name="loss_reason" {{ "required" if required }}>
     <option value="">Escolha o motivo…</option>
-    {% for r in LOSS_REASONS %}<option value="{{ r }}" {{ "selected" if reason == r }}>{{ r }}{{ " (só após follow-ups)" if r == "Não responde mais" }}</option>{% endfor %}
+    {% for r in LOSS_REASONS %}<option value="{{ r }}" {{ "selected" if reason == r }}>{{ r }}</option>{% endfor %}
     {% if reason and reason not in LOSS_REASONS %}<option value="{{ reason }}" selected>{{ reason }} (antigo)</option>{% endif %}
   </select>
 </label>
