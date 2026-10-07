@@ -160,7 +160,7 @@
       var nameEl = item.querySelector(".name");
       colEl.querySelector("[data-quick-replies]").dataset.leadName = nameEl ? nameEl.textContent.replace(/[★👥]/g, "").trim() : "";
       showThread(colEl.dataset.seller, item.dataset.lead);
-      if (pending[colEl.dataset.seller] === "naovistas" || item.dataset.unread === "1") setTimeout(function () { sig = ""; refreshLists(true); }, 800);  // ficou lida
+      if (/naovistas|gruposnv/.test(pending[colEl.dataset.seller] || "") || item.dataset.unread === "1") setTimeout(function () { sig = ""; refreshLists(true); }, 800);  // ficou lida
       return;
     }
     var more = e.target.closest("[data-more]");
@@ -175,7 +175,7 @@
     if (pend) {
       var seller = pend.dataset.seller, mode = pend.dataset.mode;
       if (pending[seller] === mode) delete pending[seller]; else pending[seller] = mode;
-      pend.parentNode.querySelectorAll(".pend-toggle").forEach(function (b) { b.classList.toggle("on", pending[seller] === b.dataset.mode); });
+      pend.closest(".team-col-head").querySelectorAll(".pend-toggle").forEach(function (b) { b.classList.toggle("on", pending[seller] === b.dataset.mode); });
       showList(seller);
       sig = ""; refreshLists(true); syncUrl();
     }

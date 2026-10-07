@@ -845,10 +845,14 @@ TEAM_VIEW_COOKIE = "inbox_equipe"
 #   pend      = ⏳ aguardando resposta (todas)
 #   naovistas = 🙈 aguardando e ele nem abriu a conversa (no CRM ou no celular)
 #   vistas    = 👀 aguardando, ele abriu/leu e não respondeu
+#   grupos    = 👥 só os grupos (sem filtro, a coluna mostra só leads)
+#   gruposnv  = 👥 grupos com mensagem nova que ele não viu
 TEAM_MODES = {
     "pend": inbox_state.unanswered_filter,
     "naovistas": inbox_state.unseen_filter,
     "vistas": inbox_state.seen_unanswered_filter,
+    "grupos": inbox_state.groups_filter,
+    "gruposnv": inbox_state.unseen_groups_filter,
 }
 
 
@@ -874,6 +878,8 @@ def _team_columns(
         mode = modes.get(seller_id, "")
         if mode:
             list_query = _pending_only(list_query, mode)
+        else:
+            list_query = list_query.filter(Lead.is_group.is_(False))  # padrão: só leads; grupos no filtro 👥
         limit = limits.get(seller_id, TEAM_VIEW_PER_COLUMN)
         convs = _first_per_lead(
             list_query.options(joinedload(Conversation.lead))
@@ -887,10 +893,16 @@ def _team_columns(
         )
         waiting = open_leads.filter(response_times.awaiting_reply_sql()).count()
         unseen = inbox_state.unseen_filter(open_leads).count() if waiting else 0
+        groups = db.query(Lead).filter(
+            Lead.tenant_id == tenant.id, Lead.assigned_user_id == seller_id, Lead.deleted_at.is_(None), Lead.is_group.is_(True)
+        )
+        group_total = groups.count()
+        group_unseen = inbox_state.unseen_groups_filter(groups).count() if group_total else 0
         today_count = query.filter(Conversation.last_message_at >= today).count()
         columns.append({
             "seller": people[seller_id], "convs": convs, "waiting": waiting, "unseen": unseen,
             "seen_waiting": waiting - unseen, "today": today_count, "mode": mode,
+            "groups": group_total, "groups_unseen": group_unseen,
             "truncated": len(convs) >= limit and limit < INBOX_LIST_MAX, "limit": limit, "busca": busca,
         })
     # não lidas (de quem está olhando) de todas as colunas numa consulta só

@@ -96,6 +96,24 @@ def seen_unanswered_filter(query):
     return unanswered_filter(query).filter(Lead.seen_at >= Lead.last_inbound_at)
 
 
+GROUP_UNSEEN_WINDOW = datetime.timedelta(days=7)  # grupo parado há mais que isso não conta como "não visto"
+
+
+def groups_filter(query):
+    return query.filter(Lead.is_group.is_(True))
+
+
+def unseen_groups_filter(query):
+    """Grupos com mensagem nova (últimos 7 dias) que o dono do número ainda não abriu nem leu
+    no celular, e em que ele também não escreveu depois."""
+    return query.filter(
+        Lead.is_group.is_(True),
+        Lead.last_inbound_at > datetime.datetime.utcnow() - GROUP_UNSEEN_WINDOW,
+        or_(Lead.seen_at.is_(None), Lead.seen_at < Lead.last_inbound_at),
+        or_(Lead.last_outbound_at.is_(None), Lead.last_inbound_at > Lead.last_outbound_at),
+    )
+
+
 def mark_seen_by_seller(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
     when = when or datetime.datetime.utcnow()
     if lead.seen_at is None or when > lead.seen_at:

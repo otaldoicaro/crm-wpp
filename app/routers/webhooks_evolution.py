@@ -210,12 +210,12 @@ def _self_read_updates(data) -> list:
     return [
         i for i in items
         if isinstance(i, dict) and not i.get("fromMe") and i.get("status") in READ_STATUSES
-        and i.get("keyId") and not str(i.get("remoteJid", "")).endswith("@g.us")
+        and i.get("keyId")
     ]
 
 
 def _apply_self_reads(db: Session, number: WhatsAppNumber, data) -> None:
-    """Marca "visto pelo vendedor" nos leads cujas mensagens ele leu no celular."""
+    """Marca "visto pelo vendedor" nos leads (e grupos) cujas mensagens ele leu no celular."""
     for item in _self_read_updates(data):
         message = db.query(Message).filter(Message.wa_message_id == item["keyId"], Message.direction == "in").first()
         if message is None:
