@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
 {% block title %}Pipeline{% endblock %}
+{% block body_attrs %}data-keep-window data-keep-scope="pipeline:{{ date_range }}:{{ date_from }}:{{ date_to }}:{{ seller }}:{{ 1 if atrasados }}:{{ ordem }}"{% endblock %}
 {% block content %}
 {% set qs = "date_range=" ~ date_range ~ "&date_from=" ~ date_from ~ "&date_to=" ~ date_to ~ "&seller=" ~ seller %}
 <div class="kanban-toolbar">
@@ -58,7 +59,7 @@
   {% endif %}
 </div>
 
-<div class="kanban">
+<div class="kanban" data-keep-scroll="quadro">
   {% for stage in stages %}
   <div class="kanban-col" data-stage-id="{{ stage.id }}" data-auto="{{ 1 if auto_stage(stage) else 0 }}" data-lost="{{ 1 if stage.is_lost else 0 }}" id="col-{{ stage.id }}">
     <div class="kanban-col-head">
@@ -66,7 +67,7 @@
       <h3>{{ stage.name }}</h3>{% if auto_stage(stage) %}<span class="auto-hint" title="O CRM coloca e tira os leads daqui sozinho (1º contato). Não dá pra arrastar pra cá.">⚙ automática</span>{% endif %}
       <span class="count">{{ totals.get(stage.id, 0) }}</span>
     </div>
-    <div class="kanban-cards" data-stage-id="{{ stage.id }}">
+    <div class="kanban-cards" data-stage-id="{{ stage.id }}" data-keep-scroll="col-{{ stage.id }}">
       {% for lead in leads_by_stage[stage.id] %}
       <div class="lead-card" draggable="true" data-lead-id="{{ lead.id }}">
         <span class="name"><a href="{{ '/inbox/' if lead.conversations else '/leads/' }}{{ lead.id }}">{{ lead.name or lead.phone or lead.email or "(sem nome)" }}</a></span>{% if lead.deal_number and lead.deal_number > 1 %}<span class="deal-badge" title="Cliente recorrente: {{ lead.deal_number }}º negócio">🔁 {{ lead.deal_number }}º</span>{% endif %}

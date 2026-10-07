@@ -93,6 +93,14 @@ def pipeline_view(
     """Quadro do Pipeline. Por padrão só leads que chegaram nos últimos 30 dias, sem
     arquivados, e no máximo 30 cartões por coluna (o total aparece no topo da coluna)."""
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
+    # filtros lembrados: voltar pelo menu "Pipeline" abre do jeito que a pessoa deixou
+    qp = request.query_params
+    if not any(k in qp for k in ("date_range", "date_from", "date_to", "seller", "atrasados")):
+        saved = (request.cookies.get("pipeline_filtro", "") + "||||").split("|")
+        date_range, date_from, date_to, seller = saved[0] or date_range, saved[1], saved[2], saved[3]
+        atrasados_saved = saved[4] == "1"
+    else:
+        atrasados_saved = qp.get("atrasados") == "1"
     range_from, range_to = _period_bounds(date_range, date_from, date_to)
     ordem = _order_choice(request, "pipeline_ordem")
 
@@ -108,7 +116,7 @@ def pipeline_view(
         seller = user.id  # cada vendedor vê só o pipeline dele
     if seller:
         base = base.filter(Lead.assigned_user_id == seller)
-    atrasados = request.query_params.get("atrasados") == "1"
+    atrasados = atrasados_saved
     if atrasados:  # só quem está parado na etapa, com follow-up pendente ou próximo contato vencido
         base = base.filter(followup.late_condition(tenant, stages))
 
@@ -161,6 +169,10 @@ def pipeline_view(
         },
     )
     response.set_cookie("pipeline_ordem", ordem, httponly=True, samesite="lax")
+    response.set_cookie(
+        "pipeline_filtro", f"{date_range}|{date_from}|{date_to}|{seller if user.role == 'admin' else ''}|{'1' if atrasados else ''}",
+        httponly=True, samesite="lax",
+    )
     return response
 
 

@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
   <style>{{ theme_css(theme) }}</style>
 </head>
-<body>
+<body {% block body_attrs %}{% endblock %}>
   {% if user %}
   {% set my_numbers = tenant.whatsapp_numbers if user.role == "admin" else tenant.whatsapp_numbers|selectattr("owner_user_id", "equalto", user.id)|list %}
   {% set wa_down = my_numbers|selectattr("is_active")|selectattr("provider", "equalto", "evolution")|rejectattr("connection_state", "equalto", "open")|list %}
@@ -67,5 +67,6 @@
   </script>
   {% endif %}
 <script src="/static/lightbox.js?v={{ asset_version }}" defer></script>
+<script src="/static/keep-scroll.js?v={{ asset_version }}"></script>
 </body>
 </html>

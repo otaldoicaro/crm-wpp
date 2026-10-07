@@ -5,7 +5,7 @@
 <div class="inbox-layout {{ 'with-detail' if selected_lead else '' }}">
   <div class="inbox-side">
   {% if user.role == "admin" %}
-  <form class="inbox-filters" method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
+  <form class="inbox-filters" data-reset-scroll method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
     <select name="numero" onchange="this.form.submit()" title="Filtrar por número">
       <option value="">Todos os números</option>
       {% for n in filter_numbers %}<option value="{{ n.id }}" {{ "selected" if numero == n.id }}>{{ n.label }}{{ " (desconectado)" if n.provider == "evolution" and n.connection_state != "open" }}</option>{% endfor %}
@@ -19,24 +19,24 @@
       </optgroup>
     </select>
     <a class="btn ghost small team-view-btn" href="/inbox-equipe">👥 Visão da equipe</a>
-    {% if numero or vendedor %}<a class="inbox-filters-clear" href="{{ request.url.path }}?numero=&vendedor=">Limpar filtros</a>{% endif %}
+    {% if numero or vendedor %}<a class="inbox-filters-clear" data-reset-scroll href="{{ request.url.path }}?numero=&vendedor=">Limpar filtros</a>{% endif %}
   </form>
   {% endif %}
   <div class="tipo-chips">
     {% for key, label in (("", "Todos"), ("naolidas", "Não lidas"), ("favoritas", "★ Favoritas"), ("grupos", "👥 Grupos"), ("semgrupos", "Todos menos grupos"), ("followup", "📞 Follow-up"), ("parados", "⏰ Parados"), ("leads", "Leads"), ("cliente", "Clientes"), ("outro", "Outros")) %}
-      <a class="pill {{ 'pill-on' if tipo == key }}" href="{{ request.url.path }}?tipo={{ key }}">{{ label }}{% if key == "naolidas" and naolidas_total %} <span class="unread-total">{{ naolidas_total }}</span>{% endif %}</a>
+      <a class="pill {{ 'pill-on' if tipo == key }}" href="{{ request.url.path }}?tipo={{ key }}" data-reset-scroll>{{ label }}{% if key == "naolidas" and naolidas_total %} <span class="unread-total">{{ naolidas_total }}</span>{% endif %}</a>
     {% endfor %}
-    <a class="pill unread-chip {{ 'pill-on' if lidas == 'nao' }}" href="{{ request.url.path }}?lidas={{ '' if lidas == 'nao' else 'nao' }}" title="{{ 'Mostrar todas' if lidas == 'nao' else 'Conversas em que o cliente mandou mensagem e ninguém respondeu ainda (mesmo que alguém tenha aberto), inclusive antigas' }}">
+    <a data-reset-scroll class="pill unread-chip {{ 'pill-on' if lidas == 'nao' }}" href="{{ request.url.path }}?lidas={{ '' if lidas == 'nao' else 'nao' }}" title="{{ 'Mostrar todas' if lidas == 'nao' else 'Conversas em que o cliente mandou mensagem e ninguém respondeu ainda (mesmo que alguém tenha aberto), inclusive antigas' }}">
       {{ "✕ " if lidas == "nao" }}Não respondidas <span id="unreadTotal" class="unread-total {{ 'zero' if not unread_total }}">{{ unread_total }}</span>
     </a>
   </div>
-  <form class="inbox-search" method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
+  <form class="inbox-search" method="get" data-reset-scroll action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
     <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone..." autocomplete="off">
     <select name="ordem" onchange="this.form.submit()" aria-label="Ordem das conversas" class="inbox-order">
       {% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if ordem == key }}>↕ {{ label }}</option>{% endfor %}
     </select>
   </form>
-  <div class="inbox-list" id="inboxList">
+  <div class="inbox-list" id="inboxList" data-keep-scroll="lista" data-keep-scope="inbox">
     {% include "_inbox_list.html" %}
   </div>
   </div>
@@ -433,6 +433,15 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
       .then(function () { busy = false; });
   }
   setInterval(tick, 3000);
+  // abrir outra conversa mantém quantas conversas a lista mostra ("Ver mais") — a posição da
+  // rolagem quem guarda é o keep-scroll.js
+  listEl.addEventListener("click", function (e) {
+    var a = e.target.closest("a.inbox-list-item");
+    if (!a || qtd <= {{ list_step }}) return;
+    var url = new URL(a.href, location.origin);
+    url.searchParams.set("qtd", qtd);
+    a.href = url.pathname + url.search;
+  }, true);
   // "Ver mais conversas" no fim da lista: traz mais 60 (e continua atualizando sozinho)
   listEl.addEventListener("click", function (e) {
     var more = e.target.closest("[data-more]"); if (!more) return;
