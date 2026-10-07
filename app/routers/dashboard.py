@@ -1878,6 +1878,7 @@ def dashboard_view(
     date_from: str = "",
     date_to: str = "",
     seller: str = "",
+    n: int = 20,
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -2050,9 +2051,14 @@ def dashboard_view(
         ]
 
     if card == "receita":  # de onde veio a receita: maiores vendas primeiro
-        table_leads = sorted(table_leads, key=lambda lead: lead.deal_value or 0, reverse=True)[:150]
+        table_leads = sorted(table_leads, key=lambda lead: lead.deal_value or 0, reverse=True)
     else:
-        table_leads = sorted(table_leads, key=lambda lead: lead.created_at, reverse=True)[:150]
+        table_leads = sorted(table_leads, key=lambda lead: lead.created_at, reverse=True)
+    # todos os leads do filtro contam no título; a lista mostra 20 e o "Ver mais" traz +50
+    table_total, table_value = len(table_leads), sum(lead.deal_value or 0 for lead in table_leads)
+    shown = max(20, min(n, 5000))
+    table_leads = table_leads[:shown]
+    more_url = "/dashboard?" + urlencode({**dict(request.query_params), "n": shown + 50}) + "#leads"
     stage_by_id = {s.id: s for s in stages}
 
     # ---- tráfego: gasto dos anúncios x leads e vendas, por campanha > conjunto > anúncio ----
@@ -2081,6 +2087,9 @@ def dashboard_view(
             "stages": stages,
             "stage_by_id": stage_by_id,
             "table_leads": table_leads,
+            "table_total": table_total,
+            "table_value": table_value,
+            "more_url": more_url if table_total > shown else "",
             "lead_platforms": {lead.id: resolve_platform(lead.attribution) for lead in table_leads},
             "platform_labels": PLATFORM_LABEL,
             "card": card,

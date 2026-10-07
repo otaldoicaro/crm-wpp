@@ -346,7 +346,7 @@ document.querySelectorAll(".traffic-camp .camp-row").forEach(function (row) {
   <p class="muted" style="margin:10px 0 0; font-size:.78rem">Cada compra é um negócio Ganho. Quando um cliente que já fechou volta a falar depois de 7 dias, o CRM abre um negócio novo sozinho (ou o vendedor abre em “+ Novo negócio”). As vendas de antes desta versão contam como 1ª compra.</p>
 </div>
 
-<div class="section-title" id="leads"><h3 style="margin:0">{{ "Vendas que formam a receita" if card == "receita" else "Leads" }}{{ " (seus)" if not is_admin }} ({{ table_leads|length }}){% if card == "receita" %} · R$ {{ "{:,.0f}".format(table_leads|sum(attribute="deal_value")).replace(",", ".") }}{% endif %}</h3></div>
+<div class="section-title" id="leads"><h3 style="margin:0">{{ "Vendas que formam a receita" if card == "receita" else "Leads" }}{{ " (seus)" if not is_admin }} ({{ table_total }}){% if card == "receita" %} · R$ {{ "{:,.0f}".format(table_value).replace(",", ".") }}{% endif %}</h3></div>
 <div class="card">
   <form method="get" action="/dashboard" style="margin-bottom:14px;">
     <input type="hidden" name="card" value="{{ card }}">
@@ -399,6 +399,9 @@ document.querySelectorAll(".traffic-camp .camp-row").forEach(function (row) {
       {% endfor %}
     </tbody>
   </table>
+  {% if more_url %}
+  <div class="list-more"><a class="btn ghost small" href="{{ more_url }}">Ver mais leads</a><div class="muted">Mostrando {{ table_leads|length }} de {{ table_total }}</div></div>
+  {% endif %}
   {% if is_admin %}
     <dialog class="confirm-dialog" id="bulkDialog">
       <h3>Excluir <span id="dlgCount"></span> lead(s)?</h3>
