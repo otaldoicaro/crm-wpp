@@ -117,8 +117,21 @@
 (function () {
   var bar = document.getElementById("stageBar"); if (!bar) return;
   var sel = bar.stage_id, value = bar.deal_value, loss = bar.querySelector(".stage-loss"), btn = bar.querySelector("button"), status = bar.querySelector(".stage-status");
-  var initial = sel.value + "|" + value.value + "|" + bar.loss_reason.value;
+  var initial;
   function opt() { return sel.options[sel.selectedIndex]; }
+  // valor no formato brasileiro enquanto digita: 10000,5 -> 10.000,5 (e 10.000,50 ao sair do campo)
+  function money(raw, done) {
+    var clean = raw.replace(/[^\d,]/g, ""), cut = clean.indexOf(",");
+    var whole = (cut === -1 ? clean : clean.slice(0, cut)).replace(/^0+(?=\d)/, "");
+    var cents = cut === -1 ? null : clean.slice(cut + 1).replace(/,/g, "").slice(0, 2);
+    if (!whole && cents === null) return "";
+    whole = (whole || "0").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    if (done) return whole + "," + ((cents || "") + "00").slice(0, 2);
+    return cents === null ? whole : whole + "," + cents;
+  }
+  value.addEventListener("input", function () { value.value = money(value.value, false); });
+  value.addEventListener("blur", function () { value.value = money(value.value, true); sync(); });
+  value.value = money(value.value, true);
   function sync() {
     var won = opt().dataset.won === "1";
     loss.hidden = opt().dataset.lost !== "1";
@@ -143,6 +156,7 @@
       .catch(function () { status.textContent = "Não salvou (sem conexão com o CRM)"; })
       .then(function () { btn.disabled = false; });
   });
+  initial = sel.value + "|" + value.value + "|" + bar.loss_reason.value;
   sync();
 })();
 // passar pra outro vendedor NO CRM: a conversa continua pelo mesmo WhatsApp (o cliente não

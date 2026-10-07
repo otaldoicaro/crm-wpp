@@ -1,6 +1,7 @@
 import base64
 import datetime
 import os
+import re
 import threading
 import time
 from typing import Optional
@@ -649,6 +650,19 @@ def _add_note(db: Session, lead: Lead, text: str) -> None:
         db.add(Message(conversation_id=conversation.id, direction="note", body=text))
 
 
+def _parse_brl(text: str) -> float:
+    """'10.000,50' / '10000,5' / '10.000' / '1250.90' -> número. Vírgula = centavos;
+    ponto seguido de 3 dígitos = milhar."""
+    text = (text or "").strip().replace("R$", "").replace(" ", "")
+    if not text:
+        return 0.0
+    if "," in text:
+        return float(text.replace(".", "").replace(",", "."))
+    if re.fullmatch(r"\d{1,3}(\.\d{3})+", text):
+        return float(text.replace(".", ""))
+    return float(text)
+
+
 @router.post("/leads/{lead_id}/etapa")
 def set_lead_stage(
     lead_id: str,
@@ -665,7 +679,7 @@ def set_lead_stage(
     if stage is None:
         return JSONResponse({"ok": False, "error": "etapa não encontrada"}, status_code=404)
     try:
-        value = float(deal_value.replace(".", "").replace(",", ".")) if "," in deal_value else float(deal_value or 0)
+        value = _parse_brl(deal_value)
     except ValueError:
         return JSONResponse({"ok": False, "error": "valor inválido (use só números, ex: 1250,90)"}, status_code=400)
     if stage.is_won and value <= 0:
