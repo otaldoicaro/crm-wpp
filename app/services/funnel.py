@@ -50,14 +50,49 @@ def entry_stage(db, tenant_id: str, with_chat: bool) -> Optional[PipelineStage]:
     )
 
 
-def on_message(db, lead: Lead) -> None:
-    """Saiu ou chegou mensagem na conversa: lead em "Lead sem conversa" vai pra "Novo"."""
+def in_service_stage(stages: list) -> Optional[PipelineStage]:
+    return stage_named(stages, "Em atendimento", "Atendimento", "Em contato")
+
+
+def on_message(db, lead: Lead, outbound: bool) -> None:
+    """Mensagem na conversa:
+    - o time mandou (CRM ou celular): "Lead sem conversa"/"Novo" -> "Em atendimento";
+    - o cliente mandou: "Lead sem conversa" -> "Novo" (fica pro time fazer o 1º contato).
+    Lead que já está mais adiante no funil não volta."""
     stage = lead.stage
-    if stage is not None and _plain(stage.name) == _plain(NO_CHAT_NAME):
-        target = entry_stage(db, lead.tenant_id, with_chat=True)
-        if target is not None:
+    if stage is None or lead.is_group:
+        return
+    stages = _stages(db, lead.tenant_id)
+    novo = entry_stage(db, lead.tenant_id, with_chat=True)
+    first_contact = {_plain(NO_CHAT_NAME)} | ({_plain(novo.name)} if novo else set())
+    if _plain(stage.name) not in first_contact:
+        return
+    target = in_service_stage(stages) if outbound else (novo if _plain(stage.name) == _plain(NO_CHAT_NAME) else None)
+    if target is not None and target.id != stage.id:
+        set_stage(lead, target)
+        db.add(lead)
+
+
+def move_answered_to_service(db) -> int:
+    """Leads em "Lead sem conversa"/"Novo" que o time já respondeu vão pra "Em atendimento"
+    (assim "Novo" fica só com quem ainda espera o 1º contato)."""
+    moved = 0
+    for tenant in db.query(Tenant).all():
+        stages = _stages(db, tenant.id)
+        target = in_service_stage(stages)
+        early = [s for s in (stage_named(stages, NO_CHAT_NAME), stage_named(stages, "Novo")) if s is not None]
+        if target is None or not early:
+            continue
+        for lead in db.query(Lead).filter(
+            Lead.tenant_id == tenant.id, Lead.stage_id.in_([s.id for s in early]),
+            Lead.first_response_at.isnot(None), Lead.is_group.is_(False),
+        ):
             set_stage(lead, target)
-            db.add(lead)
+            moved += 1
+    db.commit()
+    if moved:
+        logger.info("funil: %s leads já respondidos foram pra Em atendimento", moved)
+    return moved
 
 
 def levels(stages: list) -> dict:

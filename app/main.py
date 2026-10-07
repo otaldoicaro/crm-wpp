@@ -32,6 +32,7 @@ sync_indexes()
 media_store.setup()
 with SessionLocal() as _fdb:
     funnel.setup(_fdb)  # etapa "Negociando" + etapa mais avançada dos leads antigos
+    funnel.move_answered_to_service(_fdb)  # quem o time já respondeu sai de "Novo"
     people.admins_out_of_rotation(_fdb)  # admin só no rodízio se alguém ligar e confirmar
 archiver.schedule()
 meta_spend.schedule()  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)

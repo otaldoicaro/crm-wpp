@@ -24,7 +24,6 @@ def _get_or_create_conversation(db: Session, number: WhatsAppNumber, lead: Lead)
         .filter(Conversation.lead_id == lead.id, Conversation.whatsapp_number_id == number.id)
         .first()
     )
-    funnel.on_message(db, lead)  # 1ª mensagem: sai de "Lead sem conversa" e vai pra "Novo"
     if not conversation:
         conversation = Conversation(
             tenant_id=number.tenant_id,
@@ -98,6 +97,7 @@ def ingest_inbound(
 
     conversation = _get_or_create_conversation(db, number, lead)
     response_times.mark_inbound(lead)
+    funnel.on_message(db, lead, outbound=False)  # cliente falou: "Lead sem conversa" -> "Novo"
     db.add(lead)
     message = Message(
         conversation_id=conversation.id,
@@ -138,6 +138,7 @@ def record_outbound_from_phone(
 
     conversation = _get_or_create_conversation(db, number, lead)
     response_times.mark_outbound(lead)  # vendedor respondeu pelo celular
+    funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
     db.add(lead)
     message = Message(
         conversation_id=conversation.id,
