@@ -23,7 +23,7 @@
   </form>
   {% endif %}
   <div class="tipo-chips">
-    {% for key, label in (("", "Todos"), ("naolidas", "Não lidas"), ("favoritas", "★ Favoritas"), ("grupos", "👥 Grupos"), ("leads", "Leads"), ("cliente", "Clientes"), ("outro", "Outros")) %}
+    {% for key, label in (("", "Todos"), ("naolidas", "Não lidas"), ("favoritas", "★ Favoritas"), ("grupos", "👥 Grupos"), ("semgrupos", "Todos menos grupos"), ("leads", "Leads"), ("cliente", "Clientes"), ("outro", "Outros")) %}
       <a class="pill {{ 'pill-on' if tipo == key }}" href="{{ request.url.path }}?tipo={{ key }}">{{ label }}{% if key == "naolidas" and naolidas_total %} <span class="unread-total">{{ naolidas_total }}</span>{% endif %}</a>
     {% endfor %}
     <a class="pill unread-chip {{ 'pill-on' if lidas == 'nao' }}" href="{{ request.url.path }}?lidas={{ '' if lidas == 'nao' else 'nao' }}" title="{{ 'Mostrar todas' if lidas == 'nao' else 'Conversas em que o cliente mandou mensagem e ninguém respondeu ainda (mesmo que alguém tenha aberto), inclusive antigas' }}">
@@ -55,6 +55,19 @@
           </label>
         </form>
         {{ m.tempo_atendimento(selected_lead, closed=selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost)) }}
+        {% if stages %}
+        <form class="stage-bar" id="stageBar" data-lead="{{ selected_lead.id }}">
+          <label>Etapa
+            <select name="stage_id">
+              {% for st in stages %}<option value="{{ st.id }}" data-won="{{ 1 if st.is_won else 0 }}" data-lost="{{ 1 if st.is_lost else 0 }}" {{ "selected" if selected_lead.stage_id == st.id }}>{{ st.name }}</option>{% endfor %}
+            </select>
+          </label>
+          <label class="stage-value">R$ <input name="deal_value" inputmode="decimal" autocomplete="off" placeholder="valor da venda" value="{{ ('%.2f'|format(selected_lead.deal_value)).replace('.', ',') if selected_lead.deal_value else '' }}"></label>
+          <label class="stage-loss" hidden>Motivo <input name="loss_reason" autocomplete="off" placeholder="por que perdeu? (opcional)" value="{{ selected_lead.loss_reason or '' }}"></label>
+          <button class="btn small" type="submit" hidden>Salvar</button>
+          <span class="stage-status muted"></span>
+        </form>
+        {% endif %}
         <div class="thread-actions">
           {% if can_settle %}
           <form method="post" action="/leads/{{ selected_lead.id }}/encerrar" onsubmit="return confirm('Encerrar o atendimento? A conversa sai do “aguardando resposta” e não conta mais tempo. Se o cliente mandar mensagem de novo, volta a contar.')">
@@ -96,6 +109,38 @@
     </details>
     {% endif %}
 <script>
+// etapa + valor no topo da conversa: muda a etapa, aparece "Salvar"; Ganho exige o valor
+(function () {
+  var bar = document.getElementById("stageBar"); if (!bar) return;
+  var sel = bar.stage_id, value = bar.deal_value, loss = bar.querySelector(".stage-loss"), btn = bar.querySelector("button"), status = bar.querySelector(".stage-status");
+  var initial = sel.value + "|" + value.value + "|" + bar.loss_reason.value;
+  function opt() { return sel.options[sel.selectedIndex]; }
+  function sync() {
+    var won = opt().dataset.won === "1";
+    loss.hidden = opt().dataset.lost !== "1";
+    value.parentNode.classList.toggle("needed", won && !value.value.trim());
+    btn.hidden = (sel.value + "|" + value.value + "|" + bar.loss_reason.value) === initial;
+    status.textContent = "";
+  }
+  [sel, value, bar.loss_reason].forEach(function (el) { el.addEventListener("input", sync); el.addEventListener("change", sync); });
+  sel.addEventListener("change", function () { if (opt().dataset.won === "1" && !value.value.trim()) value.focus(); });
+  bar.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (opt().dataset.won === "1" && !value.value.trim()) { status.textContent = "Preencha o valor da venda"; value.focus(); return; }
+    btn.disabled = true; status.textContent = "Salvando…";
+    fetch("/leads/" + bar.dataset.lead + "/etapa", { method: "POST", body: new FormData(bar) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { status.textContent = d.error; return; }
+        initial = sel.value + "|" + value.value + "|" + bar.loss_reason.value;
+        btn.hidden = true; status.textContent = "✅ Salvo";
+        setTimeout(function () { status.textContent = ""; }, 3000);
+      })
+      .catch(function () { status.textContent = "Não salvou (sem conexão com o CRM)"; })
+      .then(function () { btn.disabled = false; });
+  });
+  sync();
+})();
 // transferir: confirma e pergunta se as próximas mensagens saem pelo WhatsApp de quem recebe
 document.querySelectorAll(".transfer-form select").forEach(function (sel) {
   sel.addEventListener("change", function () {

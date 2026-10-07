@@ -430,6 +430,8 @@ def _inbox_query(
         query = inbox_state.favorite_filter(query, user)
     elif tipo == "grupos":
         query = query.filter(Lead.is_group.is_(True))
+    elif tipo == "semgrupos":
+        query = query.filter(Lead.is_group.is_(False))
     elif tipo == "leads":
         query = query.filter(Lead.tag == "", Lead.is_group.is_(False))
     elif tipo in ("cliente", "outro"):
@@ -554,6 +556,8 @@ def _inbox_context(
             "other_numbers": other_numbers,
             "platform": resolve_platform(selected_lead.attribution) if selected_lead else None,
             "transfer_people": _transfer_options(db, tenant, selected_lead) if selected_lead and not selected_lead.is_group else [],
+            "stages": db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
+            if selected_lead and not selected_lead.is_group else [],
             "can_settle": bool(selected_lead and not selected_lead.is_group and response_times.waiting_since(selected_lead)),
             "platform_label": PLATFORM_LABEL[resolve_platform(selected_lead.attribution)] if selected_lead else None,
     }
@@ -643,6 +647,39 @@ def _add_note(db: Session, lead: Lead, text: str) -> None:
     conversation = lead.active_conversation
     if conversation is not None:
         db.add(Message(conversation_id=conversation.id, direction="note", body=text))
+
+
+@router.post("/leads/{lead_id}/etapa")
+def set_lead_stage(
+    lead_id: str,
+    stage_id: str = Form(...),
+    deal_value: str = Form(""),
+    loss_reason: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Etapa do funil + valor da venda direto do topo da conversa (sem abrir a ficha)."""
+    lead = _lead_for_action(db, tenant, user, lead_id)
+    stage = db.query(PipelineStage).filter(PipelineStage.id == stage_id, PipelineStage.tenant_id == tenant.id).first()
+    if stage is None:
+        return JSONResponse({"ok": False, "error": "etapa não encontrada"}, status_code=404)
+    try:
+        value = float(deal_value.replace(".", "").replace(",", ".")) if "," in deal_value else float(deal_value or 0)
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "valor inválido (use só números, ex: 1250,90)"}, status_code=400)
+    if stage.is_won and value <= 0:
+        return JSONResponse({"ok": False, "error": f"pra marcar como {stage.name}, preencha o valor da venda"}, status_code=400)
+    changed = lead.stage_id != stage.id
+    lead.stage_id = stage.id
+    if value > 0:
+        lead.deal_value = value
+    if stage.is_lost:
+        lead.loss_reason = loss_reason.strip() or lead.loss_reason
+    db.commit()
+    if changed and stage.conversion_event_name:
+        dispatch_stage_conversion(db, lead, stage.conversion_event_name)
+    return JSONResponse({"ok": True})
 
 
 @router.post("/leads/{lead_id}/encerrar")

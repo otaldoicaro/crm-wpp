@@ -502,3 +502,12 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .thread-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
 .thread-actions form { margin: 0; }
 .thread-actions select { font-size: .8rem; padding: 5px 8px; max-width: 220px; }
+/* etapa do funil + valor da venda no topo da conversa do Inbox */
+.stage-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 6px 0 0; font-size: .78rem; }
+.stage-bar label { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--muted); }
+.stage-bar select, .stage-bar input { font-size: .8rem; padding: 5px 8px; }
+.stage-bar .stage-value input { width: 110px; }
+.stage-bar .stage-loss input { width: 180px; }
+.stage-bar .stage-value.needed input { border-color: var(--danger); background: var(--danger-bg); }
+.stage-bar .stage-status { font-size: .76rem; }
+.stage-bar [hidden] { display: none !important; }
