@@ -4,12 +4,13 @@
 {% block content %}
 <div class="inbox-layout {{ 'with-detail' if selected_lead else '' }}">
   <div class="inbox-side">
+  {# 🔎 busca no texto das conversas: resultados ficam na lista enquanto abre cada conversa #}
+  <form class="text-search" method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}" data-reset-scroll>
+    <input type="search" name="texto" value="{{ texto }}" placeholder="🔎 Buscar no texto das conversas" title="Ex: comprovante, farol, pix… (mín. 3 letras)" autocomplete="off" minlength="3"
+      onsearch="if (!this.value) this.form.submit()" oninput="if (!this.value && {{ 'true' if texto else 'false' }}) this.form.submit()">
+  </form>
   {% if user.role == "admin" %}
   <form class="inbox-filters" data-reset-scroll method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
-    <select name="numero" onchange="this.form.submit()" title="Filtrar por número">
-      <option value="">Todos os números</option>
-      {% for n in filter_numbers %}<option value="{{ n.id }}" {{ "selected" if numero == n.id }}>{{ n.label }}{{ " (desconectado)" if n.provider == "evolution" and n.connection_state != "open" }}</option>{% endfor %}
-    </select>
     <select name="vendedor" onchange="this.form.submit()" title="Filtrar por vendedor">
       <option value="">Toda a equipe</option>
       {{ m.seller_options(filter_sellers, vendedor) }}
@@ -19,7 +20,7 @@
       </optgroup>
     </select>
     <a class="btn ghost small team-view-btn" href="/inbox-equipe">👥 Visão da equipe</a>
-    {% if numero or vendedor %}<a class="inbox-filters-clear" data-reset-scroll href="{{ request.url.path }}?numero=&vendedor=">Limpar filtros</a>{% endif %}
+    {% if vendedor %}<a class="inbox-filters-clear" data-reset-scroll href="{{ request.url.path }}?numero=&vendedor=">Limpar filtros</a>{% endif %}
   </form>
   {% endif %}
   {# filtros: quais contatos + etapa (selects) e "precisa de atenção" (um de cada vez) #}
@@ -41,14 +42,23 @@
   </div>
   <form class="inbox-search" method="get" data-reset-scroll action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
     <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone..." autocomplete="off">
-    <a class="msg-search-link" href="/busca" onclick="var q = this.parentNode.busca.value.trim(); this.href = '/busca' + (q ? '?q=' + encodeURIComponent(q) : '');">🔎 Buscar no texto das conversas</a>
     <select name="ordem" onchange="this.form.submit()" aria-label="Ordem das conversas" class="inbox-order">
       {% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if ordem == key }}>↕ {{ label }}</option>{% endfor %}
     </select>
   </form>
+  {% if text_hits is not none %}
+  <div class="text-search-head">
+    <span><b>{{ text_hits|length }}{{ "+" if text_hits|length >= 100 }}</b> conversa(s) com “{{ texto }}”</span>
+    <a href="{{ request.url.path }}" data-reset-scroll>✕ limpar busca</a>
+  </div>
+  <div class="inbox-list" id="inboxList" data-search="1" data-keep-scroll="lista" data-keep-scope="inbox-texto-{{ texto }}">
+    {% include "_inbox_text_hits.html" %}
+  </div>
+  {% else %}
   <div class="inbox-list" id="inboxList" data-keep-scroll="lista" data-keep-scope="inbox">
     {% include "_inbox_list.html" %}
   </div>
+  {% endif %}
   </div>
 
   {% if selected_lead %}
@@ -430,7 +440,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
             el.textContent = d.status_counts[k]; el.classList.toggle("zero", !d.status_counts[k]);
           });
         }
-        if (d.list_sig !== listSig) {
+        if (d.list_sig !== listSig && !listEl.dataset.search) {
           var top = listEl.scrollTop;
           listEl.innerHTML = d.list_html;
           listEl.scrollTop = top;

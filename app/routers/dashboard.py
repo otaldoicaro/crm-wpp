@@ -3,7 +3,7 @@ import datetime
 import os
 import re
 import threading
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, unquote, urlencode
 import time
 from typing import Optional
 
@@ -685,6 +685,35 @@ def set_meta_accounts(
 SEARCH_LIMIT = 100
 
 
+def _text_search(db: Session, tenant: Tenant, user: User, q: str, vendedor: str = "", per_lead: bool = False) -> list:
+    """Mensagens com esse texto (as mais recentes primeiro), [(Message, Lead)]. Vendedor só nas
+    conversas dele. per_lead=True: uma por conversa (a mais recente que tem o texto)."""
+    query = (
+        db.query(Message, Lead)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .join(Lead, Lead.id == Conversation.lead_id)
+        .filter(
+            Conversation.tenant_id == tenant.id, Lead.deleted_at.is_(None),
+            Message.direction != "note", Message.body.ilike(f"%{q}%"),
+        )
+    )
+    if user.role != "admin":
+        query = query.filter(Lead.assigned_user_id == user.id)
+    elif vendedor == "sem":
+        query = query.filter(Lead.assigned_user_id.is_(None))
+    elif vendedor and vendedor != "removidos":
+        query = query.filter(Lead.assigned_user_id == vendedor)
+    rows = query.order_by(Message.created_at.desc()).limit(SEARCH_LIMIT * (4 if per_lead else 1)).all()
+    if not per_lead:
+        return rows
+    seen, out = set(), []
+    for msg, lead in rows:
+        if lead.id not in seen:
+            seen.add(lead.id)
+            out.append((msg, lead))
+    return out[:SEARCH_LIMIT]
+
+
 @router.get("/busca", response_class=HTMLResponse)
 def message_search(
     request: Request,
@@ -696,20 +725,7 @@ def message_search(
     """Procura um texto dentro das mensagens (as mais recentes primeiro). Vendedor só acha
     nas conversas dele. Usa o índice de trigramas do Postgres (db.setup_text_search)."""
     q = q.strip()[:100]
-    hits = []
-    if len(q) >= 3:
-        query = (
-            db.query(Message, Lead)
-            .join(Conversation, Conversation.id == Message.conversation_id)
-            .join(Lead, Lead.id == Conversation.lead_id)
-            .filter(
-                Conversation.tenant_id == tenant.id, Lead.deleted_at.is_(None),
-                Message.direction != "note", Message.body.ilike(f"%{q}%"),
-            )
-        )
-        if user.role != "admin":
-            query = query.filter(Lead.assigned_user_id == user.id)
-        hits = query.order_by(Message.created_at.desc()).limit(SEARCH_LIMIT).all()
+    hits = _text_search(db, tenant, user, q) if len(q) >= 3 else []
     return templates.TemplateResponse(request, "busca.html", {
         "tenant": tenant, "user": user, "active_nav": "inbox", "q": q, "hits": hits, "limit": SEARCH_LIMIT,
     })
@@ -979,6 +995,7 @@ def _transfer_options(db: Session, tenant: Tenant, lead: Lead) -> list:
 
 
 INBOX_FILTER_COOKIE = "inbox_filtro"
+INBOX_TEXT_COOKIE = "inbox_texto"
 
 
 def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]):
@@ -986,7 +1003,7 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     qp = request.query_params
     cookie = request.cookies.get(INBOX_FILTER_COOKIE)
     saved = ((cookie if cookie is not None else "||semgrupos|||") + "|||||").split("|")  # padrão: sem grupos
-    numero = qp.get("numero", saved[0]) if "numero" in qp or "vendedor" in qp else saved[0]
+    numero = ""  # filtro por número saiu do Inbox: o vendedor já é o dono do número
     vendedor = qp.get("vendedor", saved[1]) if "numero" in qp or "vendedor" in qp else saved[1]
     tipo = qp.get("tipo", saved[2])
     lidas = qp.get("lidas", saved[3])
@@ -1013,7 +1030,18 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
         db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas, _list_limit(qp.get("qtd")), ordem, etapa
     )
     ctx["quick_replies"] = replies_for_js(db, tenant, user)
+    # 🔎 busca no texto das conversas: a lista da esquerda vira os resultados e continua ali
+    # enquanto a pessoa abre cada conversa (o texto vai no link); some ao apagar o texto
+    # lembrada num cookie de sessão: responder/trocar filtro não perde a busca; sair do Inbox
+    # (outra aba do menu) apaga o cookie (base.html), e apagar o texto também
+    texto = (qp["texto"] if "texto" in qp else unquote(request.cookies.get(INBOX_TEXT_COOKIE, ""))).strip()[:100]
+    ctx["texto"] = texto
+    ctx["text_hits"] = _text_search(db, tenant, user, texto, vendedor, per_lead=True) if len(texto) >= 3 else None
     response = templates.TemplateResponse(request, "inbox.html", ctx)
+    if len(texto) >= 3:
+        response.set_cookie(INBOX_TEXT_COOKIE, quote(texto), samesite="lax")  # sem httponly: o menu apaga
+    else:
+        response.delete_cookie(INBOX_TEXT_COOKIE)
     response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}|{ordem}|{etapa}", httponly=True, samesite="lax")
     return response
 

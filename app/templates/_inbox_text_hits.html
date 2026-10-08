@@ -1,0 +1,16 @@
+{# resultados da busca no texto: uma linha por conversa, com o trecho achado #}
+{% import "_macros.html" as m %}
+{% for msg, lead in text_hits %}
+  {% set body = msg.body or "" %}{% set i = body.lower().find(texto.lower()) %}
+  <a class="inbox-list-item {{ 'active' if selected_lead and selected_lead.id == lead.id }}" href="/inbox/{{ lead.id }}?texto={{ texto|urlencode }}#msg-{{ msg.id }}" data-lead="{{ lead.id }}">
+    {{ m.avatar(lead) }}
+    <div class="inbox-list-item-body">
+      <div class="row1"><span class="name">{% if lead.is_group %}👥 {% endif %}{{ lead.name or lead.phone }}</span><span class="time">{{ msg.created_at|hora("%d/%m %H:%M") }}</span></div>
+      <div class="preview search-snippet"><span class="muted">{{ "Nós:" if msg.direction == "out" else "" }}</span>
+        {%- if i >= 0 %}{{ "…" if i > 40 }}{{ body[[i - 40, 0]|max:i] }}<mark>{{ body[i:i + texto|length] }}</mark>{{ body[i + texto|length:i + texto|length + 60] }}{% else %}{{ body[:100] }}{% endif %}</div>
+      <div class="preview" style="opacity:.7">{{ lead.assigned_user.name if lead.assigned_user else "sem atendente" }}{% if lead.stage %} · {{ lead.stage.name }}{% endif %}</div>
+    </div>
+  </a>
+{% else %}
+  <div class="kanban-empty" style="padding:24px">Nenhuma conversa com “{{ texto }}”.</div>
+{% endfor %}

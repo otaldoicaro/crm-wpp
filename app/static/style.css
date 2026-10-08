@@ -688,3 +688,9 @@ main:has(.kanban) { max-width: none; padding-left: 16px; padding-right: 16px; }
 .kanban-col-head { flex-wrap: wrap; }
 .col-order { width: auto; font-size: .68rem; padding: 2px 4px; border-radius: 6px; background: transparent; border: 1px solid var(--line); color: var(--muted); cursor: pointer; }
 .col-order.custom { border-color: var(--y); color: var(--text); background: var(--y-soft); }
+/* 🔎 busca no texto das conversas (Inbox) */
+.text-search { margin: 0; }
+.text-search input { width: 100%; border-radius: 999px; padding: 9px 14px; border: 2px solid var(--y); }
+.text-search-head { display: flex; justify-content: space-between; align-items: center; font-size: .78rem; padding: 2px 4px; }
+.inbox-list .search-snippet mark { background: var(--y); color: var(--ink); border-radius: 3px; padding: 0 2px; }
+.inbox-list .search-snippet { white-space: normal; }
