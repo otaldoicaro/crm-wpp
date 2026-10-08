@@ -684,3 +684,7 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .stage-details[open] summary { margin-bottom: 12px; }
 /* Pipeline usa a largura toda da tela (igual à visão da equipe) */
 main:has(.kanban) { max-width: none; padding-left: 16px; padding-right: 16px; }
+/* ordem de cada coluna do Pipeline */
+.kanban-col-head { flex-wrap: wrap; }
+.col-order { width: auto; font-size: .68rem; padding: 2px 4px; border-radius: 6px; background: transparent; border: 1px solid var(--line); color: var(--muted); cursor: pointer; }
+.col-order.custom { border-color: var(--y); color: var(--text); background: var(--y-soft); }

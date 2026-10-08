@@ -38,7 +38,7 @@
     <input type="hidden" name="date_from" value="{{ date_from }}">
     <input type="hidden" name="date_to" value="{{ date_to }}">
     <input type="hidden" name="seller" value="{{ seller }}">
-    <select name="ordem" onchange="this.form.submit()" aria-label="Ordem dos cards" title="Ordem dos cards em cada coluna">
+    <select name="ordem" onchange="this.form.submit()" aria-label="Ordem dos cards" title="Ordem de todas as colunas (cada coluna também tem a sua, no topo dela)">
       {% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if ordem == key }}>↕ {{ label }}</option>{% endfor %}
     </select>
     <label class="pill late-toggle {{ 'pill-on' if atrasados }}" title="Só leads parados na etapa além do prazo, com follow-up pendente ou próximo contato vencido">
@@ -67,6 +67,10 @@
       <span class="dot" style="background: {{ stage_colors[stage.id] }}"></span>
       <h3>{{ stage.name }}</h3>{% if auto_stage(stage) %}<span class="auto-hint" title="O CRM coloca e tira os leads daqui sozinho (1º contato). Não dá pra arrastar pra cá.">⚙ automática</span>{% endif %}
       <span class="count">{{ totals.get(stage.id, 0) }}</span>
+      {% set col_mode = col_orders.get(stage.id, ordem) %}
+      <select class="col-order {{ 'custom' if stage.id in col_orders }}" data-stage="{{ stage.id }}" aria-label="Ordem dos cards de {{ stage.name }}" title="Ordem só desta coluna">
+        {% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if col_mode == key }}>{{ {"recentes": "↓ Recentes", "antigos": "↑ Antigos", "espera": "⏳ Esperando"}[key] }}</option>{% endfor %}
+      </select>
     </div>
     <div class="kanban-cards" data-stage-id="{{ stage.id }}" data-keep-scroll="col-{{ stage.id }}">
       {% for lead in leads_by_stage[stage.id] %}
@@ -101,6 +105,17 @@
   {% endfor %}
 </div>
 
+<script>
+// ordem só de uma coluna: recarrega com ?oc=<etapa>:<modo> mantendo os outros filtros
+document.querySelectorAll(".col-order").forEach(function (sel) {
+  sel.addEventListener("change", function () {
+    var url = new URL(location.href);
+    url.searchParams.delete("oc"); url.searchParams.delete("ordem");
+    url.searchParams.append("oc", sel.dataset.stage + ":" + sel.value);
+    location.href = url.pathname + url.search;
+  });
+});
+</script>
 <script>
 // colunas se ajustam à tela (igual à visão da equipe): cabem quantas der com no mínimo 250px,
 // esticam pra preencher a largura e vão até o fim da tela; barra pro lado só se não couber.

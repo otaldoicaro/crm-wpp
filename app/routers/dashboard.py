@@ -72,6 +72,41 @@ def _waiting_order() -> list:
     return [case((waiting, 0), else_=1), since.asc()]
 
 
+PIPE_ORDER_LABELS = [("recentes", "Mais recentes"), ("antigos", "Mais antigos"), ("espera", "Esperando há mais tempo")]
+PIPE_COL_ORDER_COOKIE = "pipeline_ordem_col"
+
+
+def _pipeline_order(mode: str) -> list:
+    """Ordem dos cards numa coluna. "Recentes/antigos" = pela entrada do lead NESTA etapa."""
+    entered = func.coalesce(Lead.stage_entered_at, Lead.created_at)
+    if mode == "antigos":
+        return [entered.asc()]
+    if mode == "espera":
+        return _waiting_order() + [entered.asc()]
+    return [entered.desc()]
+
+
+def _pipeline_col_orders(request: Request, stages: list) -> dict:
+    """Ordem escolhida em cada coluna ({etapa: modo}); trocar a ordem geral zera as das colunas.
+    ?oc=<etapa>:<modo> muda uma coluna (modo vazio = volta a seguir a geral)."""
+    valid = dict(PIPE_ORDER_LABELS)
+    if "ordem" in request.query_params:
+        return {}
+    orders = {}
+    for item in request.cookies.get(PIPE_COL_ORDER_COOKIE, "").split(","):
+        stage_id, _, mode = item.partition(":")
+        if stage_id and mode in valid:
+            orders[stage_id] = mode
+    for item in request.query_params.getlist("oc"):
+        stage_id, _, mode = item.partition(":")
+        if mode in valid:
+            orders[stage_id] = mode
+        else:
+            orders.pop(stage_id, None)
+    ids = {st.id for st in stages}
+    return {k: v for k, v in orders.items() if k in ids}
+
+
 def _order_choice(request: Request, cookie: str) -> str:
     value = request.query_params.get("ordem", request.cookies.get(cookie, "recentes"))
     return value if value in dict(ORDER_LABELS) else "recentes"
@@ -102,7 +137,10 @@ def pipeline_view(
     else:
         atrasados_saved = qp.get("atrasados") == "1"
     range_from, range_to = _period_bounds(date_range, date_from, date_to)
-    ordem = _order_choice(request, "pipeline_ordem")
+    ordem = request.query_params.get("ordem", request.cookies.get("pipeline_ordem", "recentes"))
+    if ordem not in dict(PIPE_ORDER_LABELS):
+        ordem = "recentes"
+    col_orders = _pipeline_col_orders(request, stages)
 
     base = db.query(Lead).filter(
         Lead.tenant_id == tenant.id, Lead.archived_at.is_(None), Lead.deleted_at.is_(None), Lead.tag != "outro",
@@ -127,7 +165,7 @@ def pipeline_view(
         leads_by_stage[stage.id] = (
             base.filter(Lead.stage_id == stage.id)
             .options(*LEAD_CARD_LOAD)  # carrega origem/conversas/atendente junto (sem 1 consulta por cartão)
-            .order_by(*(_waiting_order() + [Lead.updated_at.asc()]) if ordem == "espera" else (Lead.updated_at.desc(),))
+            .order_by(*_pipeline_order(col_orders.get(stage.id, ordem)))
             .limit(limit)
             .all()
         )
@@ -164,11 +202,13 @@ def pipeline_view(
             "lead_platforms": lead_platforms,
             "platform_labels": PLATFORM_LABEL,
             "ordem": ordem,
-            "order_labels": ORDER_LABELS,
+            "order_labels": PIPE_ORDER_LABELS,
+            "col_orders": col_orders,
             "atrasados": atrasados,
         },
     )
     response.set_cookie("pipeline_ordem", ordem, httponly=True, samesite="lax")
+    response.set_cookie(PIPE_COL_ORDER_COOKIE, ",".join(f"{k}:{v}" for k, v in col_orders.items()), httponly=True, samesite="lax")
     response.set_cookie(
         "pipeline_filtro", f"{date_range}|{date_from}|{date_to}|{seller if user.role == 'admin' else ''}|{'1' if atrasados else ''}",
         httponly=True, samesite="lax",
