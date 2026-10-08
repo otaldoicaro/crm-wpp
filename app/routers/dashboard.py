@@ -766,8 +766,9 @@ def _list_limit(raw, step: int = INBOX_LIST_LIMIT) -> int:
 
 
 INBOX_CONTACT_TYPES = [
+    ("semgrupos", "Tudo (menos grupos)"),
     ("leads", "Só leads"),
-    ("semgrupos", "Leads e clientes"),
+    ("leadsclientes", "Leads e clientes"),
     ("cliente", "Só clientes"),
     ("outro", "Outros (não é venda)"),
     ("grupos", "👥 Grupos"),
@@ -828,6 +829,8 @@ def _inbox_query(
         query = query.filter(Lead.is_group.is_(False))
     elif tipo == "leads":
         query = query.filter(Lead.tag == "", Lead.is_group.is_(False))
+    elif tipo == "leadsclientes":
+        query = query.filter(Lead.tag.in_(("", "cliente")), Lead.is_group.is_(False))
     elif tipo in ("cliente", "outro"):
         query = query.filter(Lead.tag == tipo)
     busca = busca.strip()
@@ -995,7 +998,7 @@ def _transfer_options(db: Session, tenant: Tenant, lead: Lead) -> list:
     ]
 
 
-INBOX_FILTER_COOKIE = "inbox_filtro_v2"  # v2: padrão "Só leads" + "Todas as etapas" pra todo mundo
+INBOX_FILTER_COOKIE = "inbox_filtro_v3"  # v3: padrão "Tudo (menos grupos)" + "Todas as etapas" pra todo mundo
 INBOX_TEXT_COOKIE = "inbox_texto"
 
 
@@ -1003,7 +1006,7 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     # filtros de número/vendedor ficam lembrados (cookie) ao abrir conversa, responder, etc.
     qp = request.query_params
     cookie = request.cookies.get(INBOX_FILTER_COOKIE)
-    saved = ((cookie if cookie is not None else "||leads|||") + "|||||").split("|")  # padrão: só leads, todas as etapas
+    saved = ((cookie if cookie is not None else "||semgrupos|||") + "|||||").split("|")  # padrão: tudo menos grupos, todas as etapas
     numero = ""  # filtro por número saiu do Inbox: o vendedor já é o dono do número
     vendedor = qp.get("vendedor", saved[1]) if "numero" in qp or "vendedor" in qp else saved[1]
     tipo = qp.get("tipo", saved[2])
