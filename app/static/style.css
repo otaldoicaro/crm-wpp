@@ -675,3 +675,10 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .suggest-banner .loss-field { flex-direction: row; align-items: center; margin: 0; }
 .suggest-banner .loss-field textarea { min-height: 0; height: 30px; width: 220px; }
 .suggest-tag { background: #fff6dc; color: #8a6200; }
+/* abas do Dashboard */
+.dash-tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--line); margin: 6px 0 16px; flex-wrap: wrap; }
+.dash-tab { padding: 9px 16px; font-weight: 700; font-size: .9rem; text-decoration: none; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -2px; border-radius: 8px 8px 0 0; }
+.dash-tab:hover { color: var(--text); background: var(--panel-2); }
+.dash-tab.on { color: var(--text); border-bottom-color: var(--y); }
+.stage-details summary { cursor: pointer; font-size: .82rem; margin-bottom: 4px; }
+.stage-details[open] summary { margin-bottom: 12px; }

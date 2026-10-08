@@ -8,7 +8,7 @@
   <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px;">
     {% for key, label in date_range_labels %}
       {% if key != "custom" %}
-      <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if date_range == key }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&platform_filter={{ platform_filter }}&q={{ q }}&seller={{ seller }}&date_range={{ key }}">{{ label }}</a>
+      <a class="pill" style="{{ 'background:var(--y); color:var(--ink);' if date_range == key }}" href="/dashboard?card={{ card }}&stage_filter={{ stage_filter }}&platform_filter={{ platform_filter }}&q={{ q }}&seller={{ seller }}&date_range={{ key }}&aba={{ aba }}">{{ label }}</a>
       {% endif %}
     {% endfor %}
     <form method="get" action="/dashboard" style="display:flex; flex-wrap:wrap; align-items:center; gap:4px;">
@@ -17,6 +17,7 @@
       <input type="hidden" name="platform_filter" value="{{ platform_filter }}">
       <input type="hidden" name="q" value="{{ q }}">
       <input type="hidden" name="seller" value="{{ seller }}">
+      <input type="hidden" name="aba" value="{{ aba }}">
       <input type="hidden" name="date_range" value="custom">
       <input type="date" name="date_from" value="{{ date_from }}" style="padding:6px 8px; font-size:.78rem; width:auto;">
       <span class="muted" style="font-size:.78rem;">até</span>
@@ -53,6 +54,7 @@
   <input type="hidden" name="date_from" value="{{ date_from }}">
   <input type="hidden" name="date_to" value="{{ date_to }}">
   <label>Vendedor
+    <input type="hidden" name="aba" value="{{ aba }}">
     <select name="seller" onchange="this.form.submit()">
       <option value="">Toda a equipe</option>
       {{ m.seller_options(sellers, seller) }}
@@ -63,6 +65,17 @@
 <div class="section-title"><h3 style="margin:0">Números gerais da equipe</h3></div>
 {% endif %}
 
+{# abas: Comercial (todo dia) · Tráfego · Clientes (admin). Período e vendedor valem pra todas #}
+{% set tab_qs = "date_range=" ~ (date_range|urlencode) ~ "&date_from=" ~ (date_from|urlencode) ~ "&date_to=" ~ (date_to|urlencode) ~ "&seller=" ~ (seller|urlencode) %}
+{% if is_admin %}
+<nav class="dash-tabs">
+  {% for key, label in (("comercial", "📊 Comercial"), ("trafego", "📣 Tráfego"), ("clientes", "🔁 Clientes")) %}
+  <a class="dash-tab {{ 'on' if aba == key }}" href="/dashboard?aba={{ key }}&{{ tab_qs }}">{{ label }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% if aba == "comercial" %}
 <div class="stat-grid">
   <a class="stat-card c-gold {{ 'accent' if card == 'all' }}" href="/dashboard?card=all&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}" style="text-decoration:none; color:inherit;">
     {{ m.stat_icon("users") }}
@@ -161,8 +174,8 @@
   </div>
 </div>
 
-<div class="section-title"><h3 style="margin:0">Funil por etapa</h3></div>
-<div class="card">
+<details class="card stage-details">
+  <summary class="muted">Ver quantos leads estão em cada etapa do Pipeline ▸</summary>
   {% for s in stage_counts %}
   <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
     <span style="width:130px; font-size:.82rem; flex-shrink:0;">{{ s.name }}</span>
@@ -172,7 +185,7 @@
     <span style="width:34px; text-align:right; font-weight:700; font-size:.85rem;">{{ s.count }}</span>
   </div>
   {% endfor %}
-</div>
+</details>
 
 {% if not seller %}
 <div class="section-title"><h3 style="margin:0">{{ "Funil por vendedor" if is_admin else "Você x equipe" }}</h3></div>
@@ -212,6 +225,9 @@
 </div>
 {% endif %}
 
+{% endif %}
+
+{% if aba == "trafego" %}
 <div class="section-title"><h3 style="margin:0">Origem do tráfego</h3></div>
 <div class="card">
   <table class="table-simple">
@@ -316,6 +332,9 @@ document.querySelectorAll(".traffic-camp .camp-row").forEach(function (row) {
 });
 </script>
 
+{% endif %}
+
+{% if aba == "clientes" %}
 {% set cs = customer_stats %}
 <div class="section-title"><h3 style="margin:0">Clientes, recompra e LTV{{ " — equipe toda" if not is_admin }}</h3></div>
 <div class="stat-grid rt-grid">
@@ -346,6 +365,9 @@ document.querySelectorAll(".traffic-camp .camp-row").forEach(function (row) {
   <p class="muted" style="margin:10px 0 0; font-size:.78rem">Cada compra é um negócio Ganho. Quando um cliente que já fechou volta a falar depois de 7 dias, o CRM abre um negócio novo sozinho (ou o vendedor abre em “+ Novo negócio”). As vendas de antes desta versão contam como 1ª compra.</p>
 </div>
 
+{% endif %}
+
+{% if aba == "comercial" %}
 <div class="section-title" id="leads"><h3 style="margin:0">{{ "Vendas que formam a receita" if card == "receita" else "Leads" }}{{ " (seus)" if not is_admin }} ({{ table_total }}){% if card == "receita" %} · R$ {{ "{:,.0f}".format(table_value).replace(",", ".") }}{% endif %}</h3></div>
 <div class="card">
   <form method="get" action="/dashboard" style="margin-bottom:14px;">
@@ -443,4 +465,5 @@ document.querySelectorAll(".traffic-camp .camp-row").forEach(function (row) {
   </script>
   {% endif %}
 </div>
+{% endif %}
 {% endblock %}

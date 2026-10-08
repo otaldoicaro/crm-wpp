@@ -554,7 +554,7 @@ def campaign_leads(
             "stages": stages,
             "stage_by_id": stage_by_id,
             "stage_counts": {st.id: sum(1 for lead in chosen if lead.stage_id == st.id) for st in stages},
-            "back": "/dashboard?" + urlencode({"date_range": date_range, "date_from": date_from, "date_to": date_to, "seller": seller}) + "#trafego",
+            "back": "/dashboard?" + urlencode({"aba": "trafego", "date_range": date_range, "date_from": date_from, "date_to": date_to, "seller": seller}) + "#trafego",
         },
     )
 
@@ -639,7 +639,7 @@ def set_meta_accounts(
     tenant.meta_ad_accounts = ",".join(dict.fromkeys(ids))
     db.commit()
     threading.Thread(target=meta_spend.sync_all, kwargs={"days": meta_spend.FIRST_SYNC_DAYS}, daemon=True).start()
-    return RedirectResponse(url="/dashboard?salvo=1#trafego", status_code=302)
+    return RedirectResponse(url="/dashboard?aba=trafego&salvo=1#trafego", status_code=302)
 
 
 SEARCH_LIMIT = 100
@@ -1879,6 +1879,7 @@ def dashboard_view(
     date_to: str = "",
     seller: str = "",
     n: int = 20,
+    aba: str = "comercial",
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -1888,6 +1889,9 @@ def dashboard_view(
     is_admin = user.role == "admin"
     if not is_admin:
         seller = ""  # vendedor vê os números gerais da equipe + os dele (nunca os de outro vendedor)
+    # abas: Comercial (padrão) · Tráfego · Clientes. Vendedor só vê a Comercial.
+    if aba not in ("comercial", "trafego", "clientes") or not is_admin:
+        aba = "comercial"
 
     now = datetime.datetime.utcnow()
     range_to: Optional[datetime.datetime] = None
@@ -2066,7 +2070,7 @@ def dashboard_view(
         db, tenant.id, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
         funnel.is_qualified(stages), set(won_stage_ids),
-    )
+    ) if aba == "trafego" else None  # cada aba calcula só o que mostra
 
     return templates.TemplateResponse(
         request,
@@ -2114,7 +2118,8 @@ def dashboard_view(
             "my_stats": my_numbers,
             "customer_stats": deals.customer_stats(
                 db, tenant.id, won_stage_ids, range_from, range_to, seller=seller, top_owner="" if is_admin else user.id
-            ),
+            ) if aba == "clientes" else None,
+            "aba": aba,
             "meta_accounts": tenant.meta_ad_accounts,
         },
     )
