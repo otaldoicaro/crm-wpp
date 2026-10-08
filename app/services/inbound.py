@@ -52,7 +52,9 @@ def ingest_inbound(
     profile_name: str = "",
     referral: Optional[dict] = None,
     secret: str = "",
+    when: Optional[datetime.datetime] = None,
 ) -> Optional[Message]:
+    """when: hora original (recuperação de histórico); padrão = agora."""
     if message_exists(db, wa_message_id):
         return None  # webhook reenviado
 
@@ -79,7 +81,7 @@ def ingest_inbound(
 
         assign_lead(db, lead, number)
     else:
-        if deals.should_reopen(lead):
+        if deals.should_reopen(lead, when):
             # cliente que já fechou (ganho/perdido) há mais de 7 dias voltou: negócio novo
             lead = deals.open_new(db, lead, by_customer=True)
         if not lead.conversations:
@@ -99,7 +101,8 @@ def ingest_inbound(
         db.add(lead)
 
     conversation = _get_or_create_conversation(db, number, lead)
-    response_times.mark_inbound(lead)
+    if when is None or lead.last_inbound_at is None or when > lead.last_inbound_at:
+        response_times.mark_inbound(lead, when)
     funnel.on_message(db, lead, outbound=False)  # cliente falou: "Lead sem conversa" -> "Novo"
     suggestions.on_message(lead, body, outbound=False)  # 💡 dados do carro, "já comprei", "pago na hora"...
     db.add(lead)
@@ -112,8 +115,12 @@ def ingest_inbound(
         media_type=media_type,
         secret=secret,
     )
-    conversation.last_message_at = datetime.datetime.utcnow()
-    conversation.last_preview = body[:200]
+    if when is not None:
+        message.created_at = when  # mensagem recuperada: fica na hora em que aconteceu
+    moment = when or datetime.datetime.utcnow()
+    if conversation.last_message_at is None or moment >= conversation.last_message_at:
+        conversation.last_message_at = moment
+        conversation.last_preview = body[:200]
     db.add(message)
     db.add(conversation)
     db.commit()
@@ -129,6 +136,7 @@ def record_outbound_from_phone(
     media_id: str = "",
     media_type: str = "",
     secret: str = "",
+    when: Optional[datetime.datetime] = None,
 ) -> Optional[Message]:
     """Mensagem que o próprio número mandou pelo app do celular (só existe no
     Evolution — na API oficial não dá pra usar o app ao mesmo tempo). Entra no
@@ -141,7 +149,8 @@ def record_outbound_from_phone(
         return None
 
     conversation = _get_or_create_conversation(db, number, lead)
-    response_times.mark_outbound(lead)  # vendedor respondeu pelo celular
+    if when is None or lead.last_outbound_at is None or when > lead.last_outbound_at:
+        response_times.mark_outbound(lead, when)  # vendedor respondeu pelo celular
     funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
     followup.on_outbound_text(db, lead, body)  # mandou preço pelo celular: vai pra "Negociando"
     suggestions.on_message(lead, body, outbound=True)  # 💡 "temos sim", "não temos", "pedido confirmado"...
@@ -155,8 +164,12 @@ def record_outbound_from_phone(
         media_type=media_type,
         secret=secret,
     )
-    conversation.last_message_at = datetime.datetime.utcnow()
-    conversation.last_preview = body[:200]
+    if when is not None:
+        message.created_at = when  # mensagem recuperada: fica na hora em que aconteceu
+    moment = when or datetime.datetime.utcnow()
+    if conversation.last_message_at is None or moment >= conversation.last_message_at:
+        conversation.last_message_at = moment
+        conversation.last_preview = body[:200]
     db.add(message)
     db.add(conversation)
     db.commit()

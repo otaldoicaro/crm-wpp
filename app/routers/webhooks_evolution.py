@@ -12,6 +12,7 @@ número é adicionado pela tela WhatsApp do CRM (ver evolution_client.set_webhoo
 
 import datetime
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.concurrency import run_in_threadpool
@@ -43,14 +44,49 @@ def _normalize_event(name: str) -> str:
     return (name or "").lower().replace("_", ".")
 
 
-def _phone_from_key(key: dict, data: dict) -> str:
-    """Telefone do contato (só dígitos). Contas novas do WhatsApp às vezes vêm
-    endereçadas por LID (um id interno, terminado em @lid) em vez do número —
-    nesse caso o número real vem num campo alternativo."""
+def _digits(jid: str) -> str:
+    return (jid or "").split("@")[0].split(":")[0]
+
+
+def _remember_lid(db: Session, lid_jid: str, phone: str) -> None:
+    from app.models import LidMap
+
+    lid = _digits(lid_jid)
+    if lid and phone and not db.get(LidMap, lid):
+        db.add(LidMap(lid=lid, phone=phone))
+        db.commit()  # guarda já: mesmo se esta mensagem for ignorada, a próxima acha o lead
+
+
+def _phone_from_key(key: dict, data: dict, db: Optional[Session] = None, number: Optional[WhatsAppNumber] = None) -> str:
+    """Telefone do contato (só dígitos). O WhatsApp está endereçando parte das conversas por
+    LID (um id interno, "123...@lid") em vez do número. O número real costuma vir num campo
+    alternativo; quando não vem (comum nas mensagens que o vendedor manda pelo CELULAR), o CRM
+    procura no que já aprendeu (lid_map) e, se preciso, pergunta ao Evolution. Sem isso a
+    mensagem não achava o lead e era descartada."""
     jid = key.get("remoteJid", "")
-    if jid.endswith("@lid"):
-        jid = key.get("remoteJidAlt") or key.get("senderPn") or data.get("senderPn") or jid
-    return jid.split("@")[0].split(":")[0]
+    alt = key.get("remoteJidAlt") or ""
+    if not jid.endswith("@lid"):
+        if db is not None and alt.endswith("@lid"):
+            _remember_lid(db, alt, _digits(jid))  # conversa por número que também tem LID: aprende
+        return _digits(jid)
+    pn = next((j for j in (alt, key.get("senderPn"), data.get("senderPn")) if j and not j.endswith("@lid")), "")
+    if pn:
+        if db is not None:
+            _remember_lid(db, jid, _digits(pn))
+        return _digits(pn)
+    if db is not None:
+        from app.models import LidMap
+
+        known = db.get(LidMap, _digits(jid))
+        if known:
+            return known.phone
+        if number is not None and number.provider == "evolution":
+            phone = evolution_client.resolve_lid(number.evolution_instance, jid)
+            if phone:
+                _remember_lid(db, jid, phone)
+                return phone
+        logger.warning("evolution: conversa por LID sem telefone conhecido (%s); a recuperação diária tenta de novo", _digits(jid))
+    return _digits(jid)
 
 
 def _parse_content(message: dict) -> tuple:
@@ -313,7 +349,7 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
     if _apply_edit_or_delete(db, number, item) or _apply_reaction(db, number, item):
         return None
 
-    phone = _phone_from_key(key, item)
+    phone = _phone_from_key(key, item, db, number)
     wa_message_id = key.get("id", "")
     body, media_type, context_info = _parse_content(item.get("message") or {})
     if not body and not media_type:

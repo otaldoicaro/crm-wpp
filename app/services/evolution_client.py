@@ -203,3 +203,28 @@ def group_subject(instance: str, group_jid: str) -> str:
     except EvolutionError:
         return ""
     return body.get("subject", "") if isinstance(body, dict) else ""
+
+
+def resolve_lid(instance: str, lid_jid: str) -> str:
+    """Telefone (só dígitos) de um contato endereçado por LID ("123...@lid"), pelo cache de
+    números do Evolution. Vazio se o Evolution ainda não sabe."""
+    try:
+        body = _request("POST", f"/chat/whatsappNumbers/{instance}", json={"numbers": [lid_jid]})
+    except EvolutionError:
+        return ""
+    for item in body if isinstance(body, list) else []:
+        jid = (item or {}).get("jid", "")
+        if jid.endswith("@s.whatsapp.net"):
+            return jid.split("@")[0].split(":")[0]
+    return ""
+
+
+def find_messages(instance: str, since_iso: str, until_iso: str, page: int = 1, per_page: int = 200) -> dict:
+    """Mensagens que o Evolution guardou no banco dele nesse período (as mais novas primeiro):
+    {"total", "pages", "currentPage", "records": [...]}. Usado pra recuperar o que o CRM não
+    registrou (ver services/history_sync.py)."""
+    body = _request(
+        "POST", f"/chat/findMessages/{instance}", timeout=60,
+        json={"where": {"messageTimestamp": {"gte": since_iso, "lte": until_iso}}, "page": page, "offset": per_page},
+    )
+    return (body or {}).get("messages") or {}

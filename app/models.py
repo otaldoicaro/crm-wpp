@@ -319,6 +319,17 @@ class Conversation(Base):
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation", cascade="all, delete-orphan")
 
 
+class LidMap(Base):
+    """LID (id interno do WhatsApp, "123...@lid") -> telefone. O WhatsApp está trocando o
+    telefone por esse id em algumas conversas; sem traduzir, a mensagem não acha o lead."""
+
+    __tablename__ = "lid_map"
+
+    lid: Mapped[str] = mapped_column(String(40), primary_key=True)
+    phone: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+
+
 class Message(Base):
     __tablename__ = "messages"
 

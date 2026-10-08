@@ -8,7 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
 
 from app.db import SessionLocal, setup_text_search, sync_indexes, sync_schema
-from app.services import archiver, followup, funnel, media_store, meta_spend, people, response_times
+from app.services import archiver, followup, funnel, history_sync, media_store, meta_spend, people, response_times
 from app.routers import (
     admin_setup,
     auth_router,
@@ -37,7 +37,8 @@ with SessionLocal() as _fdb:
     followup.setup(_fdb)  # prazos por etapa (padrão) + dados de follow-up dos leads antigos  # quem o time já respondeu sai de "Novo"
     people.admins_out_of_rotation(_fdb)  # admin só no rodízio se alguém ligar e confirmar
 archiver.schedule()
-meta_spend.schedule()  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)
+meta_spend.schedule()
+history_sync.schedule()  # recupera do Evolution mensagens que escaparam (a cada 6h, últimos 2 dias)  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)
 webhooks_evolution.clean_legacy_placeholders()
 with SessionLocal() as _db:
     response_times.backfill(_db)
