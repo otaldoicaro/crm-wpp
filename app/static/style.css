@@ -682,3 +682,5 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .dash-tab.on { color: var(--text); border-bottom-color: var(--y); }
 .stage-details summary { cursor: pointer; font-size: .82rem; margin-bottom: 4px; }
 .stage-details[open] summary { margin-bottom: 12px; }
+/* Pipeline usa a largura toda da tela (igual à visão da equipe) */
+main:has(.kanban) { max-width: none; padding-left: 16px; padding-right: 16px; }
