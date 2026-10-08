@@ -936,6 +936,7 @@ def _inbox_context(
             "tags": inbox_state.TAGS,
             "tag_label": inbox_state.TAG_LABEL,
             "list_truncated": len(conversations) >= limit and limit < INBOX_LIST_MAX,
+            "list_total": query.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0,
             "list_limit": limit,
             "list_step": INBOX_LIST_LIMIT,
             "ordem": ordem,

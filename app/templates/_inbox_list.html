@@ -29,6 +29,8 @@
 {% if list_truncated %}
   <div class="list-more">
     <button type="button" class="btn ghost small" data-more="inbox">Ver mais conversas</button>
-    <div class="muted">Mostrando as {{ conversations|length }} mais recentes</div>
+    <div class="muted">Mostrando {{ conversations|length }} de {{ list_total }}</div>
   </div>
+{% elif conversations %}
+  <div class="list-more muted">Fim da lista · {{ list_total }} conversa{{ "s" if list_total != 1 }} neste filtro</div>
 {% endif %}
