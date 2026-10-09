@@ -1645,7 +1645,7 @@ def team_thread(
     messages = lead.all_messages[-TEAM_THREAD_LAST:]
     closed = bool(lead.stage and (lead.stage.is_won or lead.stage.is_lost))
     head = templates.get_template("_team_thread_head.html").render({
-        "lead": lead, "closed": closed, "truncated": len(lead.all_messages) > TEAM_THREAD_LAST,
+        "tenant": tenant, "lead": lead, "closed": closed, "truncated": len(lead.all_messages) > TEAM_THREAD_LAST,
         "can_settle": not lead.is_group and bool(response_times.waiting_since(lead)),
         "transfer_people": [] if lead.is_group or user.role != "admin" else _transfer_options(db, tenant, lead),
         "stages": [] if lead.is_group else db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all(),

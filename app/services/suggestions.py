@@ -9,6 +9,10 @@ no topo da conversa "💡 parece que ... — confirmar?" e o vendedor confirma o
   time disse que não tem a peça.
 - Outro (não é venda): fornecedor, transportadora, currículo, cobrança...
 
+As frases acima são do ramo autopeças; cada ramo (tenant.segment) tem as suas em
+RULES_BY_SEGMENT. Seminovos: troca, visita, test drive, entrada/financiamento (qualificado),
+contrato/sinal (ganho), crédito negado, avaliação da troca, carro já vendido (perdido).
+
 Tudo grátis: regras de texto, sem IA. Cada tipo descartado não volta a ser sugerido no mesmo
 negócio."""
 
@@ -18,6 +22,7 @@ import re
 import unicodedata
 from typing import Optional
 
+from app import segments
 from app.models import Lead
 
 KIND_LABEL = {
@@ -53,7 +58,7 @@ def _any(text: str, phrases: tuple) -> Optional[str]:
 
 
 # (tipo, quem escreve: "in" cliente / "out" time, frases, motivo de perda)
-RULES = [
+RULES_AUTOPECAS = [
     ("ganho", "in", ("pago na hora", "pagar na hora", "pagamento na hora", "pago na retirada", "pago quando buscar",
                      "pago quando chegar", "pago na entrega", "pagar na entrega", "pago no balcao", "vou buscar",
                      "passo ai pra buscar", "passo ai pegar", "ja estou indo", "to indo buscar", "pode separar",
@@ -81,20 +86,63 @@ RULES = [
 ]
 
 
-def detect(text: str, outbound: bool) -> Optional[tuple]:
+OTHER_PHRASES = RULES_AUTOPECAS[-1][2]  # "não é venda" vale pra qualquer ramo
+
+RULES_SEMINOVOS = [
+    ("ganho", "in", ("fechado entao", "pode fechar", "quero fechar", "vou fechar", "negocio fechado", "vou levar",
+                     "vou ficar com ele", "vou ficar com o carro", "pode reservar pra mim", "pode separar pra mim"), ""),
+    ("ganho", "out", ("contrato assinado", "venda confirmada", "pagamento confirmado", "pagamento recebido",
+                      "recebemos o pagamento", "sinal recebido", "recebemos o sinal", "parabens pelo carro",
+                      "parabens pela compra", "parabens pela aquisicao", "obrigado pela compra",
+                      "obrigado pela preferencia", "transferencia do veiculo", "carro ja esta no seu nome"), ""),
+    ("perdido", "in", ("ja comprei", "comprei outro", "comprei em outro", "comprei em outra", "fechei com outra",
+                       "fechei com outro", "fechei em outra", "fechei em outro", "achei outro carro", "ja achei",
+                       "ja resolvi"), "Comprou em outro lugar"),
+    ("perdido", "in", ("achei mais barato", "achei mais em conta", "muito caro", "ta caro", "esta caro", "caro demais",
+                       "fora do meu orcamento", "acima da fipe", "acima da tabela"), "Preço"),
+    ("perdido", "in", ("nao preciso mais", "desisti", "deixa pra la", "vou deixar pra depois", "so pesquisando",
+                       "so olhando", "so cotando", "mais pra frente", "nao e o momento"), "Desistiu / só pesquisando"),
+    ("perdido", "in", ("financiamento nao aprovado", "financiamento negado", "credito negado", "nao aprovou",
+                       "nao foi aprovado", "reprovado", "estou negativado", "to negativado", "nome sujo"),
+       "Financiamento não aprovado"),
+    ("perdido", "out", ("financiamento nao foi aprovado", "credito nao foi aprovado", "nao aprovaram",
+                        "financiamento negado", "credito negado", "ficha reprovada", "reprovado"),
+       "Financiamento não aprovado"),
+    ("perdido", "in", ("avaliacao muito baixa", "pouco pelo meu carro", "pagaram mais no meu", "meu carro vale mais",
+                       "nao aceito esse valor na troca"), "Avaliação da troca não agradou"),
+    ("perdido", "out", ("ja foi vendido", "ja vendemos", "foi vendido", "nao temos mais", "nao temos esse",
+                        "nao temos nenhum", "infelizmente nao temos", "nao temos no estoque", "sem estoque"),
+       "Não temos o carro / modelo"),
+    ("qualificado", "in", ("aceita troca", "aceitam troca", "pega troca", "pegam troca", "carro na troca",
+                           "quero agendar", "posso ir ver", "posso passar ai", "vou passar ai", "quero ver o carro",
+                           "ver pessoalmente", "test drive", "valor da entrada", "quanto de entrada", "qual a entrada",
+                           "simulacao", "simular", "faz financiamento", "fazem financiamento", "quero financiar",
+                           "consigo financiar", "pagamento a vista"), ""),
+    ("qualificado", "out", ("visita agendada", "esta agendado", "fica agendado", "te espero", "pode vir ver",
+                            "financiamento aprovado", "credito aprovado", "ficha aprovada"), ""),
+    ("outro", "in", OTHER_PHRASES, ""),
+]
+
+# por ramo: frases e se dados do carro (placa, modelo + ano, chassi) contam como qualificado
+RULES_BY_SEGMENT = {"autopecas": (RULES_AUTOPECAS, True), "seminovos": (RULES_SEMINOVOS, False)}
+RULES = RULES_AUTOPECAS  # nome antigo
+
+
+def detect(text: str, outbound: bool, segment: str = segments.DEFAULT_SEGMENT) -> Optional[tuple]:
     """(tipo, frase achada, motivo de perda) da regra mais forte que bate, ou None."""
     plain = _norm(text)
     if not plain:
         return None
+    rules, vehicle_data = RULES_BY_SEGMENT.get(segment, RULES_BY_SEGMENT[segments.DEFAULT_SEGMENT])
     who = "out" if outbound else "in"
     best = None
-    for kind, side, phrases, reason in RULES:
+    for kind, side, phrases, reason in rules:
         if side != who:
             continue
         found = _any(plain, phrases)
         if found and (best is None or PRIORITY[kind] > PRIORITY[best[0]]):
             best = (kind, found, reason)
-    if best is None and not outbound:  # dados do carro = cliente qualificado
+    if best is None and not outbound and vehicle_data:  # dados do carro = cliente qualificado
         plate = _PLATE.search(plain)
         model, year = _MODEL.search(plain), _YEAR.search(plain)
         if plate or "chassi" in plain or (model and year):
@@ -119,7 +167,7 @@ def _applies(lead: Lead, kind: str) -> bool:
 
 def on_message(lead: Lead, body: str, outbound: bool) -> None:
     """Chamado a cada mensagem com texto. Só troca a sugestão atual por uma mais forte."""
-    hit = detect(body, outbound)
+    hit = detect(body, outbound, segments.key_for_lead(lead))
     if hit is None:
         return
     kind, phrase, reason = hit

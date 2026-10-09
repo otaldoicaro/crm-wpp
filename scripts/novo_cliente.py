@@ -13,7 +13,8 @@ import urllib.error
 import urllib.request
 
 CRM_URL = "https://crm.novaviseu.com.br"  # qualquer endereço do nosso VPS serve (o cliente vem do "identificador")
-THEMES = ["junta", "novaviseu"]
+THEMES = ["junta", "novaviseu", "conexao"]
+SEGMENTS = ["autopecas", "seminovos"]  # ramo: motivos de perda e sugestões de etapa (app/segments.py)
 
 
 def ask(label: str, default: str = "") -> str:
@@ -23,15 +24,18 @@ def ask(label: str, default: str = "") -> str:
 
 def main() -> None:
     print("\n== Novo cliente no CRM ==\n")
-    name = ask("Nome do cliente", "Nova Viseu Autopeças")
-    subdomain = ask("Identificador curto (sem espaço/acento)", "novaviseu")
-    theme = ask(f"Tema visual {THEMES}", "novaviseu")
+    name = ask("Nome do cliente")
+    subdomain = ask("Identificador curto (sem espaço/acento)")
+    theme = ask(f"Tema visual {THEMES}", subdomain if subdomain in THEMES else "junta")
+    segment = ask(f"Ramo {SEGMENTS}", "autopecas")
+    domain = ask("Domínio próprio (ex: crm.cliente.com.br; Enter = sem domínio por enquanto)").lower()
     email = ask("E-mail do gestor (login de admin)")
     password = getpass.getpass("Senha pra esse gestor (não aparece ao digitar): ")
     token = getpass.getpass("ADMIN_SETUP_TOKEN (no VPS: grep ADMIN_SETUP_TOKEN /opt/crm-config/crm.env; não aparece ao colar): ")
 
     payload = json.dumps(
-        {"subdomain": subdomain, "tenant_name": name, "theme": theme, "admin_email": email, "admin_password": password}
+        {"subdomain": subdomain, "tenant_name": name, "theme": theme, "segment": segment, "custom_domain": domain,
+         "admin_email": email, "admin_password": password}
     ).encode()
     request = urllib.request.Request(
         f"{CRM_URL}/admin/bootstrap-tenant",
@@ -52,8 +56,10 @@ def main() -> None:
 
     print("\n✅ Pronto!")
     print(f"   Cliente: {name} ({'criado agora' if data.get('created_tenant') else 'já existia, atualizado'})")
-    print(f"   Tema: {data.get('theme')}")
-    print(f"   Login do gestor: https://{data.get('subdomain')}.<IP-com-traços>.sslip.io/login (ou o domínio próprio do cliente)")
+    print(f"   Tema: {data.get('theme')} · Ramo: {data.get('segment')}")
+    print(f"   Login do gestor: https://{data.get('subdomain')}.179-236-226-37.sslip.io/login")
+    if data.get("custom_domain"):
+        print(f"   Quando o DNS estiver pronto: https://{data.get('custom_domain')}/login")
     print("   Depois de entrar: menu Equipe > copie o link de convite e mande pros vendedores.\n")
 
 

@@ -12,6 +12,7 @@ from typing import Optional
 
 from sqlalchemy import or_
 
+from app import segments
 from app.models import Lead, PipelineStage, Tenant
 
 logger = logging.getLogger("funnel")
@@ -69,20 +70,8 @@ def entry_stage(db, tenant_id: str, with_chat: bool) -> Optional[PipelineStage]:
     )
 
 
-NO_REPLY_REASON = "Não responde mais"
-LOSS_REASONS = [
-    "Não temos a peça",
-    "Preço",
-    "Comprou em outro lugar / concorrente",
-    "Prazo de entrega / disponibilidade",
-    "Frete",
-    "Forma de pagamento / condições",
-    "Não informou o veículo",
-    "Desistiu / só pesquisando",
-    "Resolveu de outro jeito",
-    NO_REPLY_REASON,
-    "Outro",
-]
+NO_REPLY_REASON = segments.NO_REPLY_REASON
+LOSS_REASONS = segments.SEGMENTS[segments.DEFAULT_SEGMENT]["loss_reasons"]  # o de cada cliente: segments.loss_reasons()
 FOLLOW_UPS_BEFORE_NO_REPLY = 2  # mensagens do time sem resposta antes de poder marcar "Não responde mais"
 
 
@@ -90,7 +79,7 @@ def check_loss(db, lead: Lead, stage: PipelineStage, reason: str) -> Optional[st
     """Erro (texto pra mostrar) se não dá pra marcar como perdido com esse motivo, senão None."""
     if not stage.is_lost:
         return None
-    if reason not in LOSS_REASONS:
+    if reason not in segments.SEGMENTS[segments.key_for_lead(lead)]["loss_reasons"]:
         return "Escolha o motivo da perda."
     if reason == NO_REPLY_REASON:
         from app.models import Conversation, Message

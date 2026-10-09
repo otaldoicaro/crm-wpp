@@ -142,7 +142,7 @@
     </div>
     {% if selected_lead.form_details %}
     <details class="inbox-form-details">
-      <summary>📝 Esse cliente preencheu o formulário da LP — ver carro e peças</summary>
+      <summary>📝 Esse cliente preencheu o formulário da LP — {{ segment_for(tenant).form_summary }}</summary>
       <div class="form-details">{{ selected_lead.form_details }}</div>
     </details>
     {% endif %}

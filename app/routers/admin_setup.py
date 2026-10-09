@@ -19,6 +19,7 @@ from app.auth import hash_password
 from app.config import ADMIN_SETUP_TOKEN
 from app.db import SessionLocal
 from app.models import CampaignSpend, PipelineStage, Tenant, User, WhatsAppNumber
+from app.segments import SEGMENTS
 from app.themes import THEMES
 
 router = APIRouter()
@@ -39,6 +40,7 @@ class BootstrapIn(BaseModel):
     admin_password: str
     custom_domain: str = ""  # ex: crm.novaviseu.com.br; vazio = não muda
     theme: str = ""  # chave de app/themes.py (ex: "junta", "novaviseu"); vazio = não muda
+    segment: str = ""  # ramo, chave de app/segments.py (ex: "autopecas", "seminovos"); vazio = não muda
     whatsapp: Optional[WhatsAppNumberIn] = None
 
 
@@ -50,6 +52,11 @@ def _require_setup_enabled(x_setup_token: Optional[str]):
 @router.post("/admin/bootstrap-tenant")
 def bootstrap_tenant(payload: BootstrapIn, x_setup_token: Optional[str] = Header(default=None)):
     _require_setup_enabled(x_setup_token)
+    # confere antes de criar qualquer coisa (senão o cliente ficava criado pela metade)
+    if payload.theme and payload.theme not in THEMES:
+        raise HTTPException(status_code=400, detail=f"tema desconhecido; opções: {', '.join(THEMES)}")
+    if payload.segment and payload.segment not in SEGMENTS:
+        raise HTTPException(status_code=400, detail=f"ramo desconhecido; opções: {', '.join(SEGMENTS)}")
 
     db: Session = SessionLocal()
     try:
@@ -90,9 +97,12 @@ def bootstrap_tenant(payload: BootstrapIn, x_setup_token: Optional[str] = Header
             db.commit()
 
         if payload.theme:
-            if payload.theme not in THEMES:
-                raise HTTPException(status_code=400, detail=f"tema desconhecido; opções: {', '.join(THEMES)}")
             tenant.theme = payload.theme
+            db.add(tenant)
+            db.commit()
+
+        if payload.segment:
+            tenant.segment = payload.segment
             db.add(tenant)
             db.commit()
 
@@ -144,6 +154,8 @@ def bootstrap_tenant(payload: BootstrapIn, x_setup_token: Optional[str] = Header
             "tenant_id": tenant.id,
             "subdomain": tenant.subdomain,
             "theme": tenant.theme,
+            "segment": tenant.segment,
+            "custom_domain": tenant.custom_domain,
             "admin_user_id": admin.id,
             "whatsapp_number_id": whatsapp_number_id,
         }

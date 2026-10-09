@@ -1,11 +1,13 @@
-{# motivo de perda (lista) + o que houve. Variáveis: reason, detail, required #}
+{# motivo de perda (lista do ramo do cliente) + o que houve. Variáveis: reason, detail, required #}
+{% set loss_tenant = tenant if tenant is defined and tenant else (lead.tenant if lead is defined and lead else none) %}
+{% set reasons = loss_reasons(loss_tenant) %}
 <label class="loss-field">Motivo da perda
   <select name="loss_reason" {{ "required" if required }}>
     <option value="">Escolha o motivo…</option>
-    {% for r in LOSS_REASONS %}<option value="{{ r }}" {{ "selected" if reason == r }}>{{ r }}</option>{% endfor %}
-    {% if reason and reason not in LOSS_REASONS %}<option value="{{ reason }}" selected>{{ reason }} (antigo)</option>{% endif %}
+    {% for r in reasons %}<option value="{{ r }}" {{ "selected" if reason == r }}>{{ r }}</option>{% endfor %}
+    {% if reason and reason not in reasons %}<option value="{{ reason }}" selected>{{ reason }} (antigo)</option>{% endif %}
   </select>
 </label>
 <label class="loss-field">O que houve
-  <textarea name="loss_detail" rows="2" placeholder="Ex: queria o farol original, só temos paralelo">{{ detail or "" }}</textarea>
+  <textarea name="loss_detail" rows="2" placeholder="{{ segment_for(loss_tenant).loss_placeholder }}">{{ detail or "" }}</textarea>
 </label>

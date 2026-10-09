@@ -14,6 +14,7 @@ import json
 import logging
 from typing import Optional
 
+from app import segments
 from app.config import ANTHROPIC_API_KEY
 
 logger = logging.getLogger("receipts")
@@ -37,9 +38,9 @@ SCHEMA = {
 }
 
 PROMPT = (
-    "Um cliente mandou este arquivo numa conversa de WhatsApp com a loja {store} (venda de peças). "
+    "Um cliente mandou este arquivo numa conversa de WhatsApp com a loja {store} ({kind}). "
     "Diga se é um COMPROVANTE DE PAGAMENTO já feito (PIX, transferência/TED, boleto pago, cartão aprovado). "
-    "Foto de peça, print de conversa, orçamento, nota fiscal ou boleto ainda não pago NÃO são comprovante.\n"
+    "Foto de produto, print de conversa, orçamento, nota fiscal ou boleto ainda não pago NÃO são comprovante.\n"
     "Se for comprovante, extraia: amount (valor pago em reais, número com ponto decimal, ex: 1250.9), "
     "paid_at (data e hora como aparecem, ex: 07/10/2026 14:32), method (PIX, TED, boleto, cartão...), "
     "payer (quem pagou) e payee (quem recebeu). Campo que não aparecer: string vazia (amount 0). "
@@ -79,7 +80,7 @@ def _file_block(content: bytes, mime: str) -> Optional[dict]:
     return None
 
 
-def analyze(content: bytes, mime: str, store: str) -> Optional[dict]:
+def analyze(content: bytes, mime: str, store: str, kind: str = "venda de peças") -> Optional[dict]:
     """{"is_payment_receipt", "amount", "paid_at", "method", "payer", "payee", "confidence"}
     ou None (tipo de arquivo não suportado, recusa ou erro)."""
     import anthropic
@@ -91,7 +92,7 @@ def analyze(content: bytes, mime: str, store: str) -> Optional[dict]:
         model=MODEL,
         max_tokens=2000,
         output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
-        messages=[{"role": "user", "content": [block, {"type": "text", "text": PROMPT.format(store=store)}]}],
+        messages=[{"role": "user", "content": [block, {"type": "text", "text": PROMPT.format(store=store, kind=kind)}]}],
     )
     client = _api()
     try:
@@ -154,6 +155,7 @@ def check_message(message_id: str) -> None:
         if not content:
             return
         store = lead.tenant.name
+        kind = segments.segment_for(lead.tenant)["sale_kind"]
         lead_id = lead.id
     finally:
         db.close()  # a análise pode levar alguns segundos: não segura conexão do banco
@@ -165,7 +167,7 @@ def check_message(message_id: str) -> None:
     text = receipt_text.extract_text(content, mime)
     result = receipt_text.classify(text) if text.strip() else None
     if (result is None or result.get("confidence") == "baixa") and ai_enabled():
-        result = analyze(content, mime, store)
+        result = analyze(content, mime, store, kind)
     if not result or not result.get("is_payment_receipt") or result.get("confidence") == "baixa":
         return
     amount = float(result.get("amount") or 0)

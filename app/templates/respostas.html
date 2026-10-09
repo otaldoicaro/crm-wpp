@@ -15,7 +15,7 @@
     {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
     <input type="hidden" name="reply_id" value="{{ editing.id if editing else '' }}">
     <p><label>Atalho (o que vem depois da /)<br><input type="text" name="shortcut" required maxlength="40" placeholder="ex: pix, garantia, bomdia" value="{{ editing.shortcut if editing else '' }}"></label></p>
-    <p><label>Mensagem<br><textarea name="body" rows="7" required placeholder="Olá, {nome}! Aqui é o {vendedor}, da Nova Viseu...">{{ editing.body if editing else '' }}</textarea></label></p>
+    <p><label>Mensagem<br><textarea name="body" rows="7" required placeholder="Olá, {nome}! Aqui é o {vendedor}, da {{ tenant.name }}...">{{ editing.body if editing else '' }}</textarea></label></p>
     <p>
       <label class="check-line"><input type="radio" name="shared" value="" {{ "checked" if not (editing and editing.shared) }}> Só pra mim</label>
       <label class="check-line"><input type="radio" name="shared" value="1" {{ "checked" if editing and editing.shared }}> Pra equipe toda</label>

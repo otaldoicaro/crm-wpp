@@ -39,6 +39,9 @@ class Tenant(Base):
     custom_domain: Mapped[str] = mapped_column(String(253), default="", index=True)
     # identidade visual do painel (chave de app/themes.py, ex: "junta", "novaviseu")
     theme: Mapped[str] = mapped_column(String(40), default="junta")
+    # ramo do cliente (chave de app/segments.py, ex: "autopecas", "seminovos"): motivos de perda,
+    # frases das sugestões de etapa e textos de exemplo
+    segment: Mapped[str] = mapped_column(String(40), default="autopecas")
     # segredo do link de convite (/convite/{token}) pra vendedor criar o próprio login; vazio = sem link
     invite_token: Mapped[str] = mapped_column(String(40), default="", index=True)
     # contas de anúncio do Meta deste cliente ("123,456", sem o act_): descobertas sozinhas pelos
@@ -153,7 +156,7 @@ class Lead(Base):
     assigned_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     whatsapp_number_id: Mapped[Optional[str]] = mapped_column(ForeignKey("whatsapp_numbers.id"), nullable=True)
     deal_value: Mapped[Optional[float]] = mapped_column(nullable=True)  # valor fechado, preenchido na etapa "Ganho"
-    loss_reason: Mapped[str] = mapped_column(String(255), default="")  # motivo (lista em funnel.LOSS_REASONS)
+    loss_reason: Mapped[str] = mapped_column(String(255), default="")  # motivo (lista do ramo do cliente, app/segments.py)
     loss_detail: Mapped[str] = mapped_column(Text, default="")  # o que houve, escrito pelo vendedor
     # etiqueta do contato: "" = lead normal | "cliente" = já é cliente | "outro" = não é venda
     # (fornecedor, conhecido...): "outro" sai do Pipeline e das métricas, a conversa continua no Inbox
