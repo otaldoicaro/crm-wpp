@@ -42,10 +42,25 @@ def _records(instance: str, since: datetime.datetime, until: datetime.datetime) 
     return out
 
 
+def _known_phone(db, key: dict, rec: dict) -> str:
+    """Telefone pelo que já se sabe (campo alternativo ou LID aprendido), sem chamar o Evolution."""
+    from app.models import LidMap
+    from app.routers.webhooks_evolution import _digits
+
+    jid = key.get("remoteJid") or ""
+    if not jid.endswith("@lid"):
+        return _digits(jid)
+    pn = next((j for j in (key.get("remoteJidAlt"), key.get("senderPn"), rec.get("senderPn")) if j and not j.endswith("@lid")), "")
+    if pn:
+        return _digits(pn)
+    known = db.get(LidMap, _digits(jid))
+    return known.phone if known else _digits(jid)
+
+
 def sync_number(number_id: str, days: int, apply: bool) -> dict:
     """Devolve {"vistas", "ja_no_crm", "importar_cliente", "importar_nossas", "ignoradas",
     "novos_leads", "leads": {nome: quantidade}}."""
-    from app.routers.webhooks_evolution import _parse_content, _phone_from_key
+    from app.routers.webhooks_evolution import _digits, _parse_content, _phone_from_key, _remember_lid
     from app.services.inbound import ingest_inbound, message_exists, record_outbound_from_phone
     from app.services.lead_match import find_lead_by_phone
 
@@ -60,6 +75,25 @@ def sync_number(number_id: str, days: int, apply: bool) -> dict:
         since = until - datetime.timedelta(days=days)
         records = _records(number.evolution_instance, since, until)
         records.sort(key=lambda r: int(r.get("messageTimestamp") or 0))
+        # 1º aprende LID -> telefone com o período inteiro: a mensagem do cliente costuma trazer o
+        # número junto; a nossa (do celular), não. Assim a nossa acha o lead mesmo vindo antes.
+        for rec in records:
+            key = rec.get("key") or {}
+            jid, alt = key.get("remoteJid") or "", key.get("remoteJidAlt") or ""
+            pn = next((j for j in (alt, key.get("senderPn"), rec.get("senderPn")) if j and not j.endswith("@lid")), "")
+            if jid.endswith("@lid") and pn.endswith("@s.whatsapp.net"):
+                _remember_lid(db, jid, _digits(pn))
+            elif jid.endswith("@s.whatsapp.net") and alt.endswith("@lid"):
+                _remember_lid(db, alt, _digits(jid))
+        # contatos que mandaram mensagem no período: viram lead nesta rodada, então a mensagem
+        # nossa que veio ANTES da 1ª deles também entra (fica pra depois de criar o lead)
+        incoming = {}  # telefone -> nome no WhatsApp
+        for rec in records:
+            key = rec.get("key") or {}
+            if not key.get("fromMe") and (key.get("remoteJid") or "").endswith(("@lid", "@s.whatsapp.net")):
+                phone = _known_phone(db, key, rec)
+                incoming[phone] = incoming.get(phone) or rec.get("pushName") or ""
+        deferred, new_phones = [], set()
         for rec in records:
             key = rec.get("key") or {}
             jid = key.get("remoteJid") or ""
@@ -79,22 +113,28 @@ def sync_number(number_id: str, days: int, apply: bool) -> dict:
             when = datetime.datetime.utcfromtimestamp(int(rec.get("messageTimestamp") or 0)) if rec.get("messageTimestamp") else None
             lead = find_lead_by_phone(db, number.tenant_id, phone)
             from_me = bool(key.get("fromMe"))
-            if from_me and lead is None:
+            if from_me and lead is None and phone not in incoming:
                 stats["ignoradas"] += 1  # conversa nossa com quem não é lead (pessoal): fica de fora
                 continue
-            name = (lead.name if lead else rec.get("pushName")) or phone
+            name = (lead.name if lead else (incoming.get(phone) or rec.get("pushName"))) or phone
             stats["importar_nossas" if from_me else "importar_cliente"] += 1
             stats["leads"][name] = stats["leads"].get(name, 0) + 1
-            if lead is None:
+            if lead is None and phone not in new_phones:
+                new_phones.add(phone)
                 stats["novos_leads"] += 1
             if not apply:
                 continue
             media_id = key["id"] if media_type else ""
-            if from_me:
+            if from_me and lead is None:
+                deferred.append((phone, key["id"], body, media_id, media_type, when))
+            elif from_me:
                 record_outbound_from_phone(db, number, phone, key["id"], body, media_id, media_type, when=when)
             else:
                 ingest_inbound(db, number, from_phone=phone, wa_message_id=key["id"], body=body, media_id=media_id,
                                media_type=media_type, profile_name=rec.get("pushName") or "", when=when)
+        for phone, wa_id, body, media_id, media_type, when in deferred:
+            if not message_exists(db, wa_id):
+                record_outbound_from_phone(db, number, phone, wa_id, body, media_id, media_type, when=when)
         return stats
     finally:
         db.close()
