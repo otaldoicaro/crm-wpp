@@ -32,10 +32,11 @@ SUPPORT = ("pix", "transferencia", "ted", "pagador", "recebedor", "favorecido", 
 NOT_RECEIPT = ("orcamento", "pedido de compra", "nota fiscal", "danfe", "vencimento", "linha digitavel",
                "pagar ate", "pague ate", "aguardando pagamento")
 
-_MONEY = re.compile(r"R\$\s*(\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|\d+(?:,\d{2})?)")
+# "R$ 1.300" (sem centavos) também: o milhar com ponto vem antes do número solto
+_MONEY = re.compile(r"R\$\s*(\d{1,3}(?:[.\s]\d{3})+(?:,\d{2})?(?!\d)|\d+(?:,\d{2})?)")
 _VALUE_LINE = re.compile(r"valor[^\n\dR]{0,25}(?:R\$\s*)?(\d{1,3}(?:[.\s]\d{3})*,\d{2}|\d+,\d{2})", re.IGNORECASE)
 _DATE = re.compile(
-    r"(\d{2}/\d{2}/\d{2,4}|\d{1,2} (?:de )?(?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-zç]*\.?(?: de)? \d{4})"
+    r"(\d{2}/\d{2}/\d{2,4}|\d{1,2}(?: de |/| )(?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-zç]*\.?(?: de |/| )\d{4})"
     r"(?:\D{0,8}(\d{2}:\d{2}))?",
     re.IGNORECASE,
 )
