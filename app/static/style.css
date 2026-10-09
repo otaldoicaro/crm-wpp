@@ -158,7 +158,7 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 }
 .inbox-list-item-body { flex: 1; min-width: 0; }
 .inbox-list-item:hover { background: var(--panel-2); }
-.inbox-list-item.active { background: var(--y-soft); box-shadow: inset 3px 0 0 var(--y); }
+.inbox-list-item.active { background: var(--panel); box-shadow: inset 3px 0 0 var(--text); }  /* aberta = branca (amarelo é só pra não lida) */
 .inbox-list-item .row1 { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
 .inbox-list-item .name { font-weight: 700; font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inbox-list-item .preview { font-size: .76rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
