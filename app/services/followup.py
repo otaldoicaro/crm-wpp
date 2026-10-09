@@ -31,9 +31,12 @@ FAST_SLA = {"em atendimento": 12, "qualificado": 12, "negociando": 24}
 FAST_TENANTS = {"novaviseu": 12}  # subdomínio -> horas pro follow-up
 
 _PRICE = re.compile(
-    r"R\$\s*(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)"  # R$ 1.250,00 / R$350
-    r"|(\d{1,3}(?:\.\d{3})*,\d{2})(?!\d)"  # 600,00 / 1.250,00
-    r"|(\d+(?:,\d{1,2})?)\s*reais",  # 350 reais
+    # 15mil / 15 mil / 1,5mil / R$ 15 mil (mas não "80mil km", "60 mil rodados")
+    r"(?:R\$\s*)?(?<![\d.,])(?P<mil>\d{1,3}(?:[.,]\d{1,2})?)\s*mil\b(?!\s*(?:km|kms|quil|rodad))"
+    r"|R\$\s*(?P<rs>\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)"  # R$ 1.250,00 / R$350
+    r"|(?<![\d.,])(?P<dol>\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)\s?\$"  # 250$ / 1.250,00 $
+    r"|(?P<cents>\d{1,3}(?:\.\d{3})*,\d{2})(?!\d)"  # 600,00 / 1.250,00
+    r"|(?P<reais>\d+(?:,\d{1,2})?)\s*reais",  # 350 reais
     re.IGNORECASE,
 )
 
@@ -42,14 +45,48 @@ def find_price(text: str) -> Optional[float]:
     """Maior valor em reais citado na mensagem (None se não tem preço)."""
     values = []
     for m in _PRICE.finditer(text or ""):
-        raw = next(g for g in m.groups() if g)
+        kind, raw = next((k, v) for k, v in m.groupdict().items() if v)
         try:
-            value = float(raw.replace(".", "").replace(",", "."))
+            if kind == "mil":  # "1,5mil" / "1.5 mil" = 1500
+                value = float(raw.replace(",", ".")) * 1000
+            else:
+                value = float(raw.replace(".", "").replace(",", "."))
         except ValueError:
             continue
         if value >= 1:
             values.append(value)
     return max(values) if values else None
+
+
+# cliente perguntando o preço -> Qualificado ("orçamento" fica de fora: vem no texto pronto da LP)
+_PRICE_QUESTION = re.compile(
+    r"\b(?:valor|valores|pre[cç]o|pre[cç]os|quanto (?:custa|fica|sai|seria|ficaria|sairia|[eé]|t[aá]|est[aá]|cobra|cobram)"
+    r"|qual (?:o )?(?:valor|pre[cç]o)|e o valor|q(?:ue)? valor)\b",
+    re.IGNORECASE,
+)
+
+
+def asks_price(text: str) -> bool:
+    return bool(_PRICE_QUESTION.search(text or ""))
+
+
+def on_inbound_text(db, lead: Lead, body: str) -> None:
+    """Cliente perguntou o preço ("valor?", "quanto custa?"): lead vai pra Qualificado (se ainda
+    não passou de lá). Só avança, nunca volta."""
+    if lead.is_group or not asks_price(body):
+        return
+    stages = funnel._stages(db, lead.tenant_id)
+    target = funnel.stage_named(stages, "Qualificado", "Qualificados")
+    stage = lead.stage
+    if target is None or not _open(stage) or stage.order >= target.order:
+        return
+    funnel.set_stage(lead, target)
+    from app.models import Conversation
+
+    conv = db.query(Conversation).filter(Conversation.lead_id == lead.id).order_by(Conversation.last_message_at.desc()).first()
+    if conv is not None:
+        db.add(Message(conversation_id=conv.id, direction="note", body=f"❓ Cliente perguntou o preço: lead foi pra {target.name}"))
+    db.add(lead)
 
 
 def _now() -> datetime.datetime:

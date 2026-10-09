@@ -104,6 +104,7 @@ def ingest_inbound(
     if when is None or lead.last_inbound_at is None or when > lead.last_inbound_at:
         response_times.mark_inbound(lead, when)
     funnel.on_message(db, lead, outbound=False)  # cliente falou: "Lead sem conversa" -> "Novo"
+    followup.on_inbound_text(db, lead, body)  # perguntou o preço: vai pra "Qualificado"
     suggestions.on_message(lead, body, outbound=False)  # 💡 dados do carro, "já comprei", "pago na hora"...
     db.add(lead)
     message = Message(
