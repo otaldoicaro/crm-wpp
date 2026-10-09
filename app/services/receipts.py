@@ -123,12 +123,11 @@ def describe(result: dict) -> str:
 
 
 def worth_checking(lead) -> bool:
-    """Negócio em aberto que o time já atendeu (Em atendimento em diante). A leitura grátis
-    é leve, então não precisa esperar o lead chegar em Negociando."""
+    """Qualquer negócio em aberto (até em "Novo"): cliente que manda comprovante já comprou,
+    mesmo que o CRM não tenha visto a conversa antes (ex: vendedor respondeu pelo celular e a
+    mensagem se perdeu). A leitura grátis é leve."""
     stage = lead.stage
-    if lead.is_group or stage is None or stage.is_won or stage.is_lost:
-        return False
-    return lead.first_response_at is not None or bool(lead.quoted_value)
+    return not (lead.is_group or stage is None or stage.is_won or stage.is_lost)
 
 
 def check_message(message_id: str) -> None:

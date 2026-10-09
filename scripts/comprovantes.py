@@ -68,7 +68,7 @@ def main() -> None:
                     db.commit()
                     print("     → aviso de confirmar venda criado na conversa")
                 elif apply:
-                    print("     (negócio já fechado ou ainda não atendido: sem aviso)")
+                    print("     (negócio já fechado: sem aviso)")
                 print()
             else:
                 print(f"  {head}\n     não é comprovante\n")
