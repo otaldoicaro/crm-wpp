@@ -163,6 +163,17 @@ for n in db.query(WhatsAppNumber).filter(WhatsAppNumber.provider == "evolution",
             print("WhatsApp", n.label, "-> falhou:", exc)
 PY
 
+# ---------- códigos LID do WhatsApp -> telefone ----------
+# o WhatsApp conectado guarda essa tabela em arquivos dentro do Evolution; sem ela, mensagem que o
+# vendedor manda pelo celular numa conversa por LID não acha o lead. Importa agora e a cada 15 min.
+say "Lendo os códigos LID do WhatsApp"
+LID_CMD="docker exec $EVO sh -c 'cd /evolution/instances 2>/dev/null || cd instances; find . -name \"lid-mapping-*_reverse.json\" -exec grep -H \"\" {} +' 2>/dev/null | docker exec -i crm-app python -m scripts.importar_lids"
+sh -c "$LID_CMD" || echo "Aviso: não consegui ler os códigos LID agora (o agendamento tenta de novo)."
+cat > /etc/cron.d/crm-lids <<CRON
+# códigos LID do WhatsApp -> telefone (ver scripts/importar_lids.py)
+*/15 * * * * root $LID_CMD --quieto >/dev/null 2>&1
+CRON
+
 # ---------- backup diário ----------
 mkdir -p /root/crm-backups
 cat > /etc/cron.d/crm-backup <<'CRON'

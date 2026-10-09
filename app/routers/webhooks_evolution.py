@@ -12,6 +12,7 @@ número é adicionado pela tela WhatsApp do CRM (ver evolution_client.set_webhoo
 
 import datetime
 import logging
+import time
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Request
@@ -48,6 +49,10 @@ def _digits(jid: str) -> str:
     return (jid or "").split("@")[0].split(":")[0]
 
 
+_LID_MISSES: dict = {}  # lid -> quando falhou (não repete a consulta/aviso por 1h)
+_LID_RETRY = 3600
+
+
 def _remember_lid(db: Session, lid_jid: str, phone: str) -> None:
     from app.models import LidMap
 
@@ -80,12 +85,17 @@ def _phone_from_key(key: dict, data: dict, db: Optional[Session] = None, number:
         known = db.get(LidMap, _digits(jid))
         if known:
             return known.phone
+        lid = _digits(jid)
+        now = time.monotonic()
+        if now - _LID_MISSES.get(lid, -_LID_RETRY) < _LID_RETRY:
+            return lid  # já tentou há pouco: não pergunta de novo nem repete o aviso
         if number is not None and number.provider == "evolution":
             phone = evolution_client.resolve_lid(number.evolution_instance, jid)
             if phone:
                 _remember_lid(db, jid, phone)
                 return phone
-        logger.warning("evolution: conversa por LID sem telefone conhecido (%s); a recuperação diária tenta de novo", _digits(jid))
+        _LID_MISSES[lid] = now
+        logger.warning("evolution: conversa por LID sem telefone conhecido (%s); a importação de LIDs (a cada 15 min) resolve", lid)
     return _digits(jid)
 
 
