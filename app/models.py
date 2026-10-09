@@ -350,6 +350,9 @@ class Message(Base):
     secret: Mapped[str] = mapped_column(String(100), default="")
     # em grupo: quem mandou (nome no WhatsApp)
     sender_name: Mapped[str] = mapped_column(String(120), default="")
+    # nossas mensagens: 0 = sem informação (antigas), 1 = enviada ✓, 2 = entregue ✓✓, 3 = lida ✓✓ azul
+    ack: Mapped[int] = mapped_column(Integer, default=0)
+    edited_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)  # editada pelo CRM
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")

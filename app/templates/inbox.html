@@ -340,8 +340,38 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
         });
       }
       // Enviar com anexos: manda um por um (o texto digitado vira a legenda do primeiro)
+      // só texto: envia sem recarregar a página (igual WhatsApp) — a caixa fica livre pra
+      // mandar a próxima na hora; as mensagens saem na ordem em que foram digitadas
+      var sendQueue = Promise.resolve();
+      function sendText() {
+        var text = input.value.replace(/\s+$/, "");
+        if (!text.trim()) return;
+        input.value = ""; input.dispatchEvent(new Event("input")); input.focus();
+        var box = document.getElementById("inboxMessages");
+        var bubble = document.createElement("div");
+        bubble.className = "msg-bubble out msg-pending"; bubble.textContent = text;
+        var time = document.createElement("span");
+        time.className = "msg-time"; time.textContent = "enviando…";
+        var empty = box.querySelector("p.muted"); if (empty) empty.remove();
+        box.appendChild(bubble); box.appendChild(time);
+        box.scrollTop = box.scrollHeight;
+        var pending = window.__pendingMsgs = window.__pendingMsgs || [];
+        pending.push([bubble, time]);
+        function done() { for (var i = 0; i < pending.length; i++) if (pending[i][0] === bubble) { pending.splice(i, 1); return; } }
+        sendQueue = sendQueue.then(function () {
+          var data = new FormData(); data.append("body", text); data.append("ajax", "1");
+          return fetch("/leads/{{ selected_lead.id }}/reply", { method: "POST", body: data })
+            .then(function (r) { return r.json(); })
+            .catch(function () { return { ok: false, error: "sem conexão com o CRM" }; })
+            .then(function (d) {
+              done();
+              if (!d.ok) { time.textContent = "⚠️ não enviada — " + (d.error || "erro"); bubble.classList.remove("msg-pending"); }
+              if (window.__inboxRefreshNow) window.__inboxRefreshNow(true);  // traz a mensagem salva (com ✓ ou o aviso)
+            });
+        });
+      }
       replyForm.addEventListener("submit", function (e) {
-        if (!staged.length) return;  // só texto: envio normal
+        if (!staged.length) { e.preventDefault(); sendText(); return; }
         e.preventDefault();
         var files = staged.slice();
         var caption = input.value || "";
@@ -422,7 +452,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   var etapa = {{ etapa|tojson }};
   var qtd = {{ list_limit }};
   var ordem = {{ ordem|tojson }};
-  var busy = false;
+  var busy = false, stickNext = false;
   function nearBottom(el) { return el.scrollHeight - el.scrollTop - el.clientHeight < 120; }
   function tick(force) {
     if (busy || (document.hidden && force !== true)) return;
@@ -446,11 +476,14 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
           listEl.scrollTop = top;
           listSig = d.list_sig;
         }
-        if (msgEl && lead && d.msg_sig !== msgSig) {
-          var stick = nearBottom(msgEl);
+        if (msgEl && lead && d.msg_sig !== msgSig && !window.__inboxEditing) {
+          var stick = nearBottom(msgEl) || stickNext;
           msgEl.innerHTML = d.msg_html;
+          (window.__pendingMsgs || []).forEach(function (p) { msgEl.appendChild(p[0]); msgEl.appendChild(p[1]); });  // ainda enviando
           if (stick) msgEl.scrollTop = msgEl.scrollHeight;
           msgSig = d.msg_sig;
+          stickNext = false;
+          if (window.__decorateMsgs) window.__decorateMsgs();
         }
       })
       .catch(function () {})
@@ -474,7 +507,11 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
     var waitIdle = function () { if (busy) return setTimeout(waitIdle, 100); listSig = ""; tick(true); };
     waitIdle();
   });
-  window.__inboxRefreshNow = function () { listSig = ""; tick(); };
+  window.__inboxRefreshNow = function (scrollDown) {
+    if (scrollDown) stickNext = true;
+    var waitIdle = function () { if (busy) return setTimeout(waitIdle, 100); listSig = ""; tick(true); };
+    waitIdle();
+  };
   document.addEventListener("visibilitychange", tick);
 })();
 </script>
@@ -565,6 +602,56 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   window.QUICK_REPLIES_ME = {{ user.name|tojson }};
 </script>
 <script src="/static/quick-replies.js?v={{ asset_version }}"></script>
+<script>
+// ✏️ editar mensagem de texto nossa (até 15 min, igual ao WhatsApp): passa o mouse na mensagem
+(function () {
+  var box = document.getElementById("inboxMessages"); if (!box) return;
+  var LIMIT = 15 * 60 * 1000;
+  function decorate() {
+    box.querySelectorAll("[data-edit]").forEach(function (b) {
+      var fresh = Date.now() - Date.parse(b.dataset.sent) < LIMIT;
+      var btn = b.querySelector(".msg-edit-btn");
+      if (fresh && !btn) {
+        btn = document.createElement("button");
+        btn.type = "button"; btn.className = "msg-edit-btn"; btn.title = "Editar mensagem"; btn.textContent = "✏️";
+        b.appendChild(btn);
+      } else if (!fresh && btn) btn.remove();
+    });
+  }
+  window.__decorateMsgs = decorate;
+  decorate(); setInterval(decorate, 30000);
+  box.addEventListener("click", function (e) {
+    var btn = e.target.closest(".msg-edit-btn"); if (!btn || window.__inboxEditing) return;
+    var bubble = btn.closest("[data-edit]"), text = bubble.querySelector(".msg-text");
+    var original = text.innerText;
+    window.__inboxEditing = true;
+    btn.remove(); text.hidden = true;
+    var form = document.createElement("div"); form.className = "msg-edit-box";
+    form.innerHTML = '<textarea rows="3"></textarea><div class="row"><span class="muted edit-status"></span><button type="button" class="btn ghost small" data-c>Cancelar</button><button type="button" class="btn small" data-s>Salvar</button></div>';
+    var area = form.querySelector("textarea"); area.value = original;
+    bubble.appendChild(form); area.focus();
+    function close() { window.__inboxEditing = false; form.remove(); text.hidden = false; decorate(); }
+    form.querySelector("[data-c]").addEventListener("click", close);
+    area.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape") close();
+      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); form.querySelector("[data-s]").click(); }
+    });
+    form.querySelector("[data-s]").addEventListener("click", function () {
+      var value = area.value.trim(), status = form.querySelector(".edit-status");
+      if (!value || value === original.trim()) return close();
+      status.textContent = "Salvando…";
+      fetch("/mensagens/" + bubble.dataset.edit + "/editar", { method: "POST", body: new URLSearchParams({ body: value }) })
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { ok: false, error: "sem conexão com o CRM" }; })
+        .then(function (d) {
+          if (!d.ok) { status.textContent = d.error || "Não editou"; return; }
+          text.innerText = value; close();
+          if (window.__inboxRefreshNow) window.__inboxRefreshNow();
+        });
+    });
+  });
+})();
+</script>
 <script>
 // campo de resposta: cresce com o texto; Enter envia, Shift+Enter quebra linha (igual WhatsApp Web)
 (function () {

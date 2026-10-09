@@ -237,8 +237,9 @@ async def receive_evolution_event(request: Request, background: BackgroundTasks)
     if EVOLUTION_WEBHOOK_TOKEN and request.query_params.get("token") != EVOLUTION_WEBHOOK_TOKEN:
         return JSONResponse({"ok": False}, status_code=403)
     payload = await request.json()
-    if _normalize_event(payload.get("event", "")) == "messages.update" and not _self_read_updates(payload.get("data")):
-        return JSONResponse({"ok": True})  # confirmações de entrega/leitura das NOSSAS mensagens: nada a fazer
+    if (_normalize_event(payload.get("event", "")) == "messages.update" and not _self_read_updates(payload.get("data"))
+            and not _ack_updates(payload.get("data"))):
+        return JSONResponse({"ok": True})
     # o trabalho com banco roda numa thread separada: se rodasse aqui (no laço
     # principal), cada mensagem recebida travava o CRM inteiro enquanto o banco respondia
     for message_id in await run_in_threadpool(_process_event, payload):
@@ -247,6 +248,23 @@ async def receive_evolution_event(request: Request, background: BackgroundTasks)
 
 
 READ_STATUSES = {"READ", "PLAYED"}
+# nossas mensagens: entregue (✓✓) e lida pelo cliente (✓✓ azul)
+ACK_LEVEL = {"SERVER_ACK": 1, "DELIVERY_ACK": 2, "READ": 3, "PLAYED": 3}
+
+
+def _ack_updates(data) -> list:
+    items = data if isinstance(data, list) else [data or {}]
+    return [i for i in items if isinstance(i, dict) and i.get("fromMe") and i.get("keyId") and ACK_LEVEL.get(i.get("status"), 0) >= 2]
+
+
+def _apply_acks(db: Session, data) -> None:
+    """Uma atualização por mensagem, só pra frente (lida não volta pra entregue)."""
+    for item in _ack_updates(data):
+        level = ACK_LEVEL[item["status"]]
+        db.query(Message).filter(Message.wa_message_id == item["keyId"], Message.direction == "out", Message.ack < level).update(
+            {Message.ack: level}, synchronize_session=False
+        )
+    db.commit()
 
 
 def _self_read_updates(data) -> list:
@@ -334,6 +352,7 @@ def _process_event_db(db: Session, payload: dict) -> list:
 
     if event == "messages.update":
         _apply_self_reads(db, number, data)
+        _apply_acks(db, data)
         return []
 
     if event != "messages.upsert":
@@ -468,5 +487,6 @@ def _handle_group_message(db: Session, number: WhatsAppNumber, item: dict) -> No
         media_type=media_type,
         sender_name=sender[:120],
         secret=secret_b64(item.get("message") or {}),
+        ack=1 if from_me else 0,
     ))
     db.commit()

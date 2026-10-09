@@ -51,6 +51,33 @@ def rotating_link(
     return _redirect_with_tracking(db, tenant_id, number, request, texto, default_source="")
 
 
+@router.get("/go/{tenant_id}/vendedor/{user_id}")
+def seller_link(
+    tenant_id: str,
+    user_id: str,
+    request: Request,
+    texto: str = "Olá! Vim pelo anúncio e quero saber mais.",
+    db: Session = Depends(get_db),
+):
+    """Link de UM vendedor (bio dele, cartão, indicação): abre sempre o WhatsApp dele e o lead
+    fica com ele. Se o número dele estiver desconectado, cai no rodízio pra não perder o cliente."""
+    number = (
+        db.query(WhatsAppNumber)
+        .filter(WhatsAppNumber.tenant_id == tenant_id, WhatsAppNumber.owner_user_id == user_id,
+                WhatsAppNumber.is_active.is_(True), WhatsAppNumber.phone_number != "")
+        .order_by((WhatsAppNumber.connection_state == "open").desc(), WhatsAppNumber.created_at)
+        .first()
+    )
+    if number is None or (number.provider == "evolution" and number.connection_state != "open"):
+        number = pick_number_for_click(db, tenant_id) or number
+    if number is None:
+        return HTMLResponse(
+            "<p style='font-family:sans-serif;padding:24px'>Nenhum atendente disponível agora. Tente de novo em instantes.</p>",
+            status_code=503,
+        )
+    return _redirect_with_tracking(db, tenant_id, number, request, texto, default_source="")
+
+
 @router.get("/go/{tenant_id}/{whatsapp_number_id}")
 def click_bridge(
     tenant_id: str,

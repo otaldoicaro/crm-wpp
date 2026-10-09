@@ -79,6 +79,11 @@ def whatsapp_page(
             "numbers": numbers,
             "users": _users(db, tenant) if user.role == "admin" else [],
             "rotating_link": f"{PUBLIC_BASE_URL}/go/{tenant.id}",
+            "seller_links": [
+                (person, f"{PUBLIC_BASE_URL}/go/{tenant.id}/vendedor/{person.id}")
+                for person in (_users(db, tenant) if user.role == "admin" else [user])
+                if person.role == "agent" or person.id == user.id
+            ],
             "configured": evolution_client.is_configured(),
             "error": request.query_params.get("error", ""),
             "auto_connect": request.query_params.get("connect", ""),

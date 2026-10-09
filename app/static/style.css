@@ -695,3 +695,12 @@ main:has(.kanban) { max-width: none; padding-left: 16px; padding-right: 16px; }
 .inbox-list .search-snippet mark { background: var(--y); color: var(--ink); border-radius: 3px; padding: 0 2px; }
 .inbox-list .search-snippet { white-space: normal; }
 .seller-table .step-rate { white-space: nowrap; }
+
+/* vistinhos das nossas mensagens (✓ enviada · ✓✓ entregue · ✓✓ azul lida) e edição */
+.msg-time .ticks { font-weight: 800; letter-spacing: -3px; margin-left: 2px; color: var(--muted); }
+.msg-time .ticks.read { color: #34B7F1; }
+.msg-edit-btn { position: absolute; top: -10px; left: -12px; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); font-size: .75rem; cursor: pointer; display: none; padding: 0; line-height: 24px; }
+.msg-bubble:hover .msg-edit-btn { display: block; }
+.msg-edit-box textarea { width: 100%; min-width: 220px; font: inherit; border-radius: 8px; border: 1px solid var(--line); padding: 6px; }
+.msg-edit-box .row { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; align-items: center; }
+.msg-pending { opacity: .6; }

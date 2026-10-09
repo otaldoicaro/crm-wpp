@@ -1,5 +1,6 @@
 import base64
 import datetime
+import logging
 import os
 import re
 import threading
@@ -26,6 +27,7 @@ from app.services.messaging import media_kind_for_mime
 from app.templating import templates
 from app.timeutil import local_to_utc, to_local
 
+logger = logging.getLogger("dashboard")
 router = APIRouter()
 
 STAGE_COLOR_PALETTE = ["#4285F4", "#f2a71b", "#8b5cf6", "#22c55e", "#e21b3c", "#06b6d4", "#ec4899"]
@@ -867,13 +869,14 @@ def _msg_sig(db: Session, lead_id: Optional[str]) -> str:
     """Muda quando chega/sai mensagem ou quando uma é editada/apagada (o texto muda de tamanho)."""
     if not lead_id:
         return "0"
-    count, last, size = (
-        db.query(func.count(Message.id), func.max(Message.created_at), func.sum(func.length(Message.body)))
+    count, last, size, acks, edits = (
+        db.query(func.count(Message.id), func.max(Message.created_at), func.sum(func.length(Message.body)),
+                 func.sum(Message.ack), func.max(Message.edited_at))
         .join(Conversation, Conversation.id == Message.conversation_id)
         .filter(Conversation.lead_id == lead_id)
         .one()
     )
-    return f"{count}:{last.isoformat() if last else ''}:{size or 0}"
+    return f"{count}:{last.isoformat() if last else ''}:{size or 0}:{acks or 0}:{edits.isoformat() if edits else ''}"
 
 
 def _inbox_context(
@@ -1791,6 +1794,44 @@ def reply_lead(
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
 
+EDIT_WINDOW = datetime.timedelta(minutes=15)  # o WhatsApp só deixa editar até 15 min depois
+
+
+@router.post("/mensagens/{message_id}/editar")
+def edit_message(
+    message_id: str,
+    body: str = Form(...),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """✏️ Edita uma mensagem de texto nossa: muda no WhatsApp do cliente e no CRM."""
+    message = db.get(Message, message_id)
+    conversation = db.get(Conversation, message.conversation_id) if message else None
+    lead = _visible_lead(db, tenant, user, conversation.lead_id) if conversation and conversation.tenant_id == tenant.id else None
+    text = body.strip()
+    if lead is None or message.direction != "out" or message.media_type or not message.wa_message_id:
+        return JSONResponse({"ok": False, "error": "Só dá pra editar mensagem de texto enviada"}, status_code=400)
+    if not text:
+        return JSONResponse({"ok": False, "error": "A mensagem não pode ficar vazia"}, status_code=400)
+    if datetime.datetime.utcnow() - message.created_at > EDIT_WINDOW:
+        return JSONResponse({"ok": False, "error": "O WhatsApp só deixa editar até 15 minutos depois do envio"}, status_code=400)
+    number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
+    if number is None or number.provider != "evolution":
+        return JSONResponse({"ok": False, "error": "Este número não permite editar"}, status_code=400)
+    try:
+        evolution_client.edit_text(number.evolution_instance, message.wa_message_id, text)
+    except evolution_client.EvolutionError as exc:
+        logger.warning("editar mensagem: %s", exc)
+        return JSONResponse({"ok": False, "error": "O WhatsApp não aceitou a edição"}, status_code=502)
+    message.body = text
+    message.edited_at = datetime.datetime.utcnow()
+    if conversation.last_preview and message.created_at >= (conversation.last_message_at or message.created_at):
+        conversation.last_preview = text[:200]
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
 @router.post("/leads/{lead_id}/switch-number")
 def switch_number(
     lead_id: str,
@@ -1900,6 +1941,8 @@ def _record_outbound(
     message.media_id = media_id or message.media_id
     message.media_type = media_type or message.media_type
     message.secret = secret or message.secret
+    if wa_id and not message.ack:
+        message.ack = 1  # enviada ✓ (entregue/lida chegam depois pelo webhook)
     conversation.last_message_at = datetime.datetime.utcnow()
     conversation.last_preview = body[:200]
     db.add(message)

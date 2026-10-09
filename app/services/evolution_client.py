@@ -219,6 +219,23 @@ def resolve_lid(instance: str, lid_jid: str) -> str:
     return ""
 
 
+def find_message_key(instance: str, wa_id: str) -> dict:
+    """Chave ({remoteJid, fromMe, id}) de uma mensagem guardada no Evolution."""
+    body = _request("POST", f"/chat/findMessages/{instance}", json={"where": {"key": {"id": wa_id}}, "page": 1, "offset": 1})
+    records = ((body or {}).get("messages") or {}).get("records") or []
+    return (records[0] or {}).get("key") or {} if records else {}
+
+
+def edit_text(instance: str, wa_id: str, text: str) -> None:
+    """Edita no WhatsApp do cliente uma mensagem de texto nossa (o WhatsApp só deixa até 15 min)."""
+    key = find_message_key(instance, wa_id)
+    jid = key.get("remoteJid") or ""
+    if not jid:
+        raise EvolutionError("mensagem não encontrada no WhatsApp")
+    _request("POST", f"/chat/updateMessage/{instance}",
+             json={"number": jid, "key": {"remoteJid": jid, "fromMe": True, "id": wa_id}, "text": text})
+
+
 def find_messages(instance: str, since_iso: str, until_iso: str, page: int = 1, per_page: int = 200) -> dict:
     """Mensagens que o Evolution guardou no banco dele nesse período (as mais novas primeiro):
     {"total", "pages", "currentPage", "records": [...]}. Usado pra recuperar o que o CRM não

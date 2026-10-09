@@ -115,6 +115,7 @@ def ingest_inbound(
         media_id=media_id,
         media_type=media_type,
         secret=secret,
+        ack=0 if when is not None else 1,  # recuperada: não se sabe se foi lida
     )
     if when is not None:
         message.created_at = when  # mensagem recuperada: fica na hora em que aconteceu

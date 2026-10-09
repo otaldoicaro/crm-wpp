@@ -25,6 +25,18 @@
 </div>
 {% endif %}
 
+<div class="card wa-link">
+  <div class="wa-label">{{ "Link de cada vendedor" if is_admin else "Seu link" }}</div>
+  <p class="muted" style="margin:4px 0 10px">{{ "Link fixo de um vendedor (bio, cartão, indicação): abre sempre o WhatsApp dele e o lead fica com ele." if is_admin else "Use na sua bio, cartão ou pra mandar pra indicações: abre o seu WhatsApp e o cliente fica com você." }} Se o número estiver desconectado, o cliente vai pro rodízio pra não se perder.</p>
+  {% for person, link in seller_links %}
+  <div class="wa-link-row" style="margin-bottom:6px">
+    {% if is_admin %}<span style="min-width:150px"><b>{{ person.name }}</b></span>{% endif %}
+    <input type="text" readonly value="{{ link }}" onclick="this.select()">
+    <button class="btn small" type="button" onclick="navigator.clipboard.writeText(this.previousElementSibling.value); this.textContent='Copiado!'">Copiar</button>
+  </div>
+  {% endfor %}
+</div>
+
 {% if not configured %}
   <div class="error-box">O servidor de WhatsApp ainda não foi configurado neste ambiente (EVOLUTION_API_URL / EVOLUTION_API_KEY). Fale com a agência.</div>
 {% endif %}

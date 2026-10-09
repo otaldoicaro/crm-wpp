@@ -3,7 +3,8 @@
   {% if msg.direction == "note" %}
   <div class="msg-note">{{ msg.body }} · {{ msg.created_at|hora("%d/%m %H:%M") }}</div>
   {% else %}
-  <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}" id="msg-{{ msg.id }}">
+  {% set editable = msg.direction == 'out' and not msg.media_type and msg.wa_message_id and not msg.body.startswith("⚠️") %}
+  <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}" id="msg-{{ msg.id }}"{% if editable %} data-edit="{{ msg.id }}" data-sent="{{ msg.created_at.isoformat() }}Z"{% endif %}>
     {% if msg.sender_name and msg.direction == 'in' %}<div class="msg-sender">{{ msg.sender_name }}</div>{% endif %}
     {% if msg.media_type == "audio" %}
       {% if msg.body and not msg.body.startswith("🎤") %}<div>{{ msg.body }}</div>{% endif %}
@@ -17,10 +18,10 @@
     {% elif msg.media_type == "document" %}
       <a href="/media/{{ msg.id }}" target="_blank" style="color:inherit; text-decoration:underline;">{{ msg.body }}</a>
     {% else %}
-      {{ msg.body|quebras }}
+      <span class="msg-text">{{ msg.body|quebras }}</span>
     {% endif %}
   </div>
-  <span class="msg-time">{{ msg.created_at|hora("%d/%m %H:%M") }}</span>
+  <span class="msg-time">{% if msg.edited_at %}editada · {% endif %}{{ msg.created_at|hora("%d/%m %H:%M") }}{% if msg.direction == 'out' and msg.ack %} <span class="ticks{{ ' read' if msg.ack >= 3 }}" title="{{ ['', 'Enviada', 'Entregue', 'Lida pelo cliente'][msg.ack if msg.ack < 4 else 3] }}">{{ "✓✓" if msg.ack >= 2 else "✓" }}</span>{% endif %}</span>
   {% endif %}
 {% else %}
   <p class="muted">Sem mensagens ainda.</p>
