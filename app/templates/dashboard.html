@@ -254,6 +254,8 @@
   <td class="num">{{ money(n.cpl, True) if n.cpl else "—" }}</td>
   <td class="num">{{ n.qualified }}</td>
   <td class="num">{{ money(n.cost_per_qualified, True) if n.cost_per_qualified else "—" }}</td>
+  <td class="num">{{ n.opportunities }}</td>
+  <td class="num">{{ money(n.cpo, True) if n.cpo else "—" }}</td>
   <td class="num">{{ n.won }}</td>
   <td class="num">{{ money(n.cac, True) if n.cac else "—" }}</td>
   <td class="num">{{ money(n.revenue) if n.revenue else "—" }}</td>
@@ -269,12 +271,14 @@
     <div><span>Investimento</span><b>{{ money(t.spend) }}</b></div>
     <div><span>Leads de anúncio</span><b>{{ t.leads }}</b></div>
     <div><span>Custo por lead</span><b>{{ money(t.cpl, True) if t.cpl else "—" }}</b></div>
+    <div title="Leads que chegaram em Negociando (receberam preço), mesmo que depois tenham sido perdidos"><span>Oportunidades (OPT)</span><b>{{ t.opportunities }}</b></div>
+    <div title="Investimento ÷ oportunidades"><span>Custo por oportunidade (CPO)</span><b>{{ money(t.cpo, True) if t.cpo else "—" }}</b></div>
     <div><span>Vendas</span><b>{{ t.won }}</b></div>
     <div><span>Custo por venda (CAC)</span><b>{{ money(t.cac, True) if t.cac else "—" }}</b></div>
     <div><span>Faturamento</span><b>{{ money(t.revenue) }}</b></div>
     <div><span>Retorno (ROAS)</span><b class="{{ 'roas-good' if t.roas and t.roas >= 1 else 'roas-bad' }}">{{ ("%.1fx"|format(t.roas)).replace(".", ",") if t.roas is not none else "—" }}</b></div>
   </div>
-  <p class="muted traffic-note">Clique numa campanha pra ver os conjuntos e anúncios. ROAS = faturamento ÷ investimento (2,0x = cada R$ 1 investido virou R$ 2 em vendas). Gasto atualizado do Meta a cada 3h.{% if seller %} <b>Atenção:</b> com vendedor filtrado, leads e vendas são só dele, mas o investimento é o da campanha inteira.{% endif %}</p>
+  <p class="muted traffic-note">Clique numa campanha pra ver os conjuntos e anúncios. OPT = leads que chegaram em Negociando (receberam preço); CPO = investimento ÷ OPT. ROAS = faturamento ÷ investimento (2,0x = cada R$ 1 investido virou R$ 2 em vendas). Gasto atualizado do Meta a cada 3h.{% if seller %} <b>Atenção:</b> com vendedor filtrado, leads e vendas são só dele, mas o investimento é o da campanha inteira.{% endif %}</p>
   {% else %}
   <p class="muted" style="margin-top:0">O investimento ainda não chegou do Meta. Ele é buscado sozinho a cada 3h (na 1ª vez, os últimos 90 dias). Enquanto isso, a tabela mostra leads e vendas de cada campanha.</p>
   {% endif %}
@@ -282,7 +286,7 @@
   <table class="table-simple traffic-table">
     <thead><tr>
       <th>Campanha</th><th class="num">Investido</th><th class="num">Leads</th><th class="num">CPL</th><th class="num">Qualif.</th>
-      <th class="num">Custo/qualif.</th><th class="num">Vendas</th><th class="num">CAC</th><th class="num">Faturamento</th>
+      <th class="num">Custo/qualif.</th><th class="num" title="Oportunidades: leads que chegaram em Negociando (receberam preço), mesmo que depois tenham sido perdidos">OPT</th><th class="num" title="Custo por oportunidade = investido ÷ oportunidades">CPO</th><th class="num">Vendas</th><th class="num">CAC</th><th class="num">Faturamento</th>
       <th class="num">Ticket médio</th><th class="num">ROAS</th>
     </tr></thead>
     {% for c in traffic.campaigns %}
@@ -305,7 +309,7 @@
       {% endfor %}
     </tbody>
     {% else %}
-    <tbody><tr><td colspan="11" class="muted">Sem campanhas no período (aparece assim que leads de anúncio chegarem ou o investimento for buscado).</td></tr></tbody>
+    <tbody><tr><td colspan="13" class="muted">Sem campanhas no período (aparece assim que leads de anúncio chegarem ou o investimento for buscado).</td></tr></tbody>
     {% endfor %}
   </table>
   </div>

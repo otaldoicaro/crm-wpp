@@ -22,7 +22,7 @@ def _key(parts: tuple) -> str:
 def _node(name: str, platform: str, key: str = "") -> dict:
     return {
         "key": key, "lead_ids": [],
-        "name": name, "platform": PLATFORM_LABEL.get(platform, platform), "leads": 0, "qualified": 0,
+        "name": name, "platform": PLATFORM_LABEL.get(platform, platform), "leads": 0, "qualified": 0, "opportunities": 0,
         "won": 0, "revenue": 0.0, "spend": 0.0, "impressions": 0, "clicks": 0, "children": {},
     }
 
@@ -31,6 +31,7 @@ def _finish(node: dict) -> dict:
     spend, leads, won = node["spend"], node["leads"], node["won"]
     node["cpl"] = spend / leads if spend and leads else None
     node["cost_per_qualified"] = spend / node["qualified"] if spend and node["qualified"] else None
+    node["cpo"] = spend / node["opportunities"] if spend and node["opportunities"] else None
     node["cac"] = spend / won if spend and won else None
     node["ticket"] = node["revenue"] / won if won else None
     node["roas"] = node["revenue"] / spend if spend else None
@@ -40,7 +41,7 @@ def _finish(node: dict) -> dict:
     return node
 
 
-def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won_ids: set) -> dict:
+def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won_ids: set, is_opportunity=None) -> dict:
     """{"campaigns": [...], "total": {...}, "has_spend": bool}. Cada campanha tem
     "children" (conjuntos) e cada conjunto tem "children" (anúncios)."""
     # nomes e ids conhecidos (todo o histórico, pra casar leads de qualquer data)
@@ -90,6 +91,8 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
             node["leads"] += 1
             if is_qualified(lead):
                 node["qualified"] += 1
+            if is_opportunity is not None and is_opportunity(lead):
+                node["opportunities"] += 1
             if lead.stage_id in won_ids:
                 node["won"] += 1
                 node["revenue"] += lead.deal_value or 0
@@ -121,7 +124,7 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
 
     total = _node("Total", "")
     for camp in campaigns.values():
-        for key in ("leads", "qualified", "won", "revenue", "spend", "impressions", "clicks"):
+        for key in ("leads", "qualified", "opportunities", "won", "revenue", "spend", "impressions", "clicks"):
             total[key] += camp[key]
     result = [_finish(c) for c in campaigns.values()]
     result.sort(key=lambda n: (n["spend"], n["leads"]), reverse=True)

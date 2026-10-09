@@ -572,7 +572,7 @@ def campaign_leads(
     tree = traffic.build(
         db, tenant.id, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
-        funnel.is_qualified(stages), {st.id for st in stages if st.is_won},
+        funnel.is_qualified(stages), {st.id for st in stages if st.is_won}, funnel.is_opportunity(stages),
     )
     trail = traffic.find(tree, c, s, a)
     if trail is None:
@@ -2141,7 +2141,7 @@ def dashboard_view(
     traffic_data = traffic.build(
         db, tenant.id, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
-        funnel.is_qualified(stages), set(won_stage_ids),
+        funnel.is_qualified(stages), set(won_stage_ids), funnel.is_opportunity(stages),
     ) if aba == "trafego" else None  # cada aba calcula só o que mostra
 
     return templates.TemplateResponse(

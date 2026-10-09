@@ -201,6 +201,12 @@ def summary(leads: list, stages: list) -> dict:
     }
 
 
+def is_opportunity(stages: list):
+    """Função lead -> bool: chegou em Negociando (recebeu preço) em algum momento, ou ganhou."""
+    lv = levels(stages)
+    return lambda lead: (lead.reached_order or 0) >= lv["negotiation"] or lead.stage_id in lv["won_ids"]
+
+
 def is_qualified(stages: list):
     """Função lead -> bool (pro cruzamento com o tráfego pago)."""
     lv = levels(stages)

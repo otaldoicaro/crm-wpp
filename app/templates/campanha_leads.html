@@ -6,8 +6,8 @@
 <div class="kanban-toolbar">
   <div>
     <div class="muted camp-trail">{% for n in trail %}{{ ["Campanha", "Conjunto", "Anúncio"][loop.index0] }}: <b>{{ n.name }}</b>{% if not loop.last %} › {% endif %}{% endfor %}</div>
-    <h2 style="margin:4px 0 0">{{ node.leads }} leads · {{ node.qualified }} qualificados · {{ node.won }} vendas{% if node.revenue %} · {{ money(node.revenue) }}{% endif %}</h2>
-    <span class="muted">{% if node.spend %}Investido {{ money(node.spend) }}{% if node.cpl %} · CPL R$ {{ ("%.2f"|format(node.cpl)).replace(".", ",") }}{% endif %}{% if node.cac %} · CAC R$ {{ ("%.2f"|format(node.cac)).replace(".", ",") }}{% endif %}{% if node.roas is not none %} · ROAS {{ ("%.1fx"|format(node.roas)).replace(".", ",") }}{% endif %} · {% endif %}Clique num lead pra ler a conversa e ver se ele é qualificado de verdade.</span>
+    <h2 style="margin:4px 0 0">{{ node.leads }} leads · {{ node.qualified }} qualificados · {{ node.opportunities }} oportunidades · {{ node.won }} vendas{% if node.revenue %} · {{ money(node.revenue) }}{% endif %}</h2>
+    <span class="muted">{% if node.spend %}Investido {{ money(node.spend) }}{% if node.cpl %} · CPL R$ {{ ("%.2f"|format(node.cpl)).replace(".", ",") }}{% endif %}{% if node.cpo %} · CPO R$ {{ ("%.2f"|format(node.cpo)).replace(".", ",") }}{% endif %}{% if node.cac %} · CAC R$ {{ ("%.2f"|format(node.cac)).replace(".", ",") }}{% endif %}{% if node.roas is not none %} · ROAS {{ ("%.1fx"|format(node.roas)).replace(".", ",") }}{% endif %} · {% endif %}Clique num lead pra ler a conversa e ver se ele é qualificado de verdade.</span>
   </div>
   <a class="btn ghost small" href="{{ back }}">← Voltar pro Dashboard</a>
 </div>
