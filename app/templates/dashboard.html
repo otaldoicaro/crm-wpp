@@ -188,18 +188,23 @@
 </details>
 
 {% if not seller %}
+{% macro step_cells(r) -%}
+{%- for s in r.steps %}<td class="step-rate"><span class="conv-pill">{{ pct(s.rate) }}</span> <span class="muted">{{ s.count }}</span></td>{% endfor -%}
+{%- endmacro %}
+{% macro pct(v) -%}{{ "—" if v is none else (("%.1f"|format(v)).replace(".0", "").replace(".", ",") ~ "%") }}{%- endmacro %}
 <div class="section-title"><h3 style="margin:0">{{ "Funil por vendedor" if is_admin else "Você x equipe" }}</h3></div>
 <div class="card">
   <div style="overflow-x:auto;">
   <table class="table-simple seller-table">
-    <thead><tr><th>Vendedor</th><th>Leads</th>{% for st in stages %}<th>{{ st.name }}</th>{% endfor %}<th>Conversão</th><th>Receita</th><th title="Mediana do tempo até a 1ª resposta">1º atend.</th><th title="Leads em aberto ainda sem resposta">Aguardando</th><th title="A última mensagem foi nossa e o cliente não responde há mais que o prazo de follow-up">📞 Follow-up</th><th title="Em aberto e passaram do prazo da etapa">⏰ Parados</th></tr></thead>
+    <thead><tr><th>Vendedor</th><th>Leads</th>{% for st in stages %}<th>{{ st.name }}</th>{% endfor %}<th class="step-rate" title="Leads que chegaram em Qualificado (mesmo que depois avançaram ou foram perdidos) ÷ leads">Lead → Qualif.</th><th class="step-rate" title="Chegaram em Negociando (receberam preço) ÷ qualificados">Qualif. → Negoc.</th><th class="step-rate" title="Vendas ÷ chegaram em Negociando">Negoc. → Venda</th><th title="Vendas ÷ leads">Conversão</th><th>Receita</th><th title="Mediana do tempo até a 1ª resposta">1º atend.</th><th title="Leads em aberto ainda sem resposta">Aguardando</th><th title="A última mensagem foi nossa e o cliente não responde há mais que o prazo de follow-up">📞 Follow-up</th><th title="Em aberto e passaram do prazo da etapa">⏰ Parados</th></tr></thead>
     <tbody>
     {% for r in seller_rows %}
       <tr {% if is_admin %}style="cursor:pointer" onclick="window.location='/dashboard?seller={{ r.user.id }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}'"{% endif %}>
         <td><b>{{ r.user.name }}</b>{% if not r.user.is_active %} <span class="muted">(inativo)</span>{% elif not r.user.accepting_leads %} <span class="muted">(pausado)</span>{% endif %}</td>
         <td><b>{{ r.total }}</b></td>
         {% for st in stages %}<td class="{{ 'muted' if not r.by_stage[st.id] }}">{{ r.by_stage[st.id] }}</td>{% endfor %}
-        <td><span class="conv-pill">{{ r.conversion }}%</span></td>
+        {{ step_cells(r) }}
+        <td><span class="conv-pill">{{ pct(r.overall) }}</span></td>
         <td>R$ {{ "{:,.0f}".format(r.revenue).replace(",", ".") }}</td>
         <td>{{ r.median_first|duracao }}</td>
         <td class="{{ 'rt-late-cell' if r.waiting else 'muted' }}">{{ r.waiting }}</td>
@@ -211,7 +216,8 @@
         <td><b>Equipe toda</b></td>
         <td><b>{{ team_row.total }}</b></td>
         {% for st in stages %}<td>{{ team_row.by_stage[st.id] }}</td>{% endfor %}
-        <td><span class="conv-pill">{{ team_row.conversion }}%</span></td>
+        {{ step_cells(team_row) }}
+        <td><span class="conv-pill">{{ pct(team_row.overall) }}</span></td>
         <td>R$ {{ "{:,.0f}".format(team_row.revenue).replace(",", ".") }}</td>
         <td>{{ team_row.median_first|duracao }}</td>
         <td>{{ team_row.waiting }}</td>
@@ -221,7 +227,7 @@
     </tbody>
   </table>
   </div>
-  {% if is_admin %}<p class="muted" style="margin:10px 0 0">Só vendedores (admins não entram). Clique num vendedor pra ver o dashboard só dele.{% if unassigned %} {{ unassigned }} lead(s) sem vendedor no período.{% endif %}</p>{% endif %}
+  {% if is_admin %}<p class="muted" style="margin:10px 0 0">Só vendedores (admins não entram). Clique num vendedor pra ver o dashboard só dele. As taxas usam a etapa mais longe que cada lead já alcançou (quem negociou e depois perdeu continua contando como negociação); o número ao lado é quantos chegaram lá.{% if unassigned %} {{ unassigned }} lead(s) sem vendedor no período.{% endif %}</p>{% endif %}
 </div>
 {% endif %}
 

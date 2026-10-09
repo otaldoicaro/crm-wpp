@@ -2042,8 +2042,11 @@ def dashboard_view(
         won = [lead for lead in mine if lead.stage_id in won_stage_ids]
         mine_open = [l for l in mine if l.stage_id not in won_stage_ids and l.stage_id not in lost_stage_ids]
         mine_rt = response_times.summary(mine)
+        fsum = funnel.summary(mine, stages)  # Lead > Qualificado > Negociando > Venda (etapa mais longe alcançada)
         return {
             "user": person,
+            "steps": fsum["steps"][1:],
+            "overall": fsum["overall"],
             "total": len(mine),
             "by_stage": {st.id: sum(1 for lead in mine if lead.stage_id == st.id) for st in stages},
             "won": len(won),

@@ -694,3 +694,4 @@ main:has(.kanban) { max-width: none; padding-left: 16px; padding-right: 16px; }
 .text-search-head { display: flex; justify-content: space-between; align-items: center; font-size: .78rem; padding: 2px 4px; }
 .inbox-list .search-snippet mark { background: var(--y); color: var(--ink); border-radius: 3px; padding: 0 2px; }
 .inbox-list .search-snippet { white-space: normal; }
+.seller-table .step-rate { white-space: nowrap; }
