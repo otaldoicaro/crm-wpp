@@ -171,13 +171,26 @@
     {% if start_numbers %}
     <form method="post" action="/leads/{{ lead.id }}/iniciar">
       <label>Enviar pelo WhatsApp
-        <select name="whatsapp_number_id">
-          {% for n in start_numbers %}<option value="{{ n.id }}">{{ n.label }}{% if n.owner %} — {{ n.owner.name }}{% endif %}</option>{% endfor %}
+        <select name="whatsapp_number_id" id="startNumber">
+          {% for n in start_numbers %}<option value="{{ n.id }}" data-owner="{{ (n.owner.name if n.owner else user.name).split(' ')[0] }}">{{ n.label }}{% if n.owner %} — {{ n.owner.name }}{% endif %}</option>{% endfor %}
         </select>
       </label>
+      {# quem assina é o dono do WhatsApp que vai enviar (o admin mandando pelo número do Felipe = "Aqui é Felipe") #}
+      {% set first_owner = start_numbers[0].owner.name if start_numbers[0].owner else user.name %}
       <label>1ª mensagem
-        <textarea name="body" rows="3" required>Olá{{ ", " ~ lead.name.split(" ")[0] if lead.name }}! Tudo bem? Aqui é {{ user.name.split(" ")[0] }}, da {{ tenant.name }}. Vi que você entrou em contato com a gente, como posso te ajudar?</textarea>
+        <textarea name="body" rows="4" required id="startBody">{{ segment_for(tenant).first_message.format(nome=(", " ~ lead.name.split(" ")[0]) if lead.name else "", vendedor=first_owner.split(" ")[0], empresa=tenant.name) }}</textarea>
       </label>
+      <script>
+      (function () {
+        var sel = document.getElementById("startNumber"), body = document.getElementById("startBody");
+        var current = sel.options[sel.selectedIndex].dataset.owner;
+        sel.addEventListener("change", function () {
+          var next = sel.options[sel.selectedIndex].dataset.owner;
+          body.value = body.value.replace("Aqui é " + current + ",", "Aqui é " + next + ",");
+          current = next;
+        });
+      })();
+      </script>
       <button class="btn small" type="submit">Enviar e abrir a conversa</button>
     </form>
     <p class="muted">A conversa passa a aparecer no Inbox, e a resposta do cliente chega lá.</p>

@@ -24,6 +24,10 @@ SEGMENTS = {
         "loss_placeholder": "Ex: queria o farol original, só temos paralelo",
         "sale_kind": "venda de peças",  # vai no texto da IA de comprovantes
         "form_summary": "ver carro e peças",  # inbox: resumo do formulário da LP
+        # 1ª mensagem pra lead que chegou e nunca mandou mensagem ({nome}, {vendedor}, {empresa})
+        "first_message": "Olá{nome}! Tudo bem? Aqui é {vendedor}, da {empresa}. Vi que você se interessou "
+                         "pelas nossas peças! Me passa qual peça você procura, o modelo do carro e o ano, "
+                         "que eu já verifico pra você 😉",
     },
     "seminovos": {
         "label": "Seminovos",
@@ -40,6 +44,9 @@ SEGMENTS = {
         "loss_placeholder": "Ex: queria o mesmo modelo com câmbio automático",
         "sale_kind": "venda de carros seminovos",
         "form_summary": "ver o que ele preencheu",
+        "first_message": "Olá{nome}! Tudo bem? Aqui é {vendedor}, da {empresa}. Vi que você se interessou "
+                         "pelos nossos carros! Me conta qual modelo você procura e se tem carro pra dar na troca, "
+                         "que eu já te ajudo 😉",
     },
 }
 DEFAULT_SEGMENT = "autopecas"
