@@ -84,6 +84,8 @@ def ingest_inbound(
         if deals.should_reopen(lead, when):
             # cliente que já fechou (ganho/perdido) há mais de 7 dias voltou: negócio novo
             lead = deals.open_new(db, lead, by_customer=True)
+        else:
+            funnel.reopen_lost(db, lead, body, when)  # perdido há pouco e voltou a falar: volta pra "Novo"
         if not lead.conversations:
             # lead que nasceu do formulário da LP e agora chamou no WhatsApp: o mesmo lead
             if lead.attribution is None and referral:

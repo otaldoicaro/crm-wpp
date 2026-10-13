@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import re
 import unicodedata
 from typing import Optional
 
@@ -106,6 +107,49 @@ def is_automatic(stage) -> bool:
 
 
 AUTOMATIC_MSG = "“Lead sem conversa” e “Novo” são só pra leads que acabaram de chegar: o CRM coloca e tira sozinho."
+
+
+_COURTESY = ("obrigad", "brigad", "valeu", "vlw", "ok", "okay", "blz", "beleza", "tranquilo", "show", "abraco",
+             "abs", "tmj", "certo", "entendi", "combinado", "joia", "otimo", "perfeito", "disponha", "fechou", "falou",
+             "nada", "problema", "bom", "boa", "ta", "tudo", "sem", "de", "muito", "mto", "mt", "agradeco", "amigo",
+             "irmao", "mano", "chefe", "entao", "sim", "e", "pra", "voce", "vc", "tbm", "tambem", "kk", "kkk", "rs")
+_COURTESY_CORE = ("obrigad", "brigad", "valeu", "vlw", "ok", "okay", "blz", "beleza", "tranquilo", "show", "tmj",
+                  "certo", "entendi", "combinado", "joia", "agradeco", "disponha", "fechou", "falou", "abraco", "abs")
+
+
+def is_courtesy(text: str) -> bool:
+    """ "ok, obrigado", "valeu!", "👍": só educação, não é o cliente voltando a negociar.
+    Pergunta ("?") ou qualquer palavra de assunto (peça, carro, preço...) já não é."""
+    plain = _plain(text)
+    words = re.findall(r"[a-z0-9]+", plain)
+    if not words:
+        return "?" not in plain  # só emoji / figurinha
+    if "?" in plain or len(words) > 6:
+        return False
+    return (all(w.startswith(_COURTESY) for w in words)
+            and any(w.startswith(_COURTESY_CORE) for w in words))
+
+
+def reopen_lost(db, lead: Lead, body: str, when: Optional[datetime.datetime] = None) -> bool:
+    """Cliente de um lead PERDIDO voltou a falar (antes dos 7 dias do negócio novo): o lead volta
+    pra "Novo" pro time atender. "Ok, obrigado" não conta. Devolve True se voltou."""
+    stage = lead.stage
+    if stage is None or not stage.is_lost or lead.is_group or is_courtesy(body):
+        return False
+    novo = entry_stage(db, lead.tenant_id, with_chat=True)
+    if novo is None:
+        return False
+    set_stage(lead, novo)
+    if when is not None:
+        lead.stage_entered_at = when
+    from app.models import Conversation, Message
+
+    conv = db.query(Conversation).filter(Conversation.lead_id == lead.id).order_by(Conversation.last_message_at.desc()).first()
+    if conv is not None:
+        db.add(Message(conversation_id=conv.id, direction="note",
+                       body=f"↩️ Cliente voltou a falar: saiu de Perdido ({lead.loss_reason or 'sem motivo'}) e voltou pra {novo.name}"))
+    db.add(lead)
+    return True
 
 
 def in_service_stage(stages: list) -> Optional[PipelineStage]:

@@ -733,3 +733,12 @@ main:has(.kanban) { max-width: none; padding-left: 16px; padding-right: 16px; }
 .reply-quote .quote-text { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reply-quote button { border: 0; background: none; font-size: 1.1rem; cursor: pointer; line-height: 1; }
 .reply-quote[hidden] { display: none !important; }
+
+/* encerrar atendimento: perdido / não é venda / só encerrar */
+.settle-dialog { border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; max-width: 460px; width: calc(100% - 32px); background: var(--panel); color: var(--text); }
+.settle-dialog::backdrop { background: rgba(0,0,0,.35); }
+.settle-opt { display: flex; gap: 8px; align-items: flex-start; padding: 8px 0; cursor: pointer; }
+.settle-loss { padding: 0 0 6px 24px; display: grid; gap: 6px; }
+.settle-loss[hidden] { display: none; }
+.settle-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 10px; }
+.settle-actions .settle-error { margin-right: auto; color: #c0392b; }

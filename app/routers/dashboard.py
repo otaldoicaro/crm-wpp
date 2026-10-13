@@ -1269,6 +1269,9 @@ def settle_lead(
     lead_id: str,
     voltar: str = Form(""),
     ajax: str = Form(""),
+    resultado: str = Form(""),  # "" só encerra · "perdido" · "outro" (não é venda)
+    loss_reason: str = Form(""),
+    loss_detail: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -1276,14 +1279,29 @@ def settle_lead(
     """"✓ Encerrar atendimento": o cliente só agradeceu/finalizou, não precisa de resposta.
     Sai do "aguardando resposta" e do "Não respondidas" até ele mandar mensagem de novo."""
     lead = _lead_for_action(db, tenant, user, lead_id)
+    back = voltar if voltar.startswith("/") else f"/inbox/{lead_id}"
+    note = f"✓ Atendimento encerrado por {user.name} (sem resposta necessária)"
+    if resultado == "perdido" and not lead.is_group:
+        lost = next((st for st in funnel._stages(db, tenant.id) if st.is_lost), None)
+        error = funnel.check_loss(db, lead, lost, loss_reason) if lost else "Este funil não tem etapa de perdido"
+        if error:
+            if ajax:
+                return JSONResponse({"ok": False, "error": error}, status_code=400)
+            return RedirectResponse(url=f"{back}?erro={quote(error)}", status_code=302)
+        funnel.set_stage(lead, lost)
+        lead.loss_reason, lead.loss_detail = loss_reason, loss_detail.strip()
+        note = f"✓ Atendimento encerrado por {user.name}: lead perdido ({loss_reason})"
+    elif resultado == "outro" and not lead.is_group:
+        lead.tag = "outro"
+        note = f"✓ Atendimento encerrado por {user.name}: não é venda (marcado como Outro)"
     response_times.settle(lead, user.id)
     if lead.assigned_user_id == user.id:
         inbox_state.mark_seen_by_seller(lead)
-    _add_note(db, lead, f"✓ Atendimento encerrado por {user.name} (sem resposta necessária)")
+    _add_note(db, lead, note)
     db.commit()
     if ajax:
         return JSONResponse({"ok": True})
-    return RedirectResponse(url=voltar if voltar.startswith("/") else f"/inbox/{lead_id}", status_code=302)
+    return RedirectResponse(url=back, status_code=302)
 
 
 @router.post("/leads/{lead_id}/transferir")
