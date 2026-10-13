@@ -194,7 +194,7 @@ def _apply_edit_or_delete(db: Session, number: WhatsAppNumber, item: dict) -> bo
         elif proto and (kind in ("14", "MESSAGE_EDIT") or proto.get("editedMessage")):
             new_text, _, _ = _parse_content(proto.get("editedMessage") or {})
             if new_text:
-                original.body = f"{new_text} ✏️ (editada)"
+                original.body, original.edited_at = new_text, datetime.datetime.utcnow()
         elif secret and kind in ("2", "MESSAGE_EDIT"):
             plain = decrypt_edit(
                 original.secret,
@@ -205,7 +205,7 @@ def _apply_edit_or_delete(db: Session, number: WhatsAppNumber, item: dict) -> bo
             )
             new_text = text_from_message(plain) if plain else ""
             if new_text:
-                original.body = f"{new_text} ✏️ (editada)"
+                original.body, original.edited_at = new_text, datetime.datetime.utcnow()
             elif "(editada no celular" not in original.body:
                 logger.info("evolution: não deu pra abrir a edição de %s (sem secret guardado?)", target.get("id"))
                 original.body = f"{original.body} ✏️ (editada no celular — veja o texto novo lá)"
@@ -391,9 +391,9 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
 
     secret = secret_b64(item.get("message") or {})
     if key.get("fromMe"):
-        return record_outbound_from_phone(db, number, phone, wa_message_id, body, media_id, media_type, secret=secret)
+        return _with_quote(db, record_outbound_from_phone(db, number, phone, wa_message_id, body, media_id, media_type, secret=secret), context_info)
 
-    return ingest_inbound(
+    return _with_quote(db, ingest_inbound(
         db,
         number,
         from_phone=phone,
@@ -404,7 +404,20 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
         profile_name=item.get("pushName", "") or "",
         referral=_referral_from_context(context_info),
         secret=secret,
-    )
+    ), context_info)
+
+
+def _with_quote(db: Session, message, context_info: dict):
+    """Mensagem que responde outra (o "responder" do WhatsApp): guarda qual e um trecho dela."""
+    quoted_id = (context_info or {}).get("stanzaId") or ""
+    if message is not None and quoted_id and not message.quote_wa_id:
+        text, media_type, _ = _parse_content(context_info.get("quotedMessage") or {})
+        if not text:
+            original = db.query(Message.body).filter(Message.wa_message_id == quoted_id).first()
+            text = original[0] if original else ""
+        message.quote_wa_id, message.quote_text = quoted_id[:120], (text or "Mensagem")[:300]
+        db.commit()
+    return message
 
 
 def clean_legacy_placeholders() -> int:

@@ -8,6 +8,7 @@ o cache manualmente.
 """
 
 import datetime
+import re
 
 from markupsafe import Markup, escape
 import os
@@ -43,6 +44,37 @@ templates.env.globals["sug_current"] = suggestions.current  # 💡 sugestão de 
 templates.env.globals["SUG_LABEL"] = suggestions.KIND_LABEL
 templates.env.globals["fu_state"] = followup.state  # selos ⏰ parado / 📞 follow-up / 📅 próximo contato
 templates.env.globals["agora"] = datetime.datetime.utcnow
-templates.env.filters["quebras"] = lambda text: Markup(str(escape(text or "")).replace("\n", "<br>"))
+_URL = re.compile(r"(?<![\w@/])((?:https?://|www\.)[^\s<]+[^\s<.,;:!?)\]'\"])", re.IGNORECASE)
+
+
+def _quebras(text) -> Markup:
+    """Texto da mensagem: quebra de linha vira <br> e link vira clicável (abre em outra aba,
+    ou no app certo no celular: Instagram, Maps, YouTube...)."""
+    text, out, last = text or "", [], 0
+    for m in _URL.finditer(text):
+        url = m.group(1)
+        href = url if url.lower().startswith("http") else "https://" + url
+        out.append(str(escape(text[last:m.start(1)])))
+        out.append(f'<a href="{escape(href)}" target="_blank" rel="noopener noreferrer" class="msg-link">{escape(url)}</a>')
+        last = m.end(1)
+    out.append(str(escape(text[last:])))
+    return Markup("".join(out).replace("\n", "<br>"))
+
+
+MEDIA_PLACEHOLDERS = ("📷 Imagem", "🎥 Vídeo", "🎤 Mensagem de áudio", "🎤 Áudio", "📄 Documento", "🖼️ Figurinha", "🎞️ GIF")
+
+
+def _legenda(text) -> str:
+    """Legenda de foto/vídeo/áudio: o CRM guarda "📷 Imagem — legenda"; mostra só a legenda."""
+    text = text or ""
+    for p in MEDIA_PLACEHOLDERS:
+        if text.startswith(p):
+            rest = text[len(p):]
+            return rest[3:] if rest.startswith(" — ") else ""
+    return text if not text.startswith(("📷", "🎥", "🎤")) else ""
+
+
+templates.env.filters["quebras"] = _quebras
+templates.env.filters["legenda"] = _legenda
 # "Carlos  Vendedor" e "carlos vendedor" contam como o mesmo nome
 templates.env.filters["chave_nome"] = lambda s: " ".join((s or "").lower().split())

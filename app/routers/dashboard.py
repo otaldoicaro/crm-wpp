@@ -1775,6 +1775,7 @@ def reply_lead(
     lead_id: str,
     body: str = Form(...),
     ajax: str = Form(""),
+    quote_id: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -1785,10 +1786,20 @@ def reply_lead(
 
     conversation = lead.active_conversation
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
-    ok, wa_id, secret = messaging.send_text(number, lead.phone, body)
+    # ↩️ responder uma mensagem específica (só mensagem que já está no WhatsApp e é deste lead)
+    quoted = db.get(Message, quote_id) if quote_id else None
+    if quoted is not None:
+        owner = db.get(Conversation, quoted.conversation_id)
+        if owner is None or owner.lead_id != lead.id or not quoted.wa_message_id:
+            quoted = None
+    quote = {"id": quoted.wa_message_id, "from_me": quoted.direction == "out", "text": quoted.body} if quoted else None
+    ok, wa_id, secret = messaging.send_text(number, lead.phone, body, quote)
     if ok:
         response_times.mark_outbound(lead)
-    _record_outbound(db, conversation, user, wa_id, body if ok else f"⚠️ Não enviada: {body}", secret=secret)
+    message = _record_outbound(db, conversation, user, wa_id, body if ok else f"⚠️ Não enviada: {body}", secret=secret)
+    if quoted is not None and not message.quote_wa_id:
+        message.quote_wa_id, message.quote_text = quoted.wa_message_id, (quoted.body or "Mensagem")[:300]
+        db.commit()
     if ajax:
         return JSONResponse({"ok": ok, "error": "" if ok else "o WhatsApp deste número não aceitou o envio"})
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
@@ -1828,6 +1839,42 @@ def edit_message(
     message.edited_at = datetime.datetime.utcnow()
     if conversation.last_preview and message.created_at >= (conversation.last_message_at or message.created_at):
         conversation.last_preview = text[:200]
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+DELETE_WINDOW = datetime.timedelta(hours=48)  # o WhatsApp deixa "apagar pra todos" por ~2 dias
+
+
+@router.post("/mensagens/{message_id}/apagar")
+def delete_message(
+    message_id: str,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """🗑️ Apaga uma mensagem nossa pra todos (some do WhatsApp do cliente). A que nem chegou a
+    sair ("⚠️ Não enviada") só some do CRM."""
+    message = db.get(Message, message_id)
+    conversation = db.get(Conversation, message.conversation_id) if message else None
+    lead = _visible_lead(db, tenant, user, conversation.lead_id) if conversation and conversation.tenant_id == tenant.id else None
+    if lead is None or message.direction != "out" or message.body.startswith("🚫"):
+        return JSONResponse({"ok": False, "error": "Só dá pra apagar mensagem enviada pelo time"}, status_code=400)
+    if not message.wa_message_id:
+        db.delete(message)
+        db.commit()
+        return JSONResponse({"ok": True})
+    if datetime.datetime.utcnow() - message.created_at > DELETE_WINDOW:
+        return JSONResponse({"ok": False, "error": "O WhatsApp só deixa apagar pra todos até 2 dias depois do envio"}, status_code=400)
+    number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
+    if number is None or number.provider != "evolution":
+        return JSONResponse({"ok": False, "error": "Este número não permite apagar"}, status_code=400)
+    try:
+        evolution_client.delete_for_everyone(number.evolution_instance, message.wa_message_id)
+    except evolution_client.EvolutionError as exc:
+        logger.warning("apagar mensagem: %s", exc)
+        return JSONResponse({"ok": False, "error": "O WhatsApp não aceitou apagar"}, status_code=502)
+    message.body = f"🚫 Mensagem apagada no WhatsApp: {message.body}"  # mesmo formato do apagado pelo celular
     db.commit()
     return JSONResponse({"ok": True})
 

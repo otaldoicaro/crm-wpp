@@ -711,8 +711,25 @@ main:has(.kanban) { max-width: none; padding-left: 16px; padding-right: 16px; }
 /* vistinhos das nossas mensagens (✓ enviada · ✓✓ entregue · ✓✓ azul lida) e edição */
 .msg-time .ticks { font-weight: 800; letter-spacing: -3px; margin-left: 2px; color: var(--muted); }
 .msg-time .ticks.read { color: #34B7F1; }
-.msg-edit-btn { position: absolute; top: -10px; left: -12px; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); font-size: .75rem; cursor: pointer; display: none; padding: 0; line-height: 24px; }
-.msg-bubble:hover .msg-edit-btn { display: block; }
 .msg-edit-box textarea { width: 100%; min-width: 220px; font: inherit; border-radius: 8px; border: 1px solid var(--line); padding: 6px; }
 .msg-edit-box .row { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; align-items: center; }
 .msg-pending { opacity: .6; }
+
+/* ações na mensagem (↩️ ✏️ 🗑️), resposta citada, legenda, links, apagada */
+.msg-actions { position: absolute; top: -14px; display: none; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 1px 3px; box-shadow: 0 1px 3px rgba(0,0,0,.12); z-index: 2; }
+.msg-bubble.out .msg-actions { left: -10px; }
+.msg-bubble.in .msg-actions { right: -10px; }
+.msg-bubble:hover .msg-actions { display: flex; }
+.msg-actions button { border: 0; background: none; cursor: pointer; font-size: .78rem; padding: 2px 4px; border-radius: 999px; }
+.msg-actions button:hover { background: var(--panel-2); }
+@media (hover: none) { .msg-actions { display: flex; position: static; margin-top: 4px; width: max-content; } }
+.msg-quote { border-left: 3px solid var(--text); background: rgba(0,0,0,.06); border-radius: 6px; padding: 4px 8px; margin-bottom: 5px; font-size: .78rem; opacity: .85; cursor: pointer; max-height: 3.6em; overflow: hidden; white-space: pre-wrap; }
+.msg-caption { margin-top: 4px; }
+.msg-link { color: inherit; text-decoration: underline; word-break: break-all; }
+.msg-bubble.in .msg-link { color: #0b6bcb; }
+.msg-deleted { opacity: .6; font-style: italic; }
+.reply-quote { display: flex; align-items: flex-start; gap: 8px; margin: 0 14px; padding: 6px 10px; border-left: 3px solid var(--y); background: var(--panel-2); border-radius: 8px 8px 0 0; font-size: .8rem; }
+.reply-quote > div { flex: 1; min-width: 0; }
+.reply-quote .quote-text { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reply-quote button { border: 0; background: none; font-size: 1.1rem; cursor: pointer; line-height: 1; }
+.reply-quote[hidden] { display: none !important; }

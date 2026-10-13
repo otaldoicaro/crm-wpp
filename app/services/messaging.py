@@ -14,11 +14,11 @@ from app.services.whatsapp_client import media_kind_for_mime  # noqa: F401  (ree
 logger = logging.getLogger("messaging")
 
 
-def send_text(number: WhatsAppNumber, phone: str, body: str) -> tuple[bool, str, str]:
-    """Devolve (ok, id_da_mensagem_no_whatsapp, messageSecret)."""
+def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dict] = None) -> tuple[bool, str, str]:
+    """Devolve (ok, id_da_mensagem_no_whatsapp, messageSecret). quote: ver evolution_client.send_text."""
     if number.provider == "evolution":
         try:
-            wa_id, secret = evolution_client.send_text(number.evolution_instance, phone, body)
+            wa_id, secret = evolution_client.send_text(number.evolution_instance, phone, body, quote)
             return True, wa_id, secret
         except evolution_client.EvolutionError:
             return False, "", ""

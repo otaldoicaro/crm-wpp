@@ -212,6 +212,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
       {% include "_inbox_messages.html" %}
     </div>
     <div class="attach-tray" id="attachTray" hidden></div>
+    <div class="reply-quote" id="replyQuote" hidden><div><b class="quote-who"></b><div class="quote-text"></div></div><button type="button" data-x title="Cancelar resposta">×</button></div>
     <form class="reply-box" method="post" action="/leads/{{ selected_lead.id }}/reply" id="replyForm" style="position:relative;">
       <button type="button" class="btn ghost small" id="attachToggle" title="Anexar" style="flex:0 0 auto;">📎</button>
       <input type="file" id="attachInput" accept="image/*,video/*,application/pdf" multiple hidden>
@@ -346,10 +347,12 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
       function sendText() {
         var text = input.value.replace(/\s+$/, "");
         if (!text.trim()) return;
+        var quote = window.__replyQuote; if (window.__clearReplyQuote) window.__clearReplyQuote();
         input.value = ""; input.dispatchEvent(new Event("input")); input.focus();
         var box = document.getElementById("inboxMessages");
         var bubble = document.createElement("div");
         bubble.className = "msg-bubble out msg-pending"; bubble.textContent = text;
+        if (quote) { var qd = document.createElement("div"); qd.className = "msg-quote"; qd.textContent = quote.text.slice(0, 200); bubble.prepend(qd); }
         var time = document.createElement("span");
         time.className = "msg-time"; time.textContent = "enviando…";
         var empty = box.querySelector("p.muted"); if (empty) empty.remove();
@@ -360,6 +363,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
         function done() { for (var i = 0; i < pending.length; i++) if (pending[i][0] === bubble) { pending.splice(i, 1); return; } }
         sendQueue = sendQueue.then(function () {
           var data = new FormData(); data.append("body", text); data.append("ajax", "1");
+          if (quote) data.append("quote_id", quote.id);
           return fetch("/leads/{{ selected_lead.id }}/reply", { method: "POST", body: data })
             .then(function (r) { return r.json(); })
             .catch(function () { return { ok: false, error: "sem conexão com o CRM" }; })
@@ -603,29 +607,77 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
 </script>
 <script src="/static/quick-replies.js?v={{ asset_version }}"></script>
 <script>
-// ✏️ editar mensagem de texto nossa (até 15 min, igual ao WhatsApp): passa o mouse na mensagem
+// ações ao passar o mouse numa mensagem (igual WhatsApp): ↩️ responder · ✏️ editar (até 15 min) · 🗑️ apagar pra todos (até 2 dias)
 (function () {
   var box = document.getElementById("inboxMessages"); if (!box) return;
-  var LIMIT = 15 * 60 * 1000;
+  var EDIT = 15 * 60 * 1000, DEL = 48 * 3600 * 1000;
+  function age(b) { return Date.now() - Date.parse(b.dataset.sent); }
   function decorate() {
-    box.querySelectorAll("[data-edit]").forEach(function (b) {
-      var fresh = Date.now() - Date.parse(b.dataset.sent) < LIMIT;
-      var btn = b.querySelector(".msg-edit-btn");
-      if (fresh && !btn) {
-        btn = document.createElement("button");
-        btn.type = "button"; btn.className = "msg-edit-btn"; btn.title = "Editar mensagem"; btn.textContent = "✏️";
-        b.appendChild(btn);
-      } else if (!fresh && btn) btn.remove();
+    box.querySelectorAll(".msg-bubble[data-id]").forEach(function (b) {
+      var want = [];
+      if (b.dataset.reply) want.push(["reply", "↩️", "Responder esta mensagem"]);
+      if (b.dataset.edit && age(b) < EDIT) want.push(["edit", "✏️", "Editar mensagem"]);
+      if (b.dataset.del && (!b.dataset.wa || age(b) < DEL)) want.push(["del", "🗑️", b.dataset.wa ? "Apagar pra todos" : "Tirar do CRM (não foi enviada)"]);
+      var bar = b.querySelector(".msg-actions");
+      var sig = want.map(function (w) { return w[0]; }).join(",");
+      if (bar && bar.dataset.sig === sig) return;
+      if (bar) bar.remove();
+      if (!want.length) return;
+      bar = document.createElement("div"); bar.className = "msg-actions"; bar.dataset.sig = sig;
+      want.forEach(function (w) {
+        var btn = document.createElement("button");
+        btn.type = "button"; btn.dataset.act = w[0]; btn.textContent = w[1]; btn.title = w[2];
+        bar.appendChild(btn);
+      });
+      b.appendChild(bar);
     });
   }
   window.__decorateMsgs = decorate;
   decorate(); setInterval(decorate, 30000);
+
+  // ↩️ responder: mostra a mensagem citada em cima da caixa de resposta
+  var quoteBar = document.getElementById("replyQuote");
+  window.__replyQuote = null;
+  function setQuote(b) {
+    if (!quoteBar) return;
+    if (!b) { window.__replyQuote = null; quoteBar.hidden = true; return; }
+    var text = (b.querySelector(".msg-caption, .msg-text") || {}).innerText || (b.querySelector(".msg-img") ? "📷 Imagem" : b.querySelector("audio") ? "🎤 Áudio" : b.querySelector("video") ? "🎥 Vídeo" : "Mensagem");
+    window.__replyQuote = { id: b.dataset.id, text: text.trim() };
+    quoteBar.querySelector(".quote-who").textContent = b.classList.contains("out") ? "Você" : "Cliente";
+    quoteBar.querySelector(".quote-text").textContent = text.trim().slice(0, 200);
+    quoteBar.hidden = false;
+    document.getElementById("replyInput").focus();
+  }
+  window.__clearReplyQuote = function () { setQuote(null); };
+  if (quoteBar) quoteBar.querySelector("[data-x]").addEventListener("click", function () { setQuote(null); });
+
   box.addEventListener("click", function (e) {
-    var btn = e.target.closest(".msg-edit-btn"); if (!btn || window.__inboxEditing) return;
-    var bubble = btn.closest("[data-edit]"), text = bubble.querySelector(".msg-text");
+    var q = e.target.closest(".msg-quote");
+    if (q && q.dataset.quote) {
+      var target = box.querySelector('[data-wa="' + q.dataset.quote.replace(/"/g, "") + '"]');
+      if (target) { target.scrollIntoView({ block: "center", behavior: "smooth" }); target.classList.add("msg-found"); setTimeout(function () { target.classList.remove("msg-found"); }, 1500); }
+      return;
+    }
+    var btn = e.target.closest(".msg-actions button"); if (!btn) return;
+    var bubble = btn.closest(".msg-bubble");
+    if (btn.dataset.act === "reply") return setQuote(bubble);
+    if (btn.dataset.act === "del") {
+      if (!confirm(bubble.dataset.wa ? "Apagar esta mensagem pra todos? Ela some também do WhatsApp do cliente." : "Tirar esta mensagem (que não foi enviada) do CRM?")) return;
+      btn.disabled = true;
+      fetch("/mensagens/" + bubble.dataset.id + "/apagar", { method: "POST" })
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { ok: false, error: "sem conexão com o CRM" }; })
+        .then(function (d) {
+          if (!d.ok) { btn.disabled = false; alert(d.error || "Não apagou"); return; }
+          if (window.__inboxRefreshNow) window.__inboxRefreshNow();
+        });
+      return;
+    }
+    if (btn.dataset.act !== "edit" || window.__inboxEditing) return;
+    var text = bubble.querySelector(".msg-text");
     var original = text.innerText;
     window.__inboxEditing = true;
-    btn.remove(); text.hidden = true;
+    btn.parentNode.remove(); text.hidden = true;
     var form = document.createElement("div"); form.className = "msg-edit-box";
     form.innerHTML = '<textarea rows="3"></textarea><div class="row"><span class="muted edit-status"></span><button type="button" class="btn ghost small" data-c>Cancelar</button><button type="button" class="btn small" data-s>Salvar</button></div>';
     var area = form.querySelector("textarea"); area.value = original;

@@ -3,25 +3,31 @@
   {% if msg.direction == "note" %}
   <div class="msg-note">{{ msg.body }} · {{ msg.created_at|hora("%d/%m %H:%M") }}</div>
   {% else %}
-  {% set editable = msg.direction == 'out' and not msg.media_type and msg.wa_message_id and not msg.body.startswith("⚠️") %}
-  <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}" id="msg-{{ msg.id }}"{% if editable %} data-edit="{{ msg.id }}" data-sent="{{ msg.created_at.isoformat() }}Z"{% endif %}>
+  {% set deleted = msg.body.startswith("🚫") %}
+  {% set failed = msg.body.startswith("⚠️") %}
+  {% set editable = msg.direction == 'out' and not msg.media_type and msg.wa_message_id and not failed and not deleted %}
+  {% set caption = msg.body|legenda %}
+  <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}{{ ' msg-deleted' if deleted }}" id="msg-{{ msg.id }}" data-id="{{ msg.id }}" data-wa="{{ msg.wa_message_id }}" data-sent="{{ msg.created_at.isoformat() }}Z"{% if editable %} data-edit="{{ msg.id }}"{% endif %}{% if msg.direction == 'out' and not deleted %} data-del="1"{% endif %}{% if msg.wa_message_id and not deleted and not failed %} data-reply="1"{% endif %}>
     {% if msg.sender_name and msg.direction == 'in' %}<div class="msg-sender">{{ msg.sender_name }}</div>{% endif %}
-    {% if msg.media_type == "audio" %}
-      {% if msg.body and not msg.body.startswith("🎤") %}<div>{{ msg.body }}</div>{% endif %}
+    {% if msg.quote_text %}<div class="msg-quote" data-quote="{{ msg.quote_wa_id }}" title="Ir pra mensagem respondida">{{ msg.quote_text|legenda or msg.quote_text }}</div>{% endif %}
+    {% if deleted %}
+      <span class="msg-text">{{ msg.body|quebras }}</span>
+    {% elif msg.media_type == "audio" %}
       <audio controls preload="none" style="max-width:220px; margin-top:4px;"><source src="/media/{{ msg.id }}"></audio>
+      {% if caption %}<div class="msg-caption">{{ caption|quebras }}</div>{% endif %}
     {% elif msg.media_type == "image" or msg.media_type == "sticker" %}
       <img src="/media/{{ msg.id }}" class="msg-img" loading="lazy" alt="Imagem (clique pra ampliar)" title="Clique pra ampliar">
-      {% if msg.body and not msg.body.startswith("📷") %}<div style="margin-top:4px;">{{ msg.body }}</div>{% endif %}
+      {% if caption %}<div class="msg-caption">{{ caption|quebras }}</div>{% endif %}
     {% elif msg.media_type == "video" %}
       <video controls preload="none" style="max-width:240px; border-radius:8px; display:block;"><source src="/media/{{ msg.id }}"></video>
-      {% if msg.body and not msg.body.startswith("🎥") %}<div style="margin-top:4px;">{{ msg.body }}</div>{% endif %}
+      {% if caption %}<div class="msg-caption">{{ caption|quebras }}</div>{% endif %}
     {% elif msg.media_type == "document" %}
       <a href="/media/{{ msg.id }}" target="_blank" style="color:inherit; text-decoration:underline;">{{ msg.body }}</a>
     {% else %}
       <span class="msg-text">{{ msg.body|quebras }}</span>
     {% endif %}
   </div>
-  <span class="msg-time">{% if msg.edited_at %}editada · {% endif %}{{ msg.created_at|hora("%d/%m %H:%M") }}{% if msg.direction == 'out' and msg.ack %} <span class="ticks{{ ' read' if msg.ack >= 3 }}" title="{{ ['', 'Enviada', 'Entregue', 'Lida pelo cliente'][msg.ack if msg.ack < 4 else 3] }}">{{ "✓✓" if msg.ack >= 2 else "✓" }}</span>{% endif %}</span>
+  <span class="msg-time">{% if msg.edited_at %}editada · {% endif %}{{ msg.created_at|hora("%d/%m %H:%M") }}{% if msg.direction == 'out' and msg.ack and not deleted %} <span class="ticks{{ ' read' if msg.ack >= 3 }}" title="{{ ['', 'Enviada', 'Entregue', 'Lida pelo cliente'][msg.ack if msg.ack < 4 else 3] }}">{{ "✓✓" if msg.ack >= 2 else "✓" }}</span>{% endif %}</span>
   {% endif %}
 {% else %}
   <p class="muted">Sem mensagens ainda.</p>

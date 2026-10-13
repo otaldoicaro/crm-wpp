@@ -142,9 +142,16 @@ def _sent(body: dict) -> tuple:
     return (body.get("key") or {}).get("id", ""), secret_b64(body.get("message") or {})
 
 
-def send_text(instance: str, phone_digits: str, text: str) -> tuple:
-    """Envia texto e devolve (id da mensagem, messageSecret)."""
-    body = _request("POST", f"/message/sendText/{instance}", json={"number": phone_digits, "text": text})
+def send_text(instance: str, phone_digits: str, text: str, quote: Optional[dict] = None) -> tuple:
+    """Envia texto e devolve (id da mensagem, messageSecret). quote = {"id", "from_me", "text"}:
+    responde aquela mensagem (aparece citada em cima, igual o "responder" do WhatsApp)."""
+    payload = {"number": phone_digits, "text": text}
+    if quote and quote.get("id"):
+        payload["quoted"] = {
+            "key": {"id": quote["id"], "remoteJid": jid_for(phone_digits), "fromMe": bool(quote.get("from_me"))},
+            "message": {"conversation": quote.get("text") or ""},
+        }
+    body = _request("POST", f"/message/sendText/{instance}", json=payload)
     return _sent(body)
 
 
@@ -234,6 +241,15 @@ def edit_text(instance: str, wa_id: str, text: str) -> None:
         raise EvolutionError("mensagem não encontrada no WhatsApp")
     _request("POST", f"/chat/updateMessage/{instance}",
              json={"number": jid, "key": {"remoteJid": jid, "fromMe": True, "id": wa_id}, "text": text})
+
+
+def delete_for_everyone(instance: str, wa_id: str) -> None:
+    """"Apagar pra todos" de uma mensagem nossa (o WhatsApp só deixa até ~2 dias depois)."""
+    key = find_message_key(instance, wa_id)
+    jid = key.get("remoteJid") or ""
+    if not jid:
+        raise EvolutionError("mensagem não encontrada no WhatsApp")
+    _request("DELETE", f"/chat/deleteMessageForEveryone/{instance}", json={"id": wa_id, "fromMe": True, "remoteJid": jid})
 
 
 def find_messages(instance: str, since_iso: str, until_iso: str, page: int = 1, per_page: int = 200) -> dict:

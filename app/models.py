@@ -355,7 +355,10 @@ class Message(Base):
     sender_name: Mapped[str] = mapped_column(String(120), default="")
     # nossas mensagens: 0 = sem informação (antigas), 1 = enviada ✓, 2 = entregue ✓✓, 3 = lida ✓✓ azul
     ack: Mapped[int] = mapped_column(Integer, default=0)
-    edited_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)  # editada pelo CRM
+    edited_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)  # editada (CRM ou celular)
+    # resposta a uma mensagem específica: id (WhatsApp) e trecho da mensagem citada
+    quote_wa_id: Mapped[str] = mapped_column(String(120), default="")
+    quote_text: Mapped[str] = mapped_column(String(300), default="")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
