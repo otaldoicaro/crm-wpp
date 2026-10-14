@@ -45,6 +45,19 @@ def main() -> None:
         db.close()
     if not quiet or new or changed:
         print(f"Códigos do WhatsApp (LID) lidos: {len(found)} · novos no CRM: {new} · corrigidos: {changed}")
+    # leads que nasceram com o código no lugar do telefone: junta no lead certo
+    from app.services.lead_match import merge_lid_leads
+
+    db = SessionLocal()
+    try:
+        merged = merge_lid_leads(db)
+    finally:
+        db.close()
+    for name, action, before, after in merged:
+        print(f"  {'🔗 juntou no cadastro certo' if action == 'juntou' else '📞 telefone corrigido'}: {name}"
+              + (f" (estava com {before}, ficou com {after})" if action == "juntou" and before != after else ""))
+    if merged or not quiet:
+        print(f"Cadastros com código no lugar do telefone resolvidos: {len(merged)}")
     if not found and not quiet:
         print("Nenhum arquivo de LID encontrado no Evolution. Mande este resultado pro Claude.")
 

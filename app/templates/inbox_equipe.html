@@ -135,7 +135,7 @@
         var msgs = c.querySelector(".team-thread-msgs");
         var stick = force || nearBottom(msgs);
         c.querySelector(".team-thread-head").innerHTML = d.head;
-        msgs.innerHTML = d.html;
+        if (window.swapKeepingMedia) window.swapKeepingMedia(msgs, d.html); else msgs.innerHTML = d.html;
         if (stick) msgs.scrollTop = msgs.scrollHeight;
         open[seller].sig = d.sig;
       });

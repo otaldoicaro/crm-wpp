@@ -128,8 +128,27 @@ fi
 say "Subindo o CRM e o HTTPS (a primeira vez demora uns minutos)"
 # --pull + SECURITY_UPDATES (semana do ano): 1x por semana o container é refeito com as
 # correções de segurança mais novas do sistema (inclui o Tesseract, que lê os comprovantes)
+# pasta do WhatsApp conectado (Evolution) visível pro CRM, só leitura: com ela o CRM descobre na
+# hora o telefone de quem chega pelo código LID (sem ela, a mensagem podia cair num lead separado)
+EVO_INST=$(docker inspect "$EVO" --format '{{range .Mounts}}{{if eq .Destination "/evolution/instances"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true)
+if [ -n "$EVO_INST" ] && [ -d "$EVO_INST" ]; then
+  cat > $COMPOSE_DIR/docker-compose.override.yml <<YML
+# gerado por instalar.sh: pasta de instâncias do Evolution (só leitura) pro CRM achar o telefone dos LIDs
+services:
+  app:
+    volumes:
+      - $EVO_INST:/evo-instances:ro
+YML
+  echo "Pasta do WhatsApp (Evolution) ligada ao CRM: $EVO_INST"
+else
+  rm -f $COMPOSE_DIR/docker-compose.override.yml
+  echo "Aviso: não achei a pasta de instâncias do Evolution; os LIDs seguem pela importação a cada 15 min."
+fi
 $DC build --pull --build-arg SECURITY_UPDATES="$(date +%G-%V)" app
 $DC up -d app caddy
+# limpa versões antigas do CRM e cache de build (cada atualização deixava ~1 GB pra trás no disco)
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f --filter "until=168h" >/dev/null 2>&1 || true
 # coloca o Evolution na mesma rede interna do CRM (webhook direto em http://crm-app:8000)
 docker network connect crm_default "$EVO" 2>/dev/null || true
 for _ in $(seq 1 60); do

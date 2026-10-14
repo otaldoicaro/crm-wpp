@@ -93,3 +93,56 @@ def upsert_form_lead(db: Session, tenant_id: str, data: dict, source: str = "sit
     if created or not lead.assigned_user_id:
         assign_lead(db, lead)
     return lead, created
+
+
+def merge_lid_leads(db: Session) -> list:
+    """Leads que nasceram com o código LID do WhatsApp no lugar do telefone (a mensagem chegou
+    antes de o CRM saber de quem era): agora que o telefone é conhecido (lid_map), junta as
+    conversas no lead certo, ou só corrige o telefone se a pessoa não tem outro cadastro.
+    Devolve [(nome, "juntou" | "corrigiu", vendedor de antes, vendedor de agora)]."""
+    from app.models import Conversation, LidMap, Message
+
+    known = {row.lid: row.phone for row in db.query(LidMap)}
+    if not known:
+        return []
+    done = []
+    wrong = db.query(Lead).filter(Lead.phone.in_(list(known)), Lead.deleted_at.is_(None), Lead.is_group.is_(False)).all()
+    for lead in wrong:
+        phone = known[lead.phone]
+        real = next((l for l in [find_lead_by_phone(db, lead.tenant_id, phone)] if l is not None and l.id != lead.id), None)
+        before = lead.assigned_user.name if lead.assigned_user else "—"
+        if real is None:
+            lead.phone = phone
+            done.append((lead.name or phone, "corrigiu", before, before))
+            continue
+        for conv in list(lead.conversations):
+            same = next((c for c in real.conversations if c.whatsapp_number_id == conv.whatsapp_number_id), None)
+            if same is None:
+                real.conversations.append(conv)  # muda de dono pela relação (não deixa "órfã")
+                if hasattr(conv, "assigned_user_id"):
+                    conv.assigned_user_id = real.assigned_user_id
+                continue
+            db.query(Message).filter(Message.conversation_id == conv.id).update(
+                {Message.conversation_id: same.id}, synchronize_session=False
+            )
+            if conv.last_message_at and (same.last_message_at is None or conv.last_message_at > same.last_message_at):
+                same.last_message_at, same.last_preview = conv.last_message_at, conv.last_preview
+            db.flush()
+            db.delete(conv)
+        for field in ("last_inbound_at", "last_outbound_at", "last_message_at"):
+            if hasattr(real, field) and getattr(lead, field, None) and (getattr(real, field) is None or getattr(lead, field) > getattr(real, field)):
+                setattr(real, field, getattr(lead, field))
+        if lead.first_response_at and (real.first_response_at is None or lead.first_response_at < real.first_response_at):
+            real.first_response_at = lead.first_response_at
+        if lead.attribution is not None and real.attribution is None:
+            lead.attribution.lead_id = real.id
+        lead.deleted_at = datetime.datetime.utcnow()  # fica na Lixeira, vazio
+        db.flush()
+        conv = db.query(Conversation).filter(Conversation.lead_id == real.id).order_by(Conversation.last_message_at.desc()).first()
+        if conv is not None:
+            db.add(Message(conversation_id=conv.id, direction="note",
+                           body="🔗 Mensagens que tinham caído num cadastro separado (código interno do WhatsApp no lugar do telefone) foram juntadas aqui"))
+        after = real.assigned_user.name if real.assigned_user else "—"
+        done.append((real.name or phone, "juntou", before, after))
+    db.commit()
+    return done

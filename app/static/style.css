@@ -747,3 +747,10 @@ main:has(.kanban) { max-width: none; padding-left: 16px; padding-right: 16px; }
 .readonly-banner { background: var(--y-soft); border-bottom: 1px solid var(--line); padding: 8px 16px; font-size: .85rem; text-align: center; }
 .viewer-form { display: flex; flex-wrap: wrap; gap: 8px; }
 .viewer-form input { flex: 1 1 180px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+
+/* gravação de áudio */
+.rec-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--line); }
+.rec-bar[hidden] { display: none; }
+.rec-bar .btn:last-child { margin-left: auto; }
+.rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #e0245e; animation: recblink 1s infinite; }
+@keyframes recblink { 50% { opacity: .2; } }

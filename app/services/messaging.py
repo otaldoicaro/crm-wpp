@@ -33,9 +33,12 @@ def send_media(
     """Devolve (ok, id_da_mensagem, media_id_pra_guardar, erro, messageSecret)."""
     if number.provider == "evolution":
         try:
-            wa_id, secret = evolution_client.send_media(
-                number.evolution_instance, phone, content, filename, mime_type, media_kind, caption
-            )
+            if media_kind == "audio":  # vai como mensagem de voz (legenda não existe em áudio)
+                wa_id, secret = evolution_client.send_audio(number.evolution_instance, phone, content)
+            else:
+                wa_id, secret = evolution_client.send_media(
+                    number.evolution_instance, phone, content, filename, mime_type, media_kind, caption
+                )
         except evolution_client.EvolutionError as exc:
             return False, "", "", friendly_error(exc), ""
         # no Evolution a mídia é buscada depois pelo id da própria mensagem

@@ -171,6 +171,14 @@ def send_media(
     return _sent(body)
 
 
+def send_audio(instance: str, phone_digits: str, content: bytes) -> tuple:
+    """Áudio como mensagem de voz (a bolinha verde do WhatsApp, "gravado na hora"). O Evolution
+    converte o que vier (webm/ogg/mp3/m4a do navegador ou arquivo) pro formato do WhatsApp."""
+    payload = {"number": phone_digits, "audio": base64.b64encode(content).decode()}
+    body = _request("POST", f"/message/sendWhatsAppAudio/{instance}", json=payload, timeout=90)
+    return _sent(body)
+
+
 def fetch_media(instance: str, message_id: str) -> tuple[Optional[bytes], Optional[str]]:
     """Baixa a mídia (áudio/foto/vídeo/documento) de uma mensagem pelo id.
     O Evolution guarda a mensagem e decripta sob demanda — assim não precisamos

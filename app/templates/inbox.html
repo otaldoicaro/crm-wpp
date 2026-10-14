@@ -241,13 +241,78 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
     <div class="reply-quote" id="replyQuote" hidden><div><b class="quote-who"></b><div class="quote-text"></div></div><button type="button" data-x title="Cancelar resposta">×</button></div>
     <form class="reply-box" method="post" action="/leads/{{ selected_lead.id }}/reply" id="replyForm" style="position:relative;">
       <button type="button" class="btn ghost small" id="attachToggle" title="Anexar" style="flex:0 0 auto;">📎</button>
-      <input type="file" id="attachInput" accept="image/*,video/*,application/pdf" multiple hidden>
+      <input type="file" id="attachInput" accept="image/*,video/*,audio/*,application/pdf" multiple hidden>
       <button type="button" class="btn ghost small" id="emojiToggle" title="Emojis" style="flex:0 0 auto;">🙂</button>
       <div id="emojiPicker" hidden style="position:absolute; bottom:56px; left:14px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:8px; display:grid; grid-template-columns:repeat(8,1fr); gap:4px; z-index:10;"></div>
       <button type="button" class="btn ghost small" id="qrToggle" title="Respostas rápidas (ou digite /)" style="flex:0 0 auto;">⚡</button>
       <textarea name="body" id="replyInput" rows="1" placeholder="Responder... (/ = respostas rápidas · Shift+Enter = nova linha)" required autocomplete="off" data-quick-replies data-lead-name="{{ selected_lead.name or '' }}"></textarea>
+      <button type="button" class="btn ghost small" id="micBtn" title="Gravar áudio (vai como mensagem de voz)" style="flex:0 0 auto;">🎤</button>
       <button class="btn" type="submit" id="sendBtn">Enviar</button>
     </form>
+    <div class="rec-bar" id="recBar" hidden>
+      <span class="rec-dot"></span> <span id="recTime">0:00</span> <span class="muted">gravando…</span>
+      <button type="button" class="btn ghost small" id="recCancel">✕ Cancelar</button>
+      <button type="button" class="btn small" id="recSend">➤ Enviar áudio</button>
+    </div>
+    <script>
+    // 🎤 gravar áudio no navegador e mandar como mensagem de voz (o servidor converte pro formato do WhatsApp)
+    (function () {
+      var mic = document.getElementById("micBtn"), bar = document.getElementById("recBar"), clock = document.getElementById("recTime");
+      if (!mic) return;
+      if (!navigator.mediaDevices || !window.MediaRecorder) { mic.hidden = true; return; }
+      var rec = null, chunks = [], started = 0, timer = null, stream = null;
+      function pickType() {
+        var types = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
+        for (var i = 0; i < types.length; i++) if (MediaRecorder.isTypeSupported(types[i])) return types[i];
+        return "";
+      }
+      function reset() {
+        clearInterval(timer); bar.hidden = true; mic.disabled = false;
+        if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+        rec = null; stream = null; chunks = [];
+      }
+      mic.addEventListener("click", function () {
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
+          stream = s; chunks = [];
+          var type = pickType();
+          rec = new MediaRecorder(s, type ? { mimeType: type } : undefined);
+          rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+          rec.start();
+          started = Date.now(); mic.disabled = true; bar.hidden = false; clock.textContent = "0:00";
+          timer = setInterval(function () {
+            var s = Math.floor((Date.now() - started) / 1000);
+            clock.textContent = Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2);
+          }, 500);
+        }).catch(function () { alert("O navegador não deixou usar o microfone. Clique no cadeado ao lado do endereço do site e permita o microfone."); });
+      });
+      document.getElementById("recCancel").addEventListener("click", function () { if (rec) { rec.onstop = null; rec.stop(); } reset(); });
+      document.getElementById("recSend").addEventListener("click", function () {
+        if (!rec) return;
+        var btn = this; btn.disabled = true;
+        rec.onstop = function () {
+          var type = (rec && rec.mimeType) || "audio/webm";
+          var blob = new Blob(chunks, { type: type.split(";")[0] });
+          var ext = type.indexOf("ogg") !== -1 ? "ogg" : type.indexOf("mp4") !== -1 ? "m4a" : "webm";
+          reset();
+          var status = document.getElementById("attachStatus");
+          status.style.display = "block"; status.textContent = "Enviando áudio…";
+          var data = new FormData();
+          data.append("file", new File([blob], "audio." + ext, { type: type.split(";")[0] }));
+          data.append("caption", "");
+          fetch("/leads/{{ selected_lead.id }}/reply-media", { method: "POST", body: data })
+            .then(function (r) { return r.json(); })
+            .catch(function () { return { ok: false, error: "sem conexão com o CRM" }; })
+            .then(function (d) {
+              btn.disabled = false;
+              if (!d.ok) { status.textContent = "Áudio não enviado — " + (d.error || "erro"); return; }
+              status.style.display = "none";
+              if (window.__inboxRefreshNow) window.__inboxRefreshNow(true);
+            });
+        };
+        rec.stop();
+      });
+    })();
+    </script>
     <div id="attachStatus" class="muted" style="padding:0 14px 10px; display:none;"></div>
     <script>
     (function () {
@@ -312,7 +377,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
           } else {
             var icon = document.createElement("span");
             icon.className = "tray-icon";
-            icon.textContent = file.type.indexOf("video/") === 0 ? "🎥" : "📄";
+            icon.textContent = file.type.indexOf("video/") === 0 ? "🎥" : file.type.indexOf("audio/") === 0 ? "🎤" : "📄";
             item.appendChild(icon);
           }
           var name = document.createElement("span");
@@ -508,7 +573,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
         }
         if (msgEl && lead && d.msg_sig !== msgSig && !window.__inboxEditing) {
           var stick = nearBottom(msgEl) || stickNext;
-          msgEl.innerHTML = d.msg_html;
+          if (window.swapKeepingMedia) window.swapKeepingMedia(msgEl, d.msg_html); else msgEl.innerHTML = d.msg_html;
           (window.__pendingMsgs || []).forEach(function (p) { msgEl.appendChild(p[0]); msgEl.appendChild(p[1]); });  // ainda enviando
           if (stick) msgEl.scrollTop = msgEl.scrollHeight;
           msgSig = d.msg_sig;

@@ -38,7 +38,7 @@ with SessionLocal() as _fdb:
     people.admins_out_of_rotation(_fdb)  # admin só no rodízio se alguém ligar e confirmar
 archiver.schedule()
 meta_spend.schedule()
-history_sync.schedule()  # recupera do Evolution mensagens que escaparam (a cada 6h, últimos 2 dias)  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)
+history_sync.schedule()  # recupera do Evolution mensagens que escaparam (a cada 1h, último dia)  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)
 webhooks_evolution.clean_legacy_placeholders()
 with SessionLocal() as _db:
     response_times.backfill(_db)

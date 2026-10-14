@@ -11,7 +11,10 @@ número é adicionado pela tela WhatsApp do CRM (ver evolution_client.set_webhoo
 """
 
 import datetime
+import glob
+import json
 import logging
+import os
 import time
 from typing import Optional
 
@@ -47,6 +50,26 @@ def _normalize_event(name: str) -> str:
 
 def _digits(jid: str) -> str:
     return (jid or "").split("@")[0].split(":")[0]
+
+
+EVO_INSTANCES_DIR = os.getenv("EVO_INSTANCES_DIR", "/evo-instances")
+
+
+def _lid_from_files(lid: str) -> str:
+    """Telefone de um LID lido direto dos arquivos do WhatsApp conectado (lid-mapping-<lid>_reverse.json
+    em cada instância do Evolution). Na hora, sem esperar a importação de 15 em 15 min."""
+    if not lid.isdigit() or not os.path.isdir(EVO_INSTANCES_DIR):
+        return ""
+    for path in glob.glob(os.path.join(EVO_INSTANCES_DIR, "*", f"lid-mapping-{lid}_reverse.json")):
+        try:
+            with open(path, encoding="utf-8") as f:
+                value = json.load(f)
+        except (OSError, ValueError):
+            continue
+        digits = "".join(ch for ch in str(value) if ch.isdigit())
+        if 8 <= len(digits) <= 15:
+            return digits
+    return ""
 
 
 _LID_MISSES: dict = {}  # lid -> quando falhou (não repete a consulta/aviso por 1h)
@@ -85,6 +108,10 @@ def _phone_from_key(key: dict, data: dict, db: Optional[Session] = None, number:
         known = db.get(LidMap, _digits(jid))
         if known:
             return known.phone
+        phone = _lid_from_files(_digits(jid))  # tabela do próprio WhatsApp (pasta do Evolution montada no CRM)
+        if phone:
+            _remember_lid(db, jid, phone)
+            return phone
         lid = _digits(jid)
         now = time.monotonic()
         if now - _LID_MISSES.get(lid, -_LID_RETRY) < _LID_RETRY:
