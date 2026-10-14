@@ -58,6 +58,44 @@ async def debug_tenant_cookie_middleware(request, call_next):
             response.set_cookie("debug_tenant", tenant_param, httponly=True, samesite="lax")
     return response
 
+READ_ONLY_OK = {"/logout", "/login"}  # o que um visitante "só visualização" pode enviar
+READ_ONLY_HIDDEN = ("/equipe", "/whatsapp", "/lixeira", "/admin")  # nem abre (convites, QR code, e-mails)
+READ_ONLY_MSG = "Acesso só de visualização: nada pode ser alterado."
+
+
+def _read_only_user(token: str) -> bool:
+    from app.auth import read_session_token
+    from app.models import User
+
+    data = read_session_token(token) if token else None
+    if not data:
+        return False
+    with SessionLocal() as db:
+        user = db.get(User, data.get("user_id"))
+        return bool(user and user.read_only)
+
+
+@app.middleware("http")
+async def read_only_guard(request: Request, call_next):
+    """Visitante "só visualização": qualquer envio (salvar, mandar mensagem, mover lead...) é
+    recusado aqui, antes de chegar em qualquer tela. Conferido no servidor, não só escondendo botão."""
+    path = request.url.path
+    writes = request.method not in ("GET", "HEAD", "OPTIONS") and path not in READ_ONLY_OK
+    hidden = request.method == "GET" and path.startswith(READ_ONLY_HIDDEN)
+    if (writes or hidden) and not path.startswith(("/webhooks/", "/static/")):
+        from fastapi.concurrency import run_in_threadpool
+        from app.config import SESSION_COOKIE_NAME
+
+        if await run_in_threadpool(_read_only_user, request.cookies.get(SESSION_COOKIE_NAME, "")):
+            if hidden:
+                return RedirectResponse(url="/dashboard", status_code=302)
+            if "text/html" in request.headers.get("accept", ""):
+                back = request.headers.get("referer") or "/"
+                return RedirectResponse(url=back.split("?")[0] + "?erro=" + READ_ONLY_MSG.replace(" ", "+"), status_code=303)
+            return JSONResponse({"ok": False, "error": READ_ONLY_MSG, "detail": READ_ONLY_MSG}, status_code=403)
+    return await call_next(request)
+
+
 # serve app/static em /static — é aqui que fica o whatsapp-bridge.js pro site do cliente
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 

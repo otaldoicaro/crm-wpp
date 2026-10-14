@@ -129,12 +129,40 @@ async def save_roles(
 def _apply_roles(db: Session, tenant: Tenant, user: User, form: dict) -> None:
     for member in db.query(User).filter(User.tenant_id == tenant.id, User.id != user.id):
         role = form.get(f"role_{member.id}")
-        if role in ("agent", "admin") and role != member.role:
-            member.role = role
-            if role == "admin":  # virou admin: sai do rodízio (dá pra ligar de novo, confirmando)
-                member.accepting_leads, member.rodizio_confirmed_at = False, None
-            db.add(member)
+        current = "viewer" if member.read_only else member.role
+        if role not in ("agent", "admin", "viewer") or role == current:
+            continue
+        member.read_only = role == "viewer"  # só visualização = vê como admin, não altera nada
+        member.role = "admin" if role == "viewer" else role
+        if member.role == "admin":  # virou admin/visitante: sai do rodízio (admin liga de novo, confirmando)
+            member.accepting_leads, member.rodizio_confirmed_at = False, None
+        db.add(member)
     db.commit()
+
+
+@router.post("/equipe/visualizacao")
+def create_viewer(
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """👀 Cria um acesso só de visualização (demonstração): vê tudo como admin, não altera nada,
+    não entra no rodízio e não aparece nas listas da equipe."""
+    _require_admin(user)
+    email = email.strip().lower()
+    if len(password) < 8:
+        return RedirectResponse(url="/equipe?erro=" + quote("A senha precisa ter pelo menos 8 caracteres."), status_code=302)
+    if db.query(User.id).filter(User.tenant_id == tenant.id, User.email == email).first():
+        return RedirectResponse(url="/equipe?erro=" + quote("Já existe alguém com esse e-mail."), status_code=302)
+    db.add(User(
+        tenant_id=tenant.id, name=name.strip()[:120] or "Visitante", email=email, password_hash=hash_password(password),
+        role="admin", read_only=True, accepting_leads=False, is_active=True, pending_approval=False,
+    ))
+    db.commit()
+    return RedirectResponse(url="/equipe?salvo=1", status_code=302)
 
 
 @router.post("/equipe/{user_id}/{action}")
@@ -160,6 +188,8 @@ def team_action(
         db.commit()
         return RedirectResponse(url="/equipe", status_code=302)
     elif action == "rodizio":
+        if member.read_only:
+            return RedirectResponse(url="/equipe?erro=" + quote("Acesso só de visualização não entra no rodízio."), status_code=302)
         if not member.accepting_leads and member.role == "admin":
             # admin fora do rodízio é o padrão: pra ligar precisa confirmar na tela
             if confirmar != "1":

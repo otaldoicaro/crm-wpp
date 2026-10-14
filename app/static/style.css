@@ -742,3 +742,8 @@ main:has(.kanban) { max-width: none; padding-left: 16px; padding-right: 16px; }
 .settle-loss[hidden] { display: none; }
 .settle-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 10px; }
 .settle-actions .settle-error { margin-right: auto; color: #c0392b; }
+
+/* visitante "só visualização" */
+.readonly-banner { background: var(--y-soft); border-bottom: 1px solid var(--line); padding: 8px 16px; font-size: .85rem; text-align: center; }
+.viewer-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.viewer-form input { flex: 1 1 180px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }

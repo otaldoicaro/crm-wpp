@@ -74,6 +74,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20), default="agent")  # admin | agent
+    # "só visualização" (demonstração): vê tudo como admin, mas não altera nada (main.py bloqueia)
+    read_only: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # pediu acesso pela tela de login e ainda espera um admin aprovar (fica is_active=False até lá)
     pending_approval: Mapped[bool] = mapped_column(Boolean, default=False)

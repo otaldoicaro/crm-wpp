@@ -11,7 +11,8 @@ from app.models import User
 def team_members(db: Session, tenant_id: str, only_active: bool = False) -> list:
     """Equipe atual: sem pedidos pendentes e sem removidos; admins primeiro, depois por nome."""
     query = db.query(User).filter(
-        User.tenant_id == tenant_id, User.pending_approval.is_(False), User.removed_at.is_(None)
+        User.tenant_id == tenant_id, User.pending_approval.is_(False), User.removed_at.is_(None),
+        User.read_only.is_(False),  # visitante "só visualização" não é da equipe
     )
     if only_active:
         query = query.filter(User.is_active.is_(True))

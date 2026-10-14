@@ -8,6 +8,18 @@
   </div>
 </div>
 
+<details class="card viewer-card">
+  <summary class="wa-label" style="cursor:pointer">👀 Criar acesso só de visualização (demonstração)</summary>
+  <p class="muted" style="margin:8px 0 10px">Pra mostrar o CRM a alguém: a pessoa vê tudo como admin (Pipeline, Inbox, Dashboard), mas <b>não consegue alterar nem enviar nada</b>, não entra no rodízio e não vê Equipe nem WhatsApp. <b>Atenção:</b> ela vê as conversas e os contatos reais deste CRM. Pra mostrar a quem é de fora, use um CRM de demonstração.</p>
+  <form method="post" action="/equipe/visualizacao" class="viewer-form">
+    <input name="name" placeholder="Nome (ex: Visitante João)" required>
+    <input name="email" type="email" placeholder="E-mail de login" required>
+    <input name="password" type="text" placeholder="Senha (mín. 8 caracteres)" minlength="8" required autocomplete="off">
+    <button class="btn small" type="submit">Criar acesso</button>
+  </form>
+  <p class="muted" style="margin:8px 0 0">Mande pra pessoa o endereço deste CRM, o e-mail e a senha. Pra tirar o acesso depois: botão <b>Remover</b> na lista abaixo.</p>
+</details>
+
 {% if pending %}
 <div class="card pending-card">
   <div class="wa-label">Pedidos de acesso ({{ pending|length }})</div>
@@ -48,16 +60,18 @@
       {% set n = numbers_by_owner.get(u.id) %}
       <tr style="{{ 'opacity:.5' if not u.is_active }}">
         <td>
-          <b>{{ u.name }}</b> <span class="role-badge {{ 'admin' if u.role == 'admin' else 'agent' }}">{{ "Admin" if u.role == "admin" else "Vendedor" }}</span>
+          <b>{{ u.name }}</b> {% if u.read_only %}<span class="role-badge agent">👀 Só visualização</span>{% else %}<span class="role-badge {{ 'admin' if u.role == 'admin' else 'agent' }}">{{ "Admin" if u.role == "admin" else "Vendedor" }}</span>{% endif %}
           <div class="muted show-sm">{{ u.email }}</div>
           {% if duplicates.get(u.id) %}<div class="dup-warning">⚠️ Possível cadastro duplicado: também existe {% for d in duplicates[u.id] %}{{ d.email }}{{ " (pendente)" if d.pending_approval }}{{ ", " if not loop.last }}{% endfor %}</div>{% endif %}
         </td>
         <td class="hide-sm">{{ u.email }}</td>
         <td>
           {% if u.id != user.id %}
-          <select name="role_{{ u.id }}" form="rolesForm" class="role-select" data-name="{{ u.name }}" data-original="{{ u.role }}">
-            <option value="agent" {{ "selected" if u.role != "admin" }}>Vendedor</option>
-            <option value="admin" {{ "selected" if u.role == "admin" }}>Admin</option>
+          {% set role_key = "viewer" if u.read_only else u.role %}
+          <select name="role_{{ u.id }}" form="rolesForm" class="role-select" data-name="{{ u.name }}" data-original="{{ role_key }}">
+            <option value="agent" {{ "selected" if role_key == "agent" }}>Vendedor</option>
+            <option value="admin" {{ "selected" if role_key == "admin" }}>Admin</option>
+            <option value="viewer" {{ "selected" if role_key == "viewer" }}>👀 Só visualização</option>
           </select>
           {% else %}<span class="pill">{{ "Admin" if u.role == "admin" else "Vendedor" }} (você)</span>{% endif %}
         </td>
@@ -66,7 +80,8 @@
           {% else %}<span class="muted">não conectou</span>{% endif %}
         </td>
         <td>
-          {% if u.is_active %}
+          {% if u.read_only %}<span class="muted">—</span>
+          {% elif u.is_active %}
           {% set wa = n.label ~ " (" ~ n.phone_number ~ ")" if n else "nenhum WhatsApp conectado" %}
           <form method="post" action="/equipe/{{ u.id }}/rodizio" style="margin:0"
             {% if u.role == "admin" and not u.accepting_leads %}onsubmit='if (!confirm({{ ("ATENÇÃO: " ~ u.name ~ " é ADMIN.\n\nColocar no rodízio de atendimento?\n\nLeads novos e o link rotativo vão passar a cair pra ele(a), no WhatsApp: " ~ wa ~ ".\n\nConfira se é isso mesmo antes de continuar.")|tojson }})) return false; this.confirmar.value = "1";'{% endif %}>
