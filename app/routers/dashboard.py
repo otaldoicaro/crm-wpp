@@ -490,9 +490,9 @@ def update_lead(
     if stage and stage.is_lost:
         lead.loss_reason, lead.loss_detail = loss_reason, loss_detail.strip()
     try:
-        lead.deal_value = float(deal_value) if deal_value else None
+        lead.deal_value = _parse_brl(deal_value) or None  # aceita 850,00 / 1.250,50 / 850.0
     except ValueError:
-        lead.deal_value = None
+        pass  # valor ilegível: mantém o que estava (antes apagava)
     if stage:
         funnel.set_stage(lead, stage)
     db.add(lead)

@@ -52,6 +52,12 @@ def main() -> None:
             print(f"  etapa {lead.stage.name if lead.stage else '—'} · vendedor {lead.assigned_user.name if lead.assigned_user else 'nenhum'}"
                   f" · negócio nº {lead.deal_number or 1}{' (recompra)' if lead.contact_id else ''}"
                   + (" · " + " · ".join(flags) if flags else ""))
+            stage = lead.stage
+            print(f"  venda: {'GANHO' if stage and stage.is_won else 'não ganho'} · valor {lead.deal_value or 0}"
+                  f" · tipo {lead.tag or 'lead'} · fechado em {fmt(lead.closed_at) if lead.closed_at else '—'}")
+            att = lead.attribution
+            print(f"  origem do anúncio: {(att.utm_campaign or att.ad_headline or att.ad_id or '—') if att else 'nenhuma'}"
+                  + (f" · id do anúncio {att.ad_id}" if att and att.ad_id else ""))
             convs = db.query(Conversation).filter(Conversation.lead_id == lead.id).all()
             if not convs:
                 print("  sem conversa no CRM")
