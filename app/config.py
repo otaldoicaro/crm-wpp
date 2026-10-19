@@ -35,6 +35,9 @@ EVOLUTION_API_URL = os.getenv("EVOLUTION_API_URL", "").rstrip("/")  # ex: http:/
 EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "")  # apikey global do Evolution
 # segredo que vai na URL do webhook (?token=...) pra só o nosso Evolution conseguir postar mensagens
 EVOLUTION_WEBHOOK_TOKEN = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "")
+# Redis do Evolution (só leitura): é onde o WhatsApp conectado guarda "código LID -> telefone"
+# quando CACHE_REDIS_SAVE_INSTANCES=true. O instalador preenche (ex: redis://evolution-redis:6379)
+EVOLUTION_REDIS_URL = os.getenv("EVOLUTION_REDIS_URL", "")
 # endereço público deste CRM, usado pra montar a URL do webhook ao criar instâncias
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
 # endereço que o Evolution usa pra entregar mensagens ao CRM. No VPS é a rede

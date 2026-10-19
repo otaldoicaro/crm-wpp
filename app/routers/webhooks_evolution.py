@@ -108,7 +108,10 @@ def _phone_from_key(key: dict, data: dict, db: Optional[Session] = None, number:
         known = db.get(LidMap, _digits(jid))
         if known:
             return known.phone
-        phone = _lid_from_files(_digits(jid))  # tabela do próprio WhatsApp (pasta do Evolution montada no CRM)
+        from app.services import lid_store
+
+        # tabela do próprio WhatsApp: no Redis do Evolution ou na pasta montada no CRM
+        phone = lid_store.phone_for(_digits(jid)) or _lid_from_files(_digits(jid))
         if phone:
             _remember_lid(db, jid, phone)
             return phone

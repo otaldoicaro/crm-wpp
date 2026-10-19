@@ -1,5 +1,6 @@
-"""Importa a tabela LID -> telefone que o próprio WhatsApp conectado guarda dentro do Evolution
-(arquivos lid-mapping-<lid>_reverse.json de cada número). É a única fonte confiável: o
+"""Importa a tabela LID -> telefone que o próprio WhatsApp conectado guarda dentro do Evolution:
+no Redis do Evolution (lido direto, com EVOLUTION_REDIS_URL) ou, sem Redis, nos arquivos
+lid-mapping-<lid>_reverse.json de cada número (recebidos pela entrada padrão). É a única fonte confiável: o
 Evolution não guarda essa ligação no banco dele, e a mensagem que o vendedor manda pelo
 celular numa conversa por LID chega sem o telefone.
 
@@ -24,7 +25,10 @@ LINE = re.compile(r"lid-mapping-(\d+)_reverse\.json:\s*\"?(\d{8,15})")
 def main() -> None:
     quiet = "--quieto" in sys.argv
     found = {}
-    for line in sys.stdin:
+    from app.services import lid_store
+
+    found.update(lid_store.all_mappings())  # Redis do Evolution (onde ficam quando o Redis está ligado)
+    for line in ([] if sys.stdin.isatty() else sys.stdin):  # arquivos (quando o Evolution não usa Redis)
         m = LINE.search(line)
         if m:
             found[m.group(1)] = m.group(2)
@@ -59,7 +63,7 @@ def main() -> None:
     if merged or not quiet:
         print(f"Cadastros com código no lugar do telefone resolvidos: {len(merged)}")
     if not found and not quiet:
-        print("Nenhum arquivo de LID encontrado no Evolution. Mande este resultado pro Claude.")
+        print("Nenhum código LID encontrado (nem no Redis nem nos arquivos do Evolution). Mande este resultado pro Claude.")
 
 
 if __name__ == "__main__":

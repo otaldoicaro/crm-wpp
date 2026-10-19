@@ -128,6 +128,18 @@ fi
 say "Subindo o CRM e o HTTPS (a primeira vez demora uns minutos)"
 # --pull + SECURITY_UPDATES (semana do ano): 1x por semana o container é refeito com as
 # correções de segurança mais novas do sistema (inclui o Tesseract, que lê os comprovantes)
+# Redis do Evolution (onde o WhatsApp conectado guarda "código LID -> telefone"): o CRM só lê.
+# Usa o mesmo endereço que o Evolution usa e põe o Redis na rede interna do CRM com esse nome.
+REDIS_URI=$(docker inspect "$EVO" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^CACHE_REDIS_URI=//p' | head -1)
+REDIS_ON=$(docker inspect "$EVO" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^CACHE_REDIS_ENABLED=//p' | head -1)
+REDIS_CT=$(docker ps --format '{{.Names}} {{.Image}}' | awk '$2 ~ /redis/ && $1 ~ /evolution/ {print $1; exit}')
+if [ "$REDIS_ON" = "true" ] && [ -n "$REDIS_URI" ]; then
+  REDIS_HOST=$(echo "$REDIS_URI" | sed -E 's#^rediss?://([^@/]*@)?([^:/]+).*#\2#')
+  [ -n "$REDIS_CT" ] && docker network connect --alias "$REDIS_HOST" crm_default "$REDIS_CT" 2>/dev/null || true
+  sed -i '/^EVOLUTION_REDIS_URL=/d' $ENV_FILE
+  echo "EVOLUTION_REDIS_URL=$REDIS_URI" >> $ENV_FILE
+  echo "Redis do Evolution ligado ao CRM (host $REDIS_HOST): códigos LID resolvidos na hora."
+fi
 # pasta do WhatsApp conectado (Evolution) visível pro CRM, só leitura: com ela o CRM descobre na
 # hora o telefone de quem chega pelo código LID (sem ela, a mensagem podia cair num lead separado)
 EVO_INST=$(docker inspect "$EVO" --format '{{range .Mounts}}{{if eq .Destination "/evolution/instances"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true)
