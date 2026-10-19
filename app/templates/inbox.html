@@ -32,6 +32,13 @@
       <option value="">Todas as etapas</option>
       {% for st in filter_stages %}<option value="{{ st.id }}" {{ "selected" if etapa == st.id }}>{{ st.name }}</option>{% endfor %}
     </select>
+    <select name="quando" onchange="this.form.submit()" title="Conversas com mensagem nesse período" class="{{ 'filter-on' if quando }}">
+      {% for key, label in inbox_dates %}<option value="{{ key }}" {{ "selected" if quando == key }}>{{ label }}</option>{% endfor %}
+    </select>
+    <button type="submit" name="fav" value="{{ '' if fav else '1' }}" class="pill fav-toggle {{ 'pill-on' if fav }}" title="Só as conversas que você marcou com ⭐ (clique com o botão direito numa conversa pra favoritar)">{{ "✕ " if fav }}⭐ Favoritas</button>
+    <select name="aviso" onchange="this.form.submit()" title="Conversas com aviso do CRM no topo (💡 sugestão de etapa ou 💸 comprovante)" class="{{ 'filter-on' if aviso }}">
+      {% for key, label in avisos %}<option value="{{ key }}" {{ "selected" if aviso == key }}>{{ label }}</option>{% endfor %}
+    </select>
     <input type="hidden" name="lidas" value="{{ lidas }}">
   </form>
   <div class="tipo-chips status-chips">
@@ -545,6 +552,9 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   var tipo = {{ tipo|tojson }};
   var lidas = {{ lidas|tojson }};
   var etapa = {{ etapa|tojson }};
+  var aviso = {{ aviso|tojson }};
+  var fav = {{ fav|tojson }};
+  var quando = {{ quando|tojson }};
   var qtd = {{ list_limit }};
   var ordem = {{ ordem|tojson }};
   var busy = false, stickNext = false;
@@ -553,7 +563,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
     if (busy || (document.hidden && force !== true)) return;
     busy = true;
     var url = "/inbox-atualizar?lead=" + encodeURIComponent(lead) + "&busca=" + encodeURIComponent(busca) +
-      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) + "&lidas=" + encodeURIComponent(lidas) + "&qtd=" + qtd + "&ordem=" + encodeURIComponent(ordem) + "&etapa=" + encodeURIComponent(etapa) +
+      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) + "&lidas=" + encodeURIComponent(lidas) + "&qtd=" + qtd + "&ordem=" + encodeURIComponent(ordem) + "&etapa=" + encodeURIComponent(etapa) + "&aviso=" + encodeURIComponent(aviso) + "&fav=" + encodeURIComponent(fav) + "&quando=" + encodeURIComponent(quando) +
       "&ls=" + encodeURIComponent(listSig) + "&ms=" + encodeURIComponent(msgSig);
     fetch(url, { headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })

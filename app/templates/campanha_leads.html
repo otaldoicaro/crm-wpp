@@ -12,6 +12,13 @@
   <a class="btn ghost small" href="{{ back }}">← Voltar pro Dashboard</a>
 </div>
 
+<form class="camp-search" method="get" action="/dashboard/campanha">
+  {% for k, v in camp_params.items() %}{% if v %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+  <input type="search" name="q" value="{{ q }}" placeholder="🔎 Procurar por nome, telefone ou texto da conversa" autocomplete="off">
+  <button class="btn small" type="submit">Buscar</button>
+  {% if q %}<a class="btn ghost small" href="/dashboard/campanha?{{ camp_params|urlencode }}">Limpar busca</a> <span class="muted">{{ leads|length }} lead(s) com “{{ q }}”</span>{% endif %}
+</form>
+
 <div class="tipo-chips camp-stage-chips">
   <button type="button" class="pill pill-on" data-stage="">Todas ({{ leads|length }})</button>
   {% for st in stages %}{% if stage_counts[st.id] %}<button type="button" class="pill" data-stage="{{ st.id }}">{{ st.name }} ({{ stage_counts[st.id] }})</button>{% endif %}{% endfor %}

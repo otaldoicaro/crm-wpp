@@ -132,12 +132,16 @@ def pipeline_view(
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
     # filtros lembrados: voltar pelo menu "Pipeline" abre do jeito que a pessoa deixou
     qp = request.query_params
+    saved = (request.cookies.get("pipeline_filtro", "") + "|||||||").split("|")
     if not any(k in qp for k in ("date_range", "date_from", "date_to", "seller", "atrasados")):
-        saved = (request.cookies.get("pipeline_filtro", "") + "||||").split("|")
         date_range, date_from, date_to, seller = saved[0] or date_range, saved[1], saved[2], saved[3]
         atrasados_saved = saved[4] == "1"
     else:
         atrasados_saved = qp.get("atrasados") == "1"
+    # 💡 avisos / ⭐ favoritas / etiqueta (lead ou cliente): lembrados como os outros filtros
+    aviso = qp.get("aviso", saved[5]) if qp.get("aviso", saved[5]) in dict(INBOX_AVISOS) else ""
+    fav = "1" if qp.get("fav", saved[6]) == "1" else ""
+    etiqueta = qp.get("etiqueta", saved[7]) if qp.get("etiqueta", saved[7]) in ("", "lead", "cliente") else ""
     range_from, range_to = _period_bounds(date_range, date_from, date_to)
     ordem = request.query_params.get("ordem", request.cookies.get("pipeline_ordem", "recentes"))
     if ordem not in dict(PIPE_ORDER_LABELS):
@@ -159,6 +163,12 @@ def pipeline_view(
     atrasados = atrasados_saved
     if atrasados:  # só quem está parado na etapa, com follow-up pendente ou próximo contato vencido
         base = base.filter(followup.late_condition(tenant, stages))
+    if aviso and _aviso_condition(db, tenant, aviso) is not None:
+        base = base.filter(_aviso_condition(db, tenant, aviso))
+    if fav:
+        base = inbox_state.favorite_filter(base, user)
+    if etiqueta:
+        base = base.filter(Lead.tag == ("" if etiqueta == "lead" else "cliente"))
 
     totals = dict(base.with_entities(Lead.stage_id, func.count(Lead.id)).group_by(Lead.stage_id).all())
     leads_by_stage: dict[str, list[Lead]] = {}
@@ -207,12 +217,16 @@ def pipeline_view(
             "order_labels": PIPE_ORDER_LABELS,
             "col_orders": col_orders,
             "atrasados": atrasados,
+            "aviso": aviso,
+            "avisos": INBOX_AVISOS,
+            "fav": fav,
+            "etiqueta": etiqueta,
         },
     )
     response.set_cookie("pipeline_ordem", ordem, httponly=True, samesite="lax")
     response.set_cookie(PIPE_COL_ORDER_COOKIE, ",".join(f"{k}:{v}" for k, v in col_orders.items()), httponly=True, samesite="lax")
     response.set_cookie(
-        "pipeline_filtro", f"{date_range}|{date_from}|{date_to}|{seller if user.role == 'admin' else ''}|{'1' if atrasados else ''}",
+        "pipeline_filtro", f"{date_range}|{date_from}|{date_to}|{seller if user.role == 'admin' else ''}|{'1' if atrasados else ''}|{aviso}|{fav}|{etiqueta}",
         httponly=True, samesite="lax",
     )
     return response
@@ -551,6 +565,7 @@ def campaign_leads(
     date_from: str = "",
     date_to: str = "",
     seller: str = "",
+    q: str = "",
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -582,6 +597,15 @@ def campaign_leads(
     node = trail[-1]
     wanted = set(node["lead_ids"])
     chosen = sorted((lead for lead in leads if lead.id in wanted), key=lambda lead: lead.created_at, reverse=True)
+    q = q.strip()[:100]
+    if q:  # 🔎 nome, telefone ou qualquer texto da conversa
+        digits = "".join(ch for ch in q if ch.isdigit())
+        by_text = set()
+        if len(q) >= 3 and chosen:
+            by_text = {lid for (lid,) in db.query(Conversation.lead_id).join(Message, Message.conversation_id == Conversation.id)
+                       .filter(Conversation.lead_id.in_([l.id for l in chosen]), Message.body.ilike(f"%{q}%")).distinct()}
+        needle = q.lower()
+        chosen = [l for l in chosen if needle in (l.name or "").lower() or (len(digits) >= 4 and digits in (l.phone or "")) or l.id in by_text]
     stage_by_id = {st.id: st for st in stages}
     return templates.TemplateResponse(
         request,
@@ -596,6 +620,8 @@ def campaign_leads(
             "stages": stages,
             "stage_by_id": stage_by_id,
             "stage_counts": {st.id: sum(1 for lead in chosen if lead.stage_id == st.id) for st in stages},
+            "q": q,
+            "camp_params": {"c": c, "s": s, "a": a, "date_range": date_range, "date_from": date_from, "date_to": date_to, "seller": seller},
             "back": "/dashboard?" + urlencode({"aba": "trafego", "date_range": date_range, "date_from": date_from, "date_to": date_to, "seller": seller}) + "#trafego",
         },
     )
@@ -774,9 +800,25 @@ INBOX_CONTACT_TYPES = [
     ("cliente", "Só clientes"),
     ("outro", "Outros (não é venda)"),
     ("grupos", "👥 Grupos"),
-    ("favoritas", "★ Favoritas"),
     ("", "Tudo (com grupos)"),
 ]
+# data da última mensagem da conversa
+INBOX_DATES = [("", "📅 Qualquer data"), ("hoje", "📅 Hoje"), ("ontem", "📅 Ontem"), ("7d", "📅 Últimos 7 dias"), ("30d", "📅 Últimos 30 dias")]
+
+
+def _inbox_date_bounds(quando: str):
+    """(início, fim) em UTC da última mensagem; "Hoje"/"Ontem" pelo relógio de Brasília."""
+    now = datetime.datetime.utcnow()
+    midnight = local_to_utc(to_local(now).replace(hour=0, minute=0, second=0, microsecond=0))
+    if quando == "hoje":
+        return midnight, None
+    if quando == "ontem":
+        return midnight - datetime.timedelta(days=1), midnight
+    if quando in ("7d", "30d"):
+        return now - datetime.timedelta(days=int(quando[:-1])), None
+    return None, None
+
+
 INBOX_STATUSES = [  # "precisa de atenção": um de cada vez
     ("naolidas", "Não lidas"),
     ("naorespondidas", "Não respondidas"),
@@ -786,9 +828,39 @@ INBOX_STATUSES = [  # "precisa de atenção": um de cada vez
 LEGACY_STATUS_TIPOS = ("naolidas", "followup", "parados")  # antes ficavam junto com os tipos
 
 
+# 💡 avisos que o CRM mostra no topo da conversa (sugestão de etapa / comprovante pra confirmar)
+INBOX_AVISOS = [
+    ("", "💡 Avisos: todos"),
+    ("qualquer", "💡 Com algum aviso"),
+    ("qualificado", "💡 Parece qualificado"),
+    ("ganho", "💡 Parece que a venda fechou"),
+    ("perdido", "💡 Parece perdido"),
+    ("outro", "💡 Parece que não é venda"),
+    ("comprovante", "💸 Comprovante pra confirmar"),
+]
+
+
+def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
+    """Condição SQL pros avisos pendentes (mesmas regras de quando o aviso aparece na conversa)."""
+    stages = funnel._stages(db, tenant.id)
+    open_ids = [st.id for st in stages if not st.is_won and not st.is_lost]
+    before_qualified = [st.id for st in stages if st.id in open_ids and st.order < funnel.levels(stages)["qualified"]]
+    is_open = Lead.stage_id.in_(open_ids)
+    by_kind = {
+        "qualificado": and_(Lead.suggest_kind == "qualificado", Lead.stage_id.in_(before_qualified)),
+        "ganho": and_(Lead.suggest_kind == "ganho", is_open),
+        "perdido": and_(Lead.suggest_kind == "perdido", is_open),
+        "outro": and_(Lead.suggest_kind == "outro", Lead.tag != "outro"),
+        "comprovante": and_(Lead.receipt_status == "pending", is_open),
+    }
+    if aviso == "qualquer":
+        return or_(*by_kind.values())
+    return by_kind.get(aviso)
+
+
 def _inbox_query(
     db: Session, tenant: Tenant, user: User, busca: str, numero: str, vendedor: str, tipo: str = "", lidas: str = "",
-    etapa: str = "",
+    etapa: str = "", aviso: str = "", fav: str = "", quando: str = "",
 ):
     """Conversas visíveis no Inbox com os filtros aplicados. Devolve (query, removed_ids).
     tipo = quais contatos (INBOX_CONTACT_TYPES); lidas = situação (INBOX_STATUSES);
@@ -823,6 +895,15 @@ def _inbox_query(
         query = query.filter(followup.stale_condition(funnel._stages(db, tenant.id)))
     if etapa:
         query = query.filter(Lead.stage_id == etapa)
+    if fav:  # ⭐ favoritas desta pessoa (junta com os outros filtros)
+        query = inbox_state.favorite_filter(query, user)
+    start, end = _inbox_date_bounds(quando)
+    if start:
+        query = query.filter(Conversation.last_message_at >= start)
+    if end:
+        query = query.filter(Conversation.last_message_at < end)
+    if aviso and _aviso_condition(db, tenant, aviso) is not None:
+        query = query.filter(_aviso_condition(db, tenant, aviso), Lead.is_group.is_(False))
     if tipo == "favoritas":
         query = inbox_state.favorite_filter(query, user)
     elif tipo == "grupos":
@@ -892,13 +973,16 @@ def _inbox_context(
     limit: int = INBOX_LIST_LIMIT,
     ordem: str = "recentes",
     etapa: str = "",
+    aviso: str = "",
+    fav: str = "",
+    quando: str = "",
 ) -> dict:
     if user.role != "admin":
         numero = vendedor = ""
-    query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa)
+    query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa, aviso, fav, quando)
 
     def count(status: str) -> int:  # quantas em cada situação, com os outros filtros atuais
-        q, _ = _inbox_query(db, tenant, user, "", numero, vendedor, tipo, status, etapa)
+        q, _ = _inbox_query(db, tenant, user, "", numero, vendedor, tipo, status, etapa, aviso, fav, quando)
         return q.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
 
     status_counts = {key: count(key) for key, _ in INBOX_STATUSES}
@@ -948,6 +1032,11 @@ def _inbox_context(
             "ordem": ordem,
             "order_labels": ORDER_LABELS,
             "etapa": etapa,
+            "aviso": aviso,
+            "avisos": INBOX_AVISOS,
+            "fav": fav,
+            "quando": quando,
+            "inbox_dates": INBOX_DATES,
             "status_counts": status_counts,
             "contact_types": INBOX_CONTACT_TYPES,
             "statuses": INBOX_STATUSES,
@@ -1009,12 +1098,21 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     # filtros de número/vendedor ficam lembrados (cookie) ao abrir conversa, responder, etc.
     qp = request.query_params
     cookie = request.cookies.get(INBOX_FILTER_COOKIE)
-    saved = ((cookie if cookie is not None else "||semgrupos|||") + "|||||").split("|")  # padrão: tudo menos grupos, todas as etapas
+    saved = ((cookie if cookie is not None else "||semgrupos|||") + "||||||||").split("|")  # padrão: tudo menos grupos, todas as etapas
     numero = ""  # filtro por número saiu do Inbox: o vendedor já é o dono do número
     vendedor = qp.get("vendedor", saved[1]) if "numero" in qp or "vendedor" in qp else saved[1]
     tipo = qp.get("tipo", saved[2])
     lidas = qp.get("lidas", saved[3])
     etapa = qp.get("etapa", saved[5])
+    aviso = qp.get("aviso", saved[6])
+    if aviso not in dict(INBOX_AVISOS):
+        aviso = ""
+    fav = "1" if qp.get("fav", saved[7]) == "1" else ""
+    quando = qp.get("quando", saved[8])
+    if quando not in dict(INBOX_DATES):
+        quando = ""
+    if tipo == "favoritas":  # antes "Favoritas" era um tipo; agora é um botão que junta com os outros
+        tipo, fav = "semgrupos", "1"
     # filtros de antes (situação misturada nos tipos; "nao" = não respondidas)
     if tipo in LEGACY_STATUS_TIPOS:
         lidas, tipo = tipo, "semgrupos"
@@ -1034,7 +1132,7 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     if selected_lead_id:
         inbox_state.mark_read(db, user.id, selected_lead_id)
     ctx = _inbox_context(
-        db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas, _list_limit(qp.get("qtd")), ordem, etapa
+        db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas, _list_limit(qp.get("qtd")), ordem, etapa, aviso, fav, quando
     )
     ctx["quick_replies"] = replies_for_js(db, tenant, user)
     # 🔎 busca no texto das conversas: a lista da esquerda vira os resultados e continua ali
@@ -1049,7 +1147,7 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
         response.set_cookie(INBOX_TEXT_COOKIE, quote(texto), samesite="lax")  # sem httponly: o menu apaga
     else:
         response.delete_cookie(INBOX_TEXT_COOKIE)
-    response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}|{ordem}|{etapa}", httponly=True, samesite="lax")
+    response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}|{ordem}|{etapa}|{aviso}|{fav}|{quando}", httponly=True, samesite="lax")
     return response
 
 
@@ -1405,6 +1503,9 @@ def inbox_refresh(
     qtd: str = "",
     ordem: str = "recentes",
     etapa: str = "",
+    aviso: str = "",
+    fav: str = "",
+    quando: str = "",
     ls: str = "",
     ms: str = "",
     db: Session = Depends(get_db),
@@ -1418,7 +1519,7 @@ def inbox_refresh(
     if user.role != "admin":
         numero = vendedor = ""
     limit = _list_limit(qtd)
-    query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa)
+    query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa, aviso, fav, quando)
     rows = _first_per_lead(
         query.with_entities(Conversation.id, Conversation.lead_id, Conversation.last_message_at)
         .order_by(*_inbox_order(ordem))
@@ -1430,7 +1531,7 @@ def inbox_refresh(
         return JSONResponse({"changed": False})  # nada novo: resposta mínima, sem desenhar nada
     if lead and current_msg_sig != ms:
         inbox_state.mark_read(db, user.id, lead)  # chegou mensagem na conversa que está aberta: já foi vista
-    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo, lidas, limit, ordem, etapa)
+    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo, lidas, limit, ordem, etapa, aviso, fav, quando)
     return JSONResponse(
         {
             "list_sig": ctx["list_sig"],

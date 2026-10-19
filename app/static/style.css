@@ -754,3 +754,9 @@ main:has(.kanban) { max-width: none; padding-left: 16px; padding-right: 16px; }
 .rec-bar .btn:last-child { margin-left: auto; }
 .rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #e0245e; animation: recblink 1s infinite; }
 @keyframes recblink { 50% { opacity: .2; } }
+
+.camp-search { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 10px; }
+.camp-search input[type=search] { flex: 1 1 280px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 999px; font: inherit; background: var(--panel); }
+.inbox-filters-2 select[name=aviso] { grid-column: 1 / -1; }
+select.filter-on { border-color: var(--y); box-shadow: 0 0 0 2px var(--y-soft); }
+.inbox-filters-2 .fav-toggle { border: 1px solid var(--line); cursor: pointer; justify-content: center; }
