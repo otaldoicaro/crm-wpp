@@ -744,6 +744,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   function decorate() {
     box.querySelectorAll(".msg-bubble[data-id]").forEach(function (b) {
       var want = [];
+      if (b.dataset.resend) want.push(["resend", "🔄", "Reenviar esta mensagem"]);
       if (b.dataset.reply) want.push(["reply", "↩️", "Responder esta mensagem"]);
       if (b.dataset.edit && age(b) < EDIT) want.push(["edit", "✏️", "Editar mensagem"]);
       if (b.dataset.del && (!b.dataset.wa || age(b) < DEL)) want.push(["del", "🗑️", b.dataset.wa ? "Apagar pra todos" : "Tirar do CRM (não foi enviada)"]);
@@ -790,6 +791,17 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
     var btn = e.target.closest(".msg-actions button"); if (!btn) return;
     var bubble = btn.closest(".msg-bubble");
     if (btn.dataset.act === "reply") return setQuote(bubble);
+    if (btn.dataset.act === "resend") {
+      btn.disabled = true; btn.textContent = "⏳";
+      fetch("/mensagens/" + bubble.dataset.id + "/reenviar", { method: "POST" })
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { ok: false, error: "sem conexão com o CRM" }; })
+        .then(function (d) {
+          if (!d.ok) alert("Não foi de novo: " + (d.error || "erro"));
+          if (window.__inboxRefreshNow) window.__inboxRefreshNow(true);
+        });
+      return;
+    }
     if (btn.dataset.act === "del") {
       if (!confirm(bubble.dataset.wa ? "Apagar esta mensagem pra todos? Ela some também do WhatsApp do cliente." : "Tirar esta mensagem (que não foi enviada) do CRM?")) return;
       btn.disabled = true;

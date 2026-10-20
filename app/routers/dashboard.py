@@ -2046,12 +2046,13 @@ def reply_lead(
         return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
     if ok:
         response_times.mark_outbound(lead)
-    message = _record_outbound(db, conversation, user, wa_id, body if ok else f"⚠️ Não enviada: {body}", secret=secret)
+    reason = "" if ok else messaging.last_error()
+    message = _record_outbound(db, conversation, user, wa_id, body if ok else f"⚠️ Não enviada ({reason}): {body}", secret=secret)
     if quoted is not None and not message.quote_wa_id:
         message.quote_wa_id, message.quote_text = quoted.wa_message_id, (quoted.body or "Mensagem")[:300]
         db.commit()
     if ajax:
-        return JSONResponse({"ok": ok, "error": "" if ok else "o WhatsApp deste número não aceitou o envio"})
+        return JSONResponse({"ok": ok, "error": "" if ok else reason})
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
 
@@ -2121,6 +2122,40 @@ def edit_message(
         conversation.last_preview = text[:200]
     db.commit()
     return JSONResponse({"ok": True})
+
+
+@router.post("/mensagens/{message_id}/reenviar")
+def resend_message(
+    message_id: str,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """🔄 Reenviar uma mensagem de texto que ficou "⚠️ Não enviada": manda de novo e, dando certo,
+    a mesma mensagem vira enviada (sem duplicar na conversa)."""
+    message = db.get(Message, message_id)
+    conversation = db.get(Conversation, message.conversation_id) if message else None
+    lead = _visible_lead(db, tenant, user, conversation.lead_id) if conversation and conversation.tenant_id == tenant.id else None
+    if lead is None or message.direction != "out" or message.wa_message_id or message.media_type or not message.body.startswith("⚠️"):
+        return JSONResponse({"ok": False, "error": "Essa mensagem não pode ser reenviada"}, status_code=400)
+    text = messaging.strip_failed(message.body)
+    number = db.get(WhatsAppNumber, lead.active_conversation.whatsapp_number_id) if lead.active_conversation else None
+    if number is None or not text.strip():
+        return JSONResponse({"ok": False, "error": "conversa sem WhatsApp"}, status_code=400)
+    ok, wa_id, secret = messaging.send_text(number, lead.phone, text)
+    if ok is None:  # servidor lento de novo: fica "⏳ confirmando envio"
+        message.body, message.ack = text, messaging.UNCONFIRMED
+    elif ok:
+        message.body, message.wa_message_id, message.secret, message.ack = text, wa_id, secret, 1
+        message.created_at = datetime.datetime.utcnow()  # vai pro fim da conversa, na hora em que saiu
+        response_times.mark_outbound(lead)
+        funnel.on_message(db, lead, outbound=True)
+        followup.on_outbound_text(db, lead, text)
+        suggestions.on_message(lead, text, outbound=True)
+    else:
+        message.body = f"⚠️ Não enviada ({messaging.last_error()}): {text}"
+    db.commit()
+    return JSONResponse({"ok": ok is not False, "pending": ok is None, "error": "" if ok is not False else messaging.last_error()})
 
 
 DELETE_WINDOW = datetime.timedelta(hours=48)  # o WhatsApp deixa "apagar pra todos" por ~2 dias

@@ -147,10 +147,9 @@ def _unconfirmed_match(db: Session, lead: Lead, body: str, media_type: str) -> O
     )
     text = (body or "").strip()
     for m in candidates:
-        own = m.body
-        for prefix in ("⚠️ Sem confirmação do WhatsApp (confira no celular antes de reenviar): ", "⚠️ Não enviada: "):
-            if own.startswith(prefix):
-                own = own[len(prefix):]
+        from app.services import messaging
+
+        own = messaging.strip_failed(m.body)
         if (media_type and m.media_type == media_type) or (not media_type and not m.media_type and own.strip() == text):
             return m
     return None

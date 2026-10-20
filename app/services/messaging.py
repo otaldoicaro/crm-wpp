@@ -5,6 +5,8 @@ conforme o `provider` do número da conversa."""
 from __future__ import annotations
 
 import logging
+import threading
+import re
 from typing import Optional
 
 from app.models import WhatsAppNumber
@@ -15,6 +17,19 @@ logger = logging.getLogger("messaging")
 
 
 UNCONFIRMED = -1  # Message.ack: pediu pro WhatsApp mandar mas a resposta não veio a tempo
+FAILED_PREFIX = re.compile(r"^⚠️ (Não enviada|Sem confirmação do WhatsApp)[^:]*: ")
+
+_last = threading.local()
+
+
+def last_error() -> str:
+    """Motivo da última falha de envio nesta thread (pra mostrar na mensagem)."""
+    return getattr(_last, "error", "") or "o WhatsApp não aceitou o envio"
+
+
+def strip_failed(body: str) -> str:
+    """Texto original de uma mensagem marcada como não enviada / sem confirmação."""
+    return FAILED_PREFIX.sub("", body or "", count=1)
 
 
 def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dict] = None) -> tuple:
@@ -27,7 +42,8 @@ def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dic
             return True, wa_id, secret
         except evolution_client.EvolutionTimeout:
             return None, "", ""
-        except evolution_client.EvolutionError:
+        except evolution_client.EvolutionError as exc:
+            _last.error = friendly_error(exc)
             return False, "", ""
     result = whatsapp_client.send_text_message(number, phone, body)
     wa_id = result.get("body", {}).get("messages", [{}])[0].get("id", "") if result["ok"] else ""

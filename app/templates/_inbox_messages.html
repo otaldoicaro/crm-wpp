@@ -14,7 +14,7 @@
   {% set failed = msg.body.startswith("⚠️") %}
   {% set editable = msg.direction == 'out' and not msg.media_type and msg.wa_message_id and not failed and not deleted %}
   {% set caption = msg.body|legenda %}
-  <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}{{ ' msg-deleted' if deleted }}" id="msg-{{ msg.id }}" data-id="{{ msg.id }}" data-wa="{{ msg.wa_message_id }}" data-sent="{{ msg.created_at.isoformat() }}Z"{% if editable %} data-edit="{{ msg.id }}"{% endif %}{% if msg.direction == 'out' and not deleted %} data-del="1"{% endif %}{% if msg.wa_message_id and not deleted and not failed %} data-reply="1"{% endif %}>
+  <div class="msg-bubble {{ 'out' if msg.direction == 'out' else 'in' }}{{ ' msg-deleted' if deleted }}" id="msg-{{ msg.id }}" data-id="{{ msg.id }}" data-wa="{{ msg.wa_message_id }}" data-sent="{{ msg.created_at.isoformat() }}Z"{% if editable %} data-edit="{{ msg.id }}"{% endif %}{% if msg.direction == 'out' and not deleted %} data-del="1"{% endif %}{% if msg.wa_message_id and not deleted and not failed %} data-reply="1"{% endif %}{% if failed and msg.direction == 'out' and not msg.wa_message_id and not msg.media_type %} data-resend="1"{% endif %}>
     {% if msg.sender_name and msg.direction == 'in' %}<div class="msg-sender">{{ msg.sender_name }}</div>{% endif %}
     {% if msg.quote_text %}<div class="msg-quote" data-quote="{{ msg.quote_wa_id }}" title="Ir pra mensagem respondida">{{ msg.quote_text|legenda or msg.quote_text }}</div>{% endif %}
     {% if deleted %}
