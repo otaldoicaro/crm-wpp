@@ -137,7 +137,12 @@ def main() -> None:
         ).distinct()]
         print(f"\nRevisando {len(ids)} lead(s) com conversa nos últimos {days} dia(s)"
               + (" — só fechamentos (Ganho/Perdido)" if only_closing else "") + "...\n")
-        for lead_id in ids:
+        started = time.time()
+        for done_count, lead_id in enumerate(ids, 1):
+            if done_count % 500 == 0:
+                mins = (time.time() - started) / 60
+                left = mins / done_count * (len(ids) - done_count)
+                print(f"… {done_count} de {len(ids)} leads revisados ({mins:.0f} min até agora, faltam uns {left:.0f} min)")
             lead = db.get(Lead, lead_id)
             start = lead.stage.name if lead.stage else "—"
             if only_closing and lead.stage and (lead.stage.is_won or lead.stage.is_lost):
