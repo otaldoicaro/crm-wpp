@@ -25,6 +25,7 @@ Em segundo plano (não depende do console ficar aberto; o andamento vai pra um a
 
 import datetime
 import os
+import time
 import sys
 from collections import Counter
 
@@ -36,6 +37,9 @@ from app.services import autostage, followup, funnel, receipt_text, receipts, su
 from app.services import media_store, messaging
 
 
+PAUSE = 0.05  # segundos entre leads (10 mil leads ≈ +8 min, mas sem travar o sistema)
+
+
 def _brl(v) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if v else ""
 
@@ -44,14 +48,9 @@ def _check_receipt(db, lead: Lead, message: Message, quoted: list) -> str:
     """Lê o comprovante; fecha sozinho se o valor estiver conferido. Devolve o que fez ("" = nada)."""
     if not receipts.worth_checking(lead):
         return ""
-    content, mime = media_store.load(message.media_stored_key)
-    if content is None:
-        conv = db.get(Conversation, message.conversation_id)
-        number = db.get(WhatsAppNumber, conv.whatsapp_number_id) if conv else None
-        try:
-            content, mime = messaging.fetch_media(number, message.media_id) if number else (None, None)
-        except Exception:
-            content = None
+    # só a cópia que o CRM já guardou: buscar no Evolution cada imagem antiga pesa no banco dele
+    # (e no WhatsApp de todo mundo). Sem cópia, fica de fora
+    content, mime = media_store.load(message.media_stored_key) if message.media_stored_key else (None, None)
     if not content:
         return ""
     result = receipt_text.classify_many(receipt_text.extract_texts(content, mime), quoted)
@@ -145,6 +144,7 @@ def main() -> None:
                 continue  # já fechado: não mexe (nem reabre pra Novo)
             autostage.LOG.clear()
             final, why = review(db, lead, since, read_receipts)
+            time.sleep(PAUSE)  # respiro entre um lead e outro: o CRM continua atendendo quem está usando
             end = final.stage.name if final.stage else "—"
             if only_closing and not (final.stage and (final.stage.is_won or final.stage.is_lost)):
                 for obj in list(db.new):

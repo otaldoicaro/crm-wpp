@@ -78,7 +78,9 @@ def image_text(content: bytes, mode: str = "4") -> str:
     with _OCR_SLOT:
         try:
             result = subprocess.run(
-                ["tesseract", "stdin", "stdout", "-l", "por", "--psm", mode, "--dpi", "300"],
+                # prioridade baixa (nice): ler comprovante nunca disputa processador com quem usa o CRM
+                (["nice", "-n", "15"] if shutil.which("nice") else [])
+                + ["tesseract", "stdin", "stdout", "-l", "por", "--psm", mode, "--dpi", "300"],
                 input=content, capture_output=True, timeout=OCR_TIMEOUT, check=False,
             )
         except subprocess.TimeoutExpired:

@@ -23,7 +23,9 @@ from app.services import evolution_client
 
 logger = logging.getLogger("history_sync")
 
-INTERVAL_SECONDS = 60 * 60  # a cada 1h (antes 6h): o que escapar aparece no máximo 1h depois
+# a cada 3h olhando o último dia: com o LID resolvido na hora (Redis) quase nada escapa, e cada
+# rodada pesa no banco do Evolution (busca as mensagens do dia de todos os números)
+INTERVAL_SECONDS = 3 * 60 * 60
 AUTO_DAYS = 1
 MAX_PAGES = 100  # 100 x 200 = 20 mil mensagens por número por rodada
 SKIP_TYPES = {"protocolMessage", "reactionMessage", "pollUpdateMessage", "senderKeyDistributionMessage"}
