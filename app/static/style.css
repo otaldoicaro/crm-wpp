@@ -799,3 +799,11 @@ td.goal-bad { background: rgba(214,69,69,.08); }
 .reply-box.internal-mode { background: #fff4c2; }
 .reply-box.internal-mode textarea { border-color: #d9a400; background: #fffbe6; }
 .internal-check { display: flex; align-items: center; gap: 2px; font-size: .85rem; cursor: pointer; }
+
+.capi-box summary { cursor: pointer; }
+.capi-form { display: grid; gap: 8px; max-width: 560px; margin: 8px 0; }
+.capi-form label { display: grid; gap: 3px; font-size: .82rem; font-weight: 600; }
+.capi-form input[type=text], .capi-form input:not([type]), .capi-form input[type=password] { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.capi-form .capi-on { display: flex; align-items: center; gap: 6px; }
+.capi-msg { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.capi-log { font-size: .8rem; margin-top: 8px; }

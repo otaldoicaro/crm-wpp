@@ -358,6 +358,25 @@
   </div>
   <p class="muted traffic-note">Células em <span class="goal-ok">verde</span> estão dentro da meta e em <span class="goal-bad">vermelho</span>, fora.</p>
   {% if user.role == "admin" %}
+  <details class="traffic-accounts capi-box" id="eventos-meta" {{ "open" if capi_msg }}>
+    <summary><b>📤 Eventos do CRM pro Meta</b> <span class="muted">— {% if tenant.meta_capi_enabled %}<b class="goal-ok">ligado</b>{{ " (modo teste)" if tenant.meta_capi_test_code }}{% else %}desligado{% endif %} · Oportunidade (Negociando) e Venda (Ganho) voltam pro Gerenciador de Anúncios</span></summary>
+    {% if capi_msg %}<p class="capi-msg">{{ capi_msg }}</p>{% endif %}
+    <p class="muted">Cada cliente usa o <b>próprio</b> conjunto de dados (pixel). Ao salvar, o CRM confere no Meta se o pixel é de uma das contas de anúncio deste cliente ({{ meta_accounts or "nenhuma ainda" }}); se não for, não liga. Só vão leads que vieram de anúncio do Meta, uma vez por lead, a partir de agora. Telefone, e-mail e nome vão criptografados.</p>
+    <form method="post" action="/dashboard/meta-eventos" class="capi-form">
+      <label>ID do conjunto de dados (pixel) <input name="pixel" value="{{ tenant.meta_pixel_id }}" inputmode="numeric" placeholder="ex: 1134419885925968"></label>
+      <label>Token de acesso <input name="token" type="password" autocomplete="off" placeholder="{{ 'já salvo (deixe em branco pra manter)' if tenant.meta_capi_token else 'gerado nesse pixel no Gerenciador de Eventos' }}"></label>
+      <label>Código de teste (opcional) <input name="teste" value="{{ tenant.meta_capi_test_code }}" placeholder="ex: TEST12345 — apague pra valer de verdade"></label>
+      <label class="capi-on"><input type="checkbox" name="ligado" value="1" {{ "checked" if tenant.meta_capi_enabled }}> Enviar eventos</label>
+      <div><button class="btn small" type="submit" name="acao" value="salvar">Salvar e conferir o pixel</button>
+      {% if tenant.meta_capi_checked_at and tenant.meta_capi_test_code %}<button class="btn ghost small" type="submit" name="acao" value="testar">Mandar evento de teste</button>{% endif %}</div>
+    </form>
+    {% if capi_events %}
+    <table class="table-simple capi-log">
+      <thead><tr><th>Quando</th><th>Evento</th><th>Lead</th><th>Status</th></tr></thead>
+      <tbody>{% for ev in capi_events %}<tr><td>{{ ev.created_at|hora("%d/%m %H:%M") }}</td><td>{{ {"InitiateCheckout": "Oportunidade", "Purchase": "Venda"}.get(ev.event_name, ev.event_name) }}</td><td><a href="/inbox/{{ ev.lead_id }}">abrir</a></td><td class="{{ 'goal-ok' if ev.status == 'sent' else ('goal-bad' if ev.status == 'failed' else 'muted') }}" title="{{ ev.error }}">{{ {"sent": "enviado", "pending": "na fila", "failed": "falhou", "skipped": "não enviado"}.get(ev.status, ev.status) }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% endif %}
+  </details>
   <details class="traffic-accounts">
     <summary class="muted">⚙ Contas de anúncio do Meta deste cliente: {{ meta_accounts or "detectando pelos anúncios dos leads…" }}</summary>
     <form method="post" action="/dashboard/meta-contas">

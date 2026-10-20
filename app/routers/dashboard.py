@@ -1,5 +1,6 @@
 import base64
 import datetime
+import json
 import logging
 import os
 import re
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
-from app.models import CampaignSpend, Conversation, KpiGoal, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
+from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app.services import autostage, deals, evolution_client, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
@@ -708,6 +709,44 @@ def set_meta_accounts(
     db.commit()
     threading.Thread(target=meta_spend.sync_all, kwargs={"days": meta_spend.FIRST_SYNC_DAYS}, daemon=True).start()
     return RedirectResponse(url="/dashboard?aba=trafego&salvo=1#trafego", status_code=302)
+
+
+@router.post("/dashboard/meta-eventos")
+def save_meta_events(
+    pixel: str = Form(""),
+    token: str = Form(""),
+    teste: str = Form(""),
+    ligado: str = Form(""),
+    acao: str = Form("salvar"),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """📤 Configura o envio de Oportunidade/Venda pro Meta DESTE cliente. Salvar sempre confere o
+    pixel de novo; se não for das contas de anúncio do cliente, o envio fica desligado."""
+    from app.services.conversions import meta_capi
+
+    if user.role != "admin":
+        raise HTTPException(status_code=403)
+    back = "/dashboard?aba=trafego"
+    if acao == "testar":
+        result = meta_capi.send_test(tenant)
+        msg = "✅ Evento de teste enviado: confira em Gerenciador de Eventos > Eventos de teste." if result["ok"] else \
+            "Teste falhou: " + json.dumps(result["body"], ensure_ascii=False)[:300]
+        return RedirectResponse(url=back + ("&salvo=1" if result["ok"] else "") + "&capi=" + quote(msg) + "#eventos-meta", status_code=302)
+    new_pixel = re.sub(r"\D", "", pixel)
+    if new_pixel != tenant.meta_pixel_id:
+        tenant.meta_capi_checked_at = None
+    tenant.meta_pixel_id = new_pixel
+    if token.strip():
+        tenant.meta_capi_token = token.strip()
+        tenant.meta_capi_checked_at = None
+    tenant.meta_capi_test_code = teste.strip()[:40]
+    ok, msg = meta_capi.verify_pixel(tenant)
+    tenant.meta_capi_checked_at = datetime.datetime.utcnow() if ok else None
+    tenant.meta_capi_enabled = bool(ligado) and ok
+    db.commit()
+    return RedirectResponse(url=back + ("&salvo=1" if ok else "") + "&capi=" + quote(("✅ " if ok else "⚠️ ") + msg) + "#eventos-meta", status_code=302)
 
 
 @router.post("/dashboard/metas")
@@ -2476,5 +2515,8 @@ def dashboard_view(
             "aba": aba,
             "meta_accounts": tenant.meta_ad_accounts,
             "goals": {g.metric: g for g in db.query(KpiGoal).filter(KpiGoal.tenant_id == tenant.id)} if aba == "trafego" else {},
+            "capi_events": db.query(ConversionEvent).filter(ConversionEvent.tenant_id == tenant.id, ConversionEvent.platform == "meta")
+            .order_by(ConversionEvent.created_at.desc()).limit(12).all() if aba == "trafego" and is_admin else [],
+            "capi_msg": request.query_params.get("capi", ""),
         },
     )

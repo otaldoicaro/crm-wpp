@@ -47,6 +47,13 @@ class Tenant(Base):
     # contas de anúncio do Meta deste cliente ("123,456", sem o act_): descobertas sozinhas pelos
     # anúncios dos leads, ou preenchidas no Dashboard. Os gastos são buscados dessas contas.
     meta_ad_accounts: Mapped[str] = mapped_column(String(300), default="")
+    # 📤 eventos do CRM pro Meta (API de Conversões), SEMPRE do próprio cliente: pixel/conjunto de
+    # dados conferido como das contas de anúncio dele (meta_capi_checked_at) e token gerado nesse pixel
+    meta_pixel_id: Mapped[str] = mapped_column(String(40), default="")
+    meta_capi_token: Mapped[str] = mapped_column(Text, default="")
+    meta_capi_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    meta_capi_test_code: Mapped[str] = mapped_column(String(40), default="")  # modo teste (Gerenciador de Eventos)
+    meta_capi_checked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # follow-up: depois de quantas horas sem o cliente responder a nossa última mensagem o lead
     # aparece como "📞 follow-up". E se o time precisa agendar o próximo contato dos leads em
     # Qualificado/Negociando (bom pra venda mais longa, ex: serviços). Configurável em /prazos.
@@ -384,6 +391,9 @@ class ConversionEvent(Base):
     error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
     sent_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    event_id: Mapped[str] = mapped_column(String(80), default="")  # o Meta ignora repetidos com o mesmo id
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    destination: Mapped[str] = mapped_column(String(40), default="")  # pixel/conta que recebeu (auditoria)
 
 
 class CampaignSpend(Base):

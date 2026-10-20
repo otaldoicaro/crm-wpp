@@ -40,9 +40,14 @@ def set_stage(lead: Lead, stage: PipelineStage) -> None:
         lead.closed_at = None
     if lead.stage_id != stage.id or lead.stage_entered_at is None:
         lead.stage_entered_at = datetime.datetime.utcnow()  # conta o "há X tempo nesta etapa"
+    changed = lead.stage_id != stage.id
     lead.stage_id = stage.id
     if not stage.is_lost and stage.order > (lead.reached_order or 0):
         lead.reached_order = stage.order
+    if changed:
+        from app.services.conversions import queue
+
+        queue.on_stage(lead, stage)  # 📤 oportunidade/venda pro Meta (só se o cliente ligou e conferiu o pixel)
 
 
 def _stages(db, tenant_id: str) -> list:
