@@ -2138,6 +2138,10 @@ def resend_message(
     lead = _visible_lead(db, tenant, user, conversation.lead_id) if conversation and conversation.tenant_id == tenant.id else None
     if lead is None or message.direction != "out" or message.wa_message_id or message.media_type or not message.body.startswith("⚠️"):
         return JSONResponse({"ok": False, "error": "Essa mensagem não pode ser reenviada"}, status_code=400)
+    # 1º confere no WhatsApp se ela não saiu mesmo (às vezes o aviso de erro veio mas a mensagem foi)
+    if messaging.verify_sent(db, message):
+        db.commit()
+        return JSONResponse({"ok": True, "already": True})
     text = messaging.strip_failed(message.body)
     number = db.get(WhatsAppNumber, lead.active_conversation.whatsapp_number_id) if lead.active_conversation else None
     if number is None or not text.strip():

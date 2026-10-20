@@ -133,15 +133,18 @@ def ingest_inbound(
     return message
 
 
-def _unconfirmed_match(db: Session, lead: Lead, body: str, media_type: str) -> Optional[Message]:
-    """Mensagem enviada pelo CRM nos últimos 15 min que ficou sem confirmação (servidor lento) e é a
-    mesma que o WhatsApp está avisando agora (mesmo texto, ou mesmo tipo de mídia)."""
-    since = datetime.datetime.utcnow() - datetime.timedelta(minutes=15)
+def _unconfirmed_match(db: Session, lead: Lead, body: str, media_type: str,
+                       when: Optional[datetime.datetime] = None) -> Optional[Message]:
+    """Mensagem enviada pelo CRM que ficou sem confirmação/"não enviada" (servidor lento) e é a mesma
+    que o WhatsApp está avisando agora — ou que a recuperação achou (when): mesmo texto ou mesmo
+    tipo de mídia, até 15 min antes. Assim ela é confirmada em vez de duplicada."""
+    moment = when or datetime.datetime.utcnow()
+    since = moment - datetime.timedelta(minutes=15)
     candidates = (
         db.query(Message)
         .join(Conversation, Conversation.id == Message.conversation_id)
         .filter(Conversation.lead_id == lead.id, Message.direction == "out", Message.wa_message_id == "",
-                Message.created_at >= since)
+                Message.created_at >= since, Message.created_at <= moment + datetime.timedelta(minutes=2))
         .order_by(Message.created_at)
         .all()
     )
@@ -177,7 +180,7 @@ def record_outbound_from_phone(
         return None
 
     conversation = _get_or_create_conversation(db, number, lead)
-    pending = _unconfirmed_match(db, lead, body, media_type) if when is None else None
+    pending = _unconfirmed_match(db, lead, body, media_type, when)
     if when is None or lead.last_outbound_at is None or when > lead.last_outbound_at:
         response_times.mark_outbound(lead, when)  # vendedor respondeu pelo celular
     funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"

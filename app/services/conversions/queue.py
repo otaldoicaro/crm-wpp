@@ -151,6 +151,8 @@ def schedule(delay_seconds: int = 60) -> None:
             from app.services import messaging
 
             messaging.expire_unconfirmed()  # "⏳ confirmando envio" sem confirmação há 3 min: avisa
+            if messaging.check_failed_sends():  # "não enviada" que saiu mesmo: vira enviada sozinha
+                logger.info("mensagens marcadas como não enviadas foram confirmadas no WhatsApp")
         except Exception:
             logger.exception("mensagens sem confirmação: falhou")
         schedule(INTERVAL_SECONDS)

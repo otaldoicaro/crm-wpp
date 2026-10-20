@@ -114,3 +114,58 @@ def expire_unconfirmed(minutes: int = 3) -> int:
         return len(rows)
     finally:
         db.close()
+
+
+def verify_sent(db, message) -> bool:
+    """Confere no Evolution se uma mensagem marcada "não enviada"/"sem confirmação" saiu mesmo.
+    Se saiu, marca como enviada (com o id do WhatsApp) e devolve True. Só texto."""
+    from app.models import Conversation, WhatsAppNumber
+
+    if message.wa_message_id or message.media_type or message.direction != "out":
+        return False
+    conversation = db.get(Conversation, message.conversation_id)
+    number = db.get(WhatsAppNumber, conversation.whatsapp_number_id) if conversation else None
+    if number is None or number.provider != "evolution":
+        return False
+    text = strip_failed(message.body)
+    message.delivery_checks = (message.delivery_checks or 0) + 1
+    try:
+        wa_id = evolution_client.find_sent_text(number.evolution_instance, text, message.created_at)
+    except evolution_client.EvolutionError:
+        return False
+    if not wa_id:
+        return False
+    from app.models import Message
+
+    if db.query(Message.id).filter(Message.wa_message_id == wa_id).first():
+        return False  # já entrou como outra mensagem (ex: pelo celular)
+    message.body, message.wa_message_id, message.ack = text, wa_id, max(message.ack or 0, 1)
+    return True
+
+
+def check_failed_sends() -> int:
+    """Em segundo plano: "não enviada"/"sem confirmação" de 1 a 30 min atrás é conferida no Evolution
+    (no máximo 2 vezes: ~1 min e ~5 min depois). Saiu? Vira enviada sozinha. Devolve quantas."""
+    import datetime
+
+    from app.db import SessionLocal
+    from app.models import Message
+
+    db = SessionLocal()
+    fixed = 0
+    try:
+        now = datetime.datetime.utcnow()
+        rows = db.query(Message).filter(
+            Message.direction == "out", Message.wa_message_id == "", Message.media_type == "",
+            Message.body.like("⚠️%"), Message.created_at <= now - datetime.timedelta(minutes=1),
+            Message.created_at >= now - datetime.timedelta(minutes=30), Message.delivery_checks < 2,
+        ).limit(30).all()
+        for m in rows:
+            if m.delivery_checks == 1 and m.created_at > now - datetime.timedelta(minutes=5):
+                continue  # 2ª conferência só depois de 5 min
+            if verify_sent(db, m):
+                fixed += 1
+        db.commit()
+    finally:
+        db.close()
+    return fixed

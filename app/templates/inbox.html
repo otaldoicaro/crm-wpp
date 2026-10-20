@@ -798,6 +798,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
         .catch(function () { return { ok: false, error: "sem conexão com o CRM" }; })
         .then(function (d) {
           if (!d.ok) alert("Não foi de novo: " + (d.error || "erro"));
+          else if (d.already) alert("✅ Ela já tinha chegado no WhatsApp do cliente — não foi mandada de novo.");
           if (window.__inboxRefreshNow) window.__inboxRefreshNow(true);
         });
       return;

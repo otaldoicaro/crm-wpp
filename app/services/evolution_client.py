@@ -267,6 +267,24 @@ def delete_for_everyone(instance: str, wa_id: str) -> None:
     _request("DELETE", f"/chat/deleteMessageForEveryone/{instance}", json={"id": wa_id, "fromMe": True, "remoteJid": jid})
 
 
+def find_sent_text(instance: str, text: str, around: "datetime.datetime", minutes: int = 15) -> str:
+    """Id de uma mensagem NOSSA com esse texto, mandada perto desse horário (o Evolution guarda
+    tudo o que o celular mandou). Vazio se não achou. Serve pra saber se uma "não enviada" saiu."""
+    import datetime as _dt
+
+    since = (around - _dt.timedelta(minutes=2)).isoformat() + "Z"
+    until = (around + _dt.timedelta(minutes=minutes)).isoformat() + "Z"
+    body = _request("POST", f"/chat/findMessages/{instance}", timeout=30, json={
+        "where": {"key": {"fromMe": True}, "messageTimestamp": {"gte": since, "lte": until}}, "page": 1, "offset": 200})
+    wanted = " ".join((text or "").split())
+    for rec in ((body or {}).get("messages") or {}).get("records") or []:
+        msg = rec.get("message") or {}
+        got = msg.get("conversation") or (msg.get("extendedTextMessage") or {}).get("text") or ""
+        if got and " ".join(got.split()) == wanted:
+            return (rec.get("key") or {}).get("id", "")
+    return ""
+
+
 def find_messages(instance: str, since_iso: str, until_iso: str, page: int = 1, per_page: int = 200) -> dict:
     """Mensagens que o Evolution guardou no banco dele nesse período (as mais novas primeiro):
     {"total", "pages", "currentPage", "records": [...]}. Usado pra recuperar o que o CRM não
