@@ -148,6 +148,14 @@ def schedule(delay_seconds: int = 60) -> None:
         except Exception:
             logger.exception("conversões: falhou")
         try:
+            from app.services import first_contact
+
+            hello = first_contact.run()  # 🤖 1ª mensagem pro lead do formulário que não chamou
+            if hello:
+                logger.info("mensagens automáticas de formulário: %s", hello)
+        except Exception:
+            logger.exception("mensagem automática do formulário: falhou")
+        try:
             from app.services import messaging
 
             messaging.expire_unconfirmed()  # "⏳ confirmando envio" sem confirmação há 3 min: avisa

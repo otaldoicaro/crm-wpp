@@ -72,21 +72,17 @@
   <div class="inbox-thread" id="threadPane" data-drop-label="Solte aqui pra enviar pro cliente">
     <div class="inbox-thread-head">
       <a href="/inbox" class="back-btn" aria-label="Voltar">←</a>
-      {{ m.avatar(selected_lead) }}
-      <div class="info">
-        <div class="name">{{ selected_lead.name or selected_lead.phone }}</div>
-        <span class="muted">{{ selected_lead.phone }} · atendente: {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "não atribuído" }}</span>
-        {% if selected_lead.is_group %}<div class="muted" style="font-size:.76rem">👥 Grupo de WhatsApp — não conta como lead</div>{% else %}
-        <form method="post" action="/leads/{{ selected_lead.id }}/tag" class="tag-form">
-          <label>Tipo
-            <select name="tag" onchange="this.form.submit()">
-              {% for key, label in tags %}<option value="{{ key }}" {{ "selected" if selected_lead.tag == key }}>{{ label }}</option>{% endfor %}
-            </select>
-          </label>
-        </form>
-        {{ m.tempo_atendimento(selected_lead, closed=selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost)) }}
-        {{ m.followup_tags(selected_lead) }}
-        {% if selected_lead.quoted_value and not (selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost)) %}<div class="muted quoted">💰 Último valor enviado: R$ {{ "{:,.2f}".format(selected_lead.quoted_value).replace(",", "X").replace(".", ",").replace("X", ".") }} ({{ selected_lead.quoted_at|hora("%d/%m %H:%M") }})</div>{% endif %}
+      {% set closed = selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost) %}
+      {# esquerda: quem é + etapa/valor + avisos que pedem ação #}
+      <div class="head-main">
+        <div class="head-who">
+          {{ m.avatar(selected_lead) }}
+          <div class="info">
+            <div class="name">{{ selected_lead.name or selected_lead.phone }}</div>
+            <span class="muted">{{ selected_lead.phone }} · {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "sem vendedor" }}</span>
+          </div>
+        </div>
+        {% if selected_lead.is_group %}<div class="muted" style="font-size:.76rem">👥 Grupo de WhatsApp — não conta como lead</div>{% endif %}
         {% if stages %}
         <form class="stage-bar" id="stageBar" data-lead="{{ selected_lead.id }}">
           <label>Etapa
@@ -100,78 +96,105 @@
           <span class="stage-status muted"></span>
         </form>
         {% endif %}
-        {% if deal_info and deal_info.recurring %}
-        <a class="recurring-badge" href="/leads/{{ selected_lead.id }}#negocios" title="Ver todos os negócios desse cliente">🔁 Cliente recorrente · {{ selected_lead.deal_number }}º negócio{% if deal_info.purchases %} · já comprou R$ {{ "{:,.0f}".format(deal_info.total).replace(",", ".") }} ({{ deal_info.purchases }} venda{{ "s" if deal_info.purchases > 1 }}){% endif %}</a>
+        {% if not selected_lead.is_group %}{% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_receipt_banner.html" %}{% include "_suggest_banner.html" %}{% include "_next_step.html" %}{% endwith %}{% endif %}
+      </div>
+
+      {# direita: resumo do lead em etiquetas + ações (o que é usado menos fica no "⋯ Mais") #}
+      <div class="head-summary">
+        <div class="head-chips">
+          {{ m.platform_badge(platform, platform_label) }}
+          {% if not selected_lead.is_group %}
+          <form method="post" action="/leads/{{ selected_lead.id }}/tag" class="tag-form">
+            <select name="tag" onchange="this.form.submit()" title="Tipo de contato">
+              {% for key, label in tags %}<option value="{{ key }}" {{ "selected" if selected_lead.tag == key }}>{{ label }}</option>{% endfor %}
+            </select>
+          </form>
+          {% if deal_info and deal_info.recurring %}
+          <a class="recurring-badge" href="/leads/{{ selected_lead.id }}#negocios" title="Ver todos os negócios desse cliente">🔁 {{ selected_lead.deal_number }}º negócio{% if deal_info.purchases %} · já comprou R$ {{ "{:,.0f}".format(deal_info.total).replace(",", ".") }}{% endif %}</a>
+          {% endif %}
+          {% endif %}
+        </div>
+        {% if not selected_lead.is_group %}
+        {{ m.tempo_atendimento(selected_lead, closed=closed) }}
+        {{ m.followup_tags(selected_lead) }}
+        {% if selected_lead.quoted_value and not closed %}<div class="muted quoted">💰 Último valor enviado: R$ {{ "{:,.2f}".format(selected_lead.quoted_value).replace(",", "X").replace(".", ",").replace("X", ".") }} ({{ selected_lead.quoted_at|hora("%d/%m %H:%M") }})</div>{% endif %}
         {% endif %}
-        {% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_receipt_banner.html" %}{% include "_suggest_banner.html" %}{% include "_next_step.html" %}{% endwith %}
+        {% if active_conversation %}
+        {% set active_number = active_conversation.whatsapp_number %}
+        <div class="via-number muted">📱 Enviando por <b>{{ active_number.label }}</b>{% if active_number.provider == "evolution" and active_number.connection_state != "open" %} <span class="via-down">desconectado</span>{% endif %}</div>
+        {% endif %}
         <div class="thread-actions">
-          {% if deal_info and selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost) %}
+          {% if can_settle %}
+          <button class="btn ghost small" type="button" title="O assunto acabou: não precisa responder" onclick="document.getElementById('settleDialog').showModal()">✓ Encerrar</button>
+          {% endif %}
+          {% if deal_info and closed %}
           <form method="post" action="/leads/{{ selected_lead.id }}/novo-negocio" onsubmit="return confirm('Abrir um novo negócio pra este cliente?\n\nO atual fica como está ({{ selected_lead.stage.name }}), e a conversa passa pro negócio novo, em Em atendimento.')">
             <button class="btn ghost small" type="submit" title="O cliente quer comprar de novo">+ Novo negócio</button>
           </form>
           {% endif %}
-          {% if can_settle %}
-          <button class="btn ghost small" type="button" title="O assunto acabou: não precisa responder" onclick="document.getElementById('settleDialog').showModal()">✓ Encerrar atendimento</button>
-          {% set open_deal = selected_lead.stage and not (selected_lead.stage.is_won or selected_lead.stage.is_lost) and not selected_lead.is_group %}
-          <dialog id="settleDialog" class="settle-dialog">
-            <form method="post" action="/leads/{{ selected_lead.id }}/encerrar" id="settleForm">
-              <h3 style="margin:0 0 6px">Encerrar atendimento</h3>
-              <p class="muted" style="margin:0 0 10px">A conversa sai do “aguardando resposta”. Se o cliente escrever de novo, volta a contar{% if open_deal %} (e, se estiver perdido, volta pra Novo){% endif %}.</p>
-              {% if open_deal %}
-              <label class="settle-opt"><input type="radio" name="resultado" value="perdido" {{ "checked" if selected_lead.stage and auto_stage(selected_lead.stage) }}> <span><b>Lead perdido</b> — não vai comprar agora</span></label>
-              <div class="settle-loss">{% with reason="Desistiu / só pesquisando" if "Desistiu / só pesquisando" in loss_reasons(tenant) else "", detail="", required=False, lead=selected_lead %}{% include "_loss_fields.html" %}{% endwith %}</div>
-              <label class="settle-opt"><input type="radio" name="resultado" value="outro"> <span><b>Não é venda</b> — fornecedor, empresa, engano… (marca como Outro)</span></label>
+          <details class="more-menu">
+            <summary class="btn ghost small">⋯ Mais</summary>
+            <div class="more-pop">
+              {% if not selected_lead.is_group %}<a href="/leads/{{ selected_lead.id }}?voltar=inbox">📋 Status do lead (ficha completa)</a>{% endif %}
+              {% if transfer_people %}
+              <form method="post" action="/leads/{{ selected_lead.id }}/transferir" class="transfer-form">
+                <select name="para" aria-label="Passar a conversa pra outro vendedor no CRM">
+                  <option value="">↪ Passar pra outro vendedor (no CRM)…</option>
+                  {% for t in transfer_people %}<option value="{{ t.user.id }}" data-number="{{ t.number.label if t.number else '' }}">{{ t.user.name }}{{ " (Admin)" if t.user.role == "admin" }}</option>{% endfor %}
+                </select>
+                <span class="transfer-confirm" hidden>
+                  <label class="transfer-switch" hidden><input type="checkbox" name="trocar_numero" value="1"> mandar as próximas mensagens pelo WhatsApp dele(a)</label>
+                  <button class="btn small" type="submit">Passar</button>
+                  <button class="btn ghost small" type="button" data-cancel>Cancelar</button>
+                </span>
+              </form>
               {% endif %}
-              <label class="settle-opt"><input type="radio" name="resultado" value="" {{ "checked" if not (open_deal and selected_lead.stage and auto_stage(selected_lead.stage)) }}> <span><b>Só encerrar</b> — o cliente agradeceu / o assunto acabou{% if selected_lead.stage %} (continua em {{ selected_lead.stage.name }}){% endif %}</span></label>
-              <div class="settle-actions"><span class="muted settle-error"></span><button type="button" class="btn ghost small" onclick="this.closest('dialog').close()">Cancelar</button><button class="btn small" type="submit">Encerrar</button></div>
-            </form>
-          </dialog>
-          <script>
-          (function () {
-            var form = document.getElementById("settleForm"), loss = form.querySelector(".settle-loss");
-            function sync() {
-              var lost = form.querySelector('input[name="resultado"]:checked');
-              if (loss) loss.hidden = !(lost && lost.value === "perdido");
-            }
-            form.addEventListener("change", sync); sync();
-            form.addEventListener("submit", function (e) {
-              var lost = form.querySelector('input[name="resultado"]:checked');
-              if (lost && lost.value === "perdido" && !form.loss_reason.value) { e.preventDefault(); form.querySelector(".settle-error").textContent = "Escolha o motivo da perda"; }
-            });
-          })();
-          </script>
-          {% endif %}
-          {% if transfer_people %}
-          <form method="post" action="/leads/{{ selected_lead.id }}/transferir" class="transfer-form">
-            <select name="para" aria-label="Passar a conversa pra outro vendedor no CRM">
-              <option value="">↪ Passar pra outro vendedor (no CRM)…</option>
-              {% for t in transfer_people %}<option value="{{ t.user.id }}" data-number="{{ t.number.label if t.number else '' }}">{{ t.user.name }}{{ " (Admin)" if t.user.role == "admin" }}</option>{% endfor %}
-            </select>
-            <span class="transfer-confirm" hidden>
-              <label class="transfer-switch" hidden><input type="checkbox" name="trocar_numero" value="1"> mandar as próximas mensagens pelo WhatsApp dele(a)</label>
-              <button class="btn small" type="submit">Passar</button>
-              <button class="btn ghost small" type="button" data-cancel>Cancelar</button>
-            </span>
-          </form>
-          {% endif %}
-        </div>{% endif %}
-        {% if active_conversation %}
-        {% set active_number = active_conversation.whatsapp_number %}
-        <div class="via-number">
-          <span class="muted">Enviando por: <b>{{ active_number.label }}</b>{% if active_number.provider == "evolution" and active_number.connection_state != "open" %} <span class="via-down">desconectado</span>{% endif %}</span>
-          {% if other_numbers %}
-          <form method="post" action="/leads/{{ selected_lead.id }}/switch-number">
-            <select name="whatsapp_number_id" onchange="if (this.value && confirm('Mandar as próximas mensagens pelo ' + this.options[this.selectedIndex].text + '?\n\nO cliente passa a receber de OUTRO número (no celular dele vira outra conversa). O histórico continua aqui no CRM.\n\nPra só passar a conversa pra outro vendedor, use “Passar pra outro vendedor” (o número continua o mesmo).')) this.form.submit(); else this.value='';">
-              <option value="">Trocar o WhatsApp de envio…</option>
-              {% for n in other_numbers %}<option value="{{ n.id }}">{{ n.label }}</option>{% endfor %}
-            </select>
-          </form>
-          {% endif %}
+              {% if active_conversation and other_numbers %}
+              <form method="post" action="/leads/{{ selected_lead.id }}/switch-number">
+                <select name="whatsapp_number_id" onchange="if (this.value && confirm('Mandar as próximas mensagens pelo ' + this.options[this.selectedIndex].text + '?\n\nO cliente passa a receber de OUTRO número (no celular dele vira outra conversa). O histórico continua aqui no CRM.\n\nPra só passar a conversa pra outro vendedor, use “Passar pra outro vendedor” (o número continua o mesmo).')) this.form.submit(); else this.value='';">
+                  <option value="">📱 Trocar o WhatsApp de envio…</option>
+                  {% for n in other_numbers %}<option value="{{ n.id }}">{{ n.label }}</option>{% endfor %}
+                </select>
+              </form>
+              {% endif %}
+            </div>
+          </details>
         </div>
+        {% if can_settle %}
+        {% set open_deal = selected_lead.stage and not closed and not selected_lead.is_group %}
+        <dialog id="settleDialog" class="settle-dialog">
+          <form method="post" action="/leads/{{ selected_lead.id }}/encerrar" id="settleForm">
+            <h3 style="margin:0 0 6px">Encerrar atendimento</h3>
+            <p class="muted" style="margin:0 0 10px">A conversa sai do “aguardando resposta”. Se o cliente escrever de novo, volta a contar{% if open_deal %} (e, se estiver perdido, volta pra Novo){% endif %}.</p>
+            {% if open_deal %}
+            <label class="settle-opt"><input type="radio" name="resultado" value="perdido" {{ "checked" if selected_lead.stage and auto_stage(selected_lead.stage) }}> <span><b>Lead perdido</b> — não vai comprar agora</span></label>
+            <div class="settle-loss">{% with reason="Desistiu / só pesquisando" if "Desistiu / só pesquisando" in loss_reasons(tenant) else "", detail="", required=False, lead=selected_lead %}{% include "_loss_fields.html" %}{% endwith %}</div>
+            <label class="settle-opt"><input type="radio" name="resultado" value="outro"> <span><b>Não é venda</b> — fornecedor, empresa, engano… (marca como Outro)</span></label>
+            {% endif %}
+            <label class="settle-opt"><input type="radio" name="resultado" value="" {{ "checked" if not (open_deal and selected_lead.stage and auto_stage(selected_lead.stage)) }}> <span><b>Só encerrar</b> — o cliente agradeceu / o assunto acabou{% if selected_lead.stage %} (continua em {{ selected_lead.stage.name }}){% endif %}</span></label>
+            <div class="settle-actions"><span class="muted settle-error"></span><button type="button" class="btn ghost small" onclick="this.closest('dialog').close()">Cancelar</button><button class="btn small" type="submit">Encerrar</button></div>
+          </form>
+        </dialog>
+        <script>
+        (function () {
+          var form = document.getElementById("settleForm"), loss = form.querySelector(".settle-loss");
+          function sync() {
+            var lost = form.querySelector('input[name="resultado"]:checked');
+            if (loss) loss.hidden = !(lost && lost.value === "perdido");
+          }
+          form.addEventListener("change", sync); sync();
+          form.addEventListener("submit", function (e) {
+            var lost = form.querySelector('input[name="resultado"]:checked');
+            if (lost && lost.value === "perdido" && !form.loss_reason.value) { e.preventDefault(); form.querySelector(".settle-error").textContent = "Escolha o motivo da perda"; }
+          });
+        })();
+        </script>
         {% endif %}
       </div>
-      {{ m.platform_badge(platform, platform_label) }}
-      {% if not selected_lead.is_group %}<a class="btn ghost small" href="/leads/{{ selected_lead.id }}?voltar=inbox">Atualizar status do lead</a>{% endif %}
+
+      {% if not selected_lead.is_group %}
+      <div class="head-comments">{% with lead=selected_lead, voltar="/inbox/" ~ selected_lead.id %}{% include "_lead_comments.html" %}{% endwith %}</div>
+      {% endif %}
     </div>
     {% if selected_lead.form_details %}
     <details class="inbox-form-details">

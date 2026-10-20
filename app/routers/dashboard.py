@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
-from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app.services import autostage, deals, evolution_client, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
+from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
+from app.services import autostage, comments, deals, evolution_client, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -413,6 +413,7 @@ def lead_detail(
             "wa_link": _wa_link(lead),
             "deal_info": None if lead.is_group else deals.summary(db, lead),
             "start_error": request.query_params.get("erro_envio", ""),
+            "comments": [] if lead.is_group else comments.thread(db, lead),
         },
     )
 
@@ -641,6 +642,7 @@ def deadlines_page(
         raise HTTPException(status_code=403)
     return templates.TemplateResponse(request, "prazos.html", {
         "tenant": tenant, "user": user, "active_nav": "pipeline", "stages": funnel._stages(db, tenant.id),
+        "hello_default": first_contact.DEFAULT_TEXT.replace("{empresa}", tenant.name),
     })
 
 
@@ -667,6 +669,11 @@ async def save_deadlines(
                 st.sla_hours = hours(f"sla_{st.id}")
         tenant.followup_hours = hours("followup_hours", 24) or 24
         tenant.require_next_step = form.get("require_next_step") == "1"
+        tenant.auto_hello_enabled = form.get("auto_hello_enabled") == "1"
+        tenant.auto_hello_minutes = max(1, min(60, hours("auto_hello_minutes", 3) or 3))
+        text = str(form.get("auto_hello_text", "")).replace("\r\n", "\n").strip()
+        default = first_contact.DEFAULT_TEXT.replace("{empresa}", tenant.name)
+        tenant.auto_hello_text = "" if text == default else text[:1500]  # igual ao padrão: segue o padrão
         db.commit()
 
     await run_in_threadpool(apply)
@@ -957,6 +964,7 @@ INBOX_AVISOS = [
     ("outro", "💡 Parece que não é venda"),
     ("comprovante", "💸 Comprovante pra confirmar"),
     ("sem_motivo", "⚠️ Perdido sem motivo"),
+    ("comentario", "💬 Comentário em aberto"),
 ]
 
 
@@ -973,6 +981,8 @@ def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
         "outro": and_(Lead.suggest_kind == "outro", Lead.tag != "outro"),
         "comprovante": and_(Lead.receipt_status == "pending", is_open),
         "sem_motivo": and_(Lead.stage_id.in_([st.id for st in stages if st.is_lost]), or_(Lead.loss_reason.is_(None), Lead.loss_reason == "")),
+        "comentario": Lead.id.in_(db.query(LeadComment.lead_id).filter(
+            LeadComment.tenant_id == tenant.id, LeadComment.parent_id.is_(None), LeadComment.resolved_at.is_(None))),
     }
     if aviso == "qualquer":
         return or_(*by_kind.values())
@@ -1190,6 +1200,7 @@ def _inbox_context(
             "deal_info": deals.summary(db, selected_lead) if selected_lead and not selected_lead.is_group else None,
             "can_settle": bool(selected_lead and not selected_lead.is_group and response_times.waiting_since(selected_lead)),
             "platform_label": PLATFORM_LABEL[resolve_platform(selected_lead.attribution)] if selected_lead else None,
+            "comments": comments.thread(db, selected_lead) if selected_lead and not selected_lead.is_group else [],
     }
 
 
@@ -2086,6 +2097,46 @@ def internal_note(
     return JSONResponse({"ok": True})
 
 
+@router.post("/leads/{lead_id}/comentarios")
+def add_comment(
+    lead_id: str,
+    body: str = Form(...),
+    parent_id: str = Form(""),
+    voltar: str = Form(""),
+    ajax: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """💬 Comentário da equipe no lead (ou resposta a um): só no CRM, não vai pro WhatsApp."""
+    lead = _visible_lead(db, tenant, user, lead_id)
+    if lead is None:
+        return JSONResponse({"ok": False, "error": "lead não encontrado"}, status_code=404)
+    comment = comments.add(db, lead, user, body, parent_id)
+    if ajax:
+        return JSONResponse({"ok": comment is not None, "error": "" if comment else "escreva o comentário"})
+    return RedirectResponse(url=(voltar if voltar.startswith("/") else f"/inbox/{lead_id}") + "#comentarios", status_code=302)
+
+
+@router.post("/leads/{lead_id}/comentarios/{comment_id}/feito")
+def comment_done(
+    lead_id: str,
+    comment_id: str,
+    feito: str = Form("1"),
+    voltar: str = Form(""),
+    ajax: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """✓ Marca o comentário como feito (ou reabre, com feito=0)."""
+    lead = _visible_lead(db, tenant, user, lead_id)
+    ok = lead is not None and comments.set_done(db, lead, comment_id, user, feito == "1")
+    if ajax:
+        return JSONResponse({"ok": ok})
+    return RedirectResponse(url=(voltar if voltar.startswith("/") else f"/inbox/{lead_id}") + "#comentarios", status_code=302)
+
+
 EDIT_WINDOW = datetime.timedelta(minutes=15)  # o WhatsApp só deixa editar até 15 min depois
 
 
@@ -2401,8 +2452,15 @@ def dashboard_view(
         leads_query = leads_query.filter(Lead.created_at >= range_from)
     if range_to:
         leads_query = leads_query.filter(Lead.created_at <= range_to)
-    all_period_leads = leads_query.options(*LEAD_CARD_LOAD).all()
+    # só Comercial e Tráfego mostram números dos leads: Clientes e Integrações não carregam os
+    # milhares de leads do período. E as conversas não vêm junto (era metade do tempo da tela):
+    # pra saber "tem conversa?" basta a lista de ids, numa consulta só
+    needs_leads = aba in ("comercial", "trafego")
+    all_period_leads = leads_query.options(
+        selectinload(Lead.attribution), joinedload(Lead.assigned_user), joinedload(Lead.stage)).all() if needs_leads else []
     leads = [lead for lead in all_period_leads if lead.assigned_user_id == seller] if seller else all_period_leads
+    with_chat = {lead_id for (lead_id,) in db.query(Conversation.lead_id).filter(Conversation.tenant_id == tenant.id).distinct()} \
+        if aba == "comercial" else set()
 
     last_24h = now - datetime.timedelta(hours=24)
 
@@ -2414,7 +2472,7 @@ def dashboard_view(
         return (
             lead.stage_id not in won_stage_ids
             and lead.stage_id not in lost_stage_ids
-            and not lead.conversations
+            and lead.id not in with_chat
             and lead.created_at < last_24h
         )
 
@@ -2464,6 +2522,8 @@ def dashboard_view(
         won = [lead for lead in mine if lead.stage_id in won_stage_ids]
         mine_open = [l for l in mine if l.stage_id not in won_stage_ids and l.stage_id not in lost_stage_ids]
         mine_rt = response_times.summary(mine)
+        mine_fu = [followup.state(l) for l in mine_open]  # uma vez por lead (antes eram duas)
+        mine_open_rt = response_times.summary(mine_open)
         fsum = funnel.summary(mine, stages)  # Lead > Qualificado > Negociando > Venda (etapa mais longe alcançada)
         return {
             "user": person,
@@ -2476,10 +2536,10 @@ def dashboard_view(
             "revenue": sum(lead.deal_value or 0 for lead in won),
             "median_first": mine_rt["median_first"],
             "within_15": mine_rt["within_15"],
-            "waiting": response_times.summary(mine_open)["never_answered"],
-            "idle": response_times.summary(mine_open)["idle"],
-            "followups": sum(1 for l in mine_open if followup.state(l)["followup"]),
-            "stale": sum(1 for l in mine_open if (followup.state(l)["stale"] or {}).get("late")),
+            "waiting": mine_open_rt["never_answered"],
+            "idle": mine_open_rt["idle"],
+            "followups": sum(1 for f in mine_fu if f["followup"]),
+            "stale": sum(1 for f in mine_fu if (f["stale"] or {}).get("late")),
         }
 
     # funil lado a lado por vendedor: só vendedores de fato (admin não entra); o vendedor
@@ -2622,6 +2682,7 @@ def dashboard_view(
             "capi_events": db.query(ConversionEvent).filter(ConversionEvent.tenant_id == tenant.id, ConversionEvent.platform == "meta")
             .order_by(ConversionEvent.created_at.desc()).limit(12).all() if aba == "integracoes" and is_admin else [],
             "capi_msg": request.query_params.get("capi", ""),
+            "with_chat": with_chat,
             "wa_numbers": db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
             .order_by(WhatsAppNumber.label).all() if aba == "integracoes" and is_admin else [],
         },

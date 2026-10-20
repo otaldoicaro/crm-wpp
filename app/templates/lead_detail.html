@@ -97,6 +97,12 @@
   </div>
 </div>
 
+{% if not lead.is_group %}
+<div class="card lead-comments-card" style="margin-top:16px;">
+  {% with voltar="/leads/" ~ lead.id %}{% include "_lead_comments.html" %}{% endwith %}
+</div>
+{% endif %}
+
 {% if lead.form_details %}
 <div class="card form-details-card" style="margin-top:16px;">
   <h3 style="margin-top:0">Formulário da LP / site</h3>

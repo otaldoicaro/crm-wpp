@@ -1,0 +1,81 @@
+{# 💬 comentários da equipe no lead (estilo Google Docs): só no CRM, nunca vão pro WhatsApp.
+   Precisa de: lead, comments (services/comments.thread), voltar (pra onde volta sem JavaScript) #}
+{% set open_items = comments|selectattr("comment.resolved_at", "none")|list %}
+{% set done_items = comments|rejectattr("comment.resolved_at", "none")|list %}
+<div class="comments-box" id="comentarios" data-lead="{{ lead.id }}">
+  <div class="comments-head">
+    <b>💬 Comentários da equipe</b>
+    {% if open_items %}<span class="cmt-count">{{ open_items|length }} em aberto</span>{% endif %}
+  </div>
+  {% macro one(item, voltar) %}
+  {% set c = item.comment %}
+  <div class="cmt {{ 'cmt-done' if c.resolved_at }}">
+    <div class="cmt-top">
+      <b>{{ c.author.name.split(" ")[0]|title if c.author else "—" }}</b>
+      <span class="muted">{{ c.created_at|hora("%d/%m %H:%M") }}</span>
+      <form method="post" action="/leads/{{ lead.id }}/comentarios/{{ c.id }}/feito" class="cmt-done-form">
+        <input type="hidden" name="feito" value="{{ '0' if c.resolved_at else '1' }}"><input type="hidden" name="voltar" value="{{ voltar }}">
+        <button type="submit" class="cmt-btn" title="{{ 'Reabrir o comentário' if c.resolved_at else 'Marcar como feito' }}">{{ "↺ Reabrir" if c.resolved_at else "✓ Feito" }}</button>
+      </form>
+    </div>
+    <div class="cmt-body">{{ c.body }}</div>
+    {% for r in item.replies %}
+    <div class="cmt-reply"><b>{{ r.author.name.split(" ")[0]|title if r.author else "—" }}</b> <span class="muted">{{ r.created_at|hora("%d/%m %H:%M") }}</span><div class="cmt-body">{{ r.body }}</div></div>
+    {% endfor %}
+    {% if c.resolved_at %}<div class="cmt-resolved muted">✓ feito por {{ c.resolved_by.name.split(" ")[0]|title if c.resolved_by else "—" }} em {{ c.resolved_at|hora("%d/%m %H:%M") }}</div>
+    {% else %}
+    <form method="post" action="/leads/{{ lead.id }}/comentarios" class="cmt-reply-form">
+      <input type="hidden" name="parent_id" value="{{ c.id }}"><input type="hidden" name="voltar" value="{{ voltar }}">
+      <input name="body" placeholder="Responder…" autocomplete="off" maxlength="2000" required>
+    </form>
+    {% endif %}
+  </div>
+  {% endmacro %}
+  <div class="comments-list">
+    {% for item in open_items %}{{ one(item, voltar) }}{% endfor %}
+    {% if done_items %}
+    <details class="cmt-done-list"><summary class="muted">✓ {{ done_items|length }} feito{{ "s" if done_items|length > 1 }}</summary>
+      {% for item in done_items %}{{ one(item, voltar) }}{% endfor %}
+    </details>
+    {% endif %}
+  </div>
+  <form method="post" action="/leads/{{ lead.id }}/comentarios" class="cmt-new">
+    <input type="hidden" name="voltar" value="{{ voltar }}">
+    <textarea name="body" rows="1" placeholder="Instrução pra equipe (não vai pro WhatsApp)…" maxlength="2000" required></textarea>
+    <button class="btn small" type="submit">Comentar</button>
+  </form>
+</div>
+<script>
+// envia sem recarregar a página: manda o formulário e troca só a caixa de comentários
+(function () {
+  var box = document.getElementById("comentarios");
+  if (!box || box.dataset.ready) return;
+  box.dataset.ready = "1";
+  box.addEventListener("submit", function (e) {
+    var form = e.target, data = new FormData(form);
+    e.preventDefault();
+    data.append("ajax", "1");
+    form.querySelectorAll("button, input, textarea").forEach(function (el) { el.disabled = true; });
+    fetch(form.action, { method: "POST", body: data })
+      .then(function (r) { return r.json(); })
+      .then(function () { return fetch(location.pathname + location.search, { credentials: "same-origin" }); })
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        var fresh = new DOMParser().parseFromString(html, "text/html").getElementById("comentarios");
+        if (!fresh) { location.reload(); return; }
+        box.querySelector(".comments-head").innerHTML = fresh.querySelector(".comments-head").innerHTML;
+        box.querySelector(".comments-list").innerHTML = fresh.querySelector(".comments-list").innerHTML;
+        var input = box.querySelector(".cmt-new textarea");
+        input.value = ""; input.disabled = false; box.querySelector(".cmt-new button").disabled = false;
+      })
+      .catch(function () { location.reload(); });
+  });
+  // Enter manda (Shift+Enter = nova linha), igual à resposta da conversa
+  box.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey && e.target.matches(".cmt-new textarea")) {
+      e.preventDefault();
+      if (e.target.value.trim()) e.target.form.requestSubmit();
+    }
+  });
+})();
+</script>

@@ -62,6 +62,12 @@ class Tenant(Base):
     # Qualificado/Negociando (bom pra venda mais longa, ex: serviços). Configurável em /prazos.
     followup_hours: Mapped[int] = mapped_column(Integer, default=24)
     require_next_step: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 🤖 1ª mensagem automática pro lead do formulário que não chamou no WhatsApp: sai do WhatsApp
+    # do vendedor do rodízio depois de X minutos, e o lead vai pra Qualificado (services/first_contact.py).
+    # Texto vazio = o padrão (first_contact.DEFAULT_TEXT). Configurável em /prazos.
+    auto_hello_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_hello_minutes: Mapped[int] = mapped_column(Integer, default=3)
+    auto_hello_text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     users: Mapped[list["User"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
@@ -224,6 +230,8 @@ class Lead(Base):
     seen_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # o que a pessoa preencheu nos formulários (LP/site), um bloco por envio, mais recente primeiro
     form_details: Mapped[str] = mapped_column(Text, default="")
+    # 🤖 quando a 1ª mensagem automática saiu (ou foi tentada): manda uma vez só por negócio
+    auto_hello_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # foto de perfil do WhatsApp (URL temporária do WhatsApp; renovada a cada 24h em /leads/{id}/avatar)
     avatar_url: Mapped[str] = mapped_column(String(1000), default="")
     avatar_checked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
@@ -490,3 +498,24 @@ class QuickReply(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     created_by: Mapped[Optional["User"]] = relationship()
+
+
+class LeadComment(Base):
+    """💬 Comentário da equipe num lead (estilo comentário do Google Docs): admin orienta o vendedor,
+    o vendedor responde e alguém marca como feito. Só no CRM, nunca vai pro WhatsApp.
+    parent_id vazio = comentário; preenchido = resposta a ele. O rastro fica no lead pra sempre."""
+
+    __tablename__ = "lead_comments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    lead_id: Mapped[str] = mapped_column(ForeignKey("leads.id"), index=True)
+    parent_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    author_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    body: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+    resolved_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    resolved_by_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    author: Mapped[Optional["User"]] = relationship(foreign_keys=[author_user_id])
+    resolved_by: Mapped[Optional["User"]] = relationship(foreign_keys=[resolved_by_user_id])

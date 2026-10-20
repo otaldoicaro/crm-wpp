@@ -169,7 +169,7 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
   flex-shrink: 0;
 }
 .inbox-thread { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); display: flex; flex-direction: column; overflow: hidden; }
-.inbox-thread-head { padding: 12px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+.inbox-thread-head { padding: 10px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: flex-start; gap: 14px; }
 .inbox-thread-head .info { flex: 1; min-width: 0; }
 .inbox-thread-head .name { font-weight: 800; font-size: 1rem; }
 .back-btn { display: none; color: var(--text); font-size: 1.3rem; text-decoration: none; padding: 4px 6px; margin-left: -6px; }
@@ -210,9 +210,7 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
   .inbox-layout:not(.with-detail) .inbox-thread { display: none; }
   .back-btn { display: block; }
   .inbox-thread-head { flex-wrap: wrap; row-gap: 8px; }
-  .inbox-thread-head .info { flex-basis: 100%; order: 1; }
-  .inbox-thread-head .platform-badge { order: 2; }
-  .inbox-thread-head .btn { order: 3; margin-left: auto; }
+  .inbox-thread-head .head-main, .inbox-thread-head .head-summary, .inbox-thread-head .head-comments { flex-basis: 100%; max-width: none; }
 }
 
 /* ---------- logo Nova Viseu (wordmark em texto, igual ao site) ---------- */
@@ -818,3 +816,55 @@ td.goal-bad { background: rgba(214,69,69,.08); }
 .waba-box code { font-size: .78rem; }
 
 .pending-send { color: #b07a00; font-weight: 700; }
+
+/* ---------- cabeçalho da conversa: esquerda (quem é + etapa), meio (resumo + ações), direita (💬) ---------- */
+.inbox-thread-head .head-main { flex: 1 1 300px; min-width: 0; }
+.head-who { display: flex; align-items: center; gap: 10px; }
+.head-who .info { min-width: 0; }
+.head-who .muted { font-size: .78rem; }
+.inbox-thread-head .head-summary { flex: 0 1 300px; min-width: 220px; display: flex; flex-direction: column; gap: 4px; font-size: .78rem; }
+.head-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.head-chips .tag-form { margin: 0; }
+.head-chips .recurring-badge { margin-top: 0; }
+.head-summary .rt-row { margin-top: 0; }
+.head-summary .via-number { margin-top: 0; font-size: .76rem; }
+.head-summary .thread-actions { margin-top: 2px; }
+.more-menu { position: relative; }
+.more-menu > summary { list-style: none; cursor: pointer; }
+.more-menu > summary::-webkit-details-marker { display: none; }
+.more-pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; width: 290px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+.more-pop form { margin: 0; }
+.more-pop select { width: 100%; max-width: none; font-size: .8rem; padding: 6px 8px; }
+.more-pop a { font-size: .82rem; font-weight: 600; }
+.inbox-thread-head .head-comments { flex: 0 1 300px; min-width: 240px; }
+
+/* 💬 comentários da equipe (estilo Google Docs) */
+.comments-box { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: .8rem; display: flex; flex-direction: column; gap: 6px; }
+.comments-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: .78rem; }
+.cmt-count { background: #fff4c2; color: #4a3b00; border-radius: 999px; padding: 1px 8px; font-weight: 700; font-size: .72rem; }
+.comments-list { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; }
+.cmt { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid #d9a400; border-radius: 8px; padding: 6px 8px; }
+.cmt.cmt-done { border-left-color: var(--line); opacity: .75; }
+.cmt-top { display: flex; align-items: center; gap: 6px; }
+.cmt-top .muted { font-size: .7rem; }
+.cmt-done-form { margin: 0 0 0 auto; }
+.cmt-btn { border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 6px; padding: 1px 7px; font-size: .7rem; cursor: pointer; }
+.cmt-btn:hover { background: var(--panel-2); }
+.cmt-body { white-space: pre-wrap; word-break: break-word; margin-top: 2px; }
+.cmt-reply { margin: 5px 0 0 8px; padding-left: 8px; border-left: 2px solid var(--line); }
+.cmt-reply .muted { font-size: .7rem; }
+.cmt-resolved { font-size: .7rem; margin-top: 4px; }
+.cmt-reply-form { margin: 5px 0 0; }
+.cmt-reply-form input { width: 100%; font-size: .76rem; padding: 4px 8px; border-radius: 6px; }
+.cmt-done-list summary { cursor: pointer; font-size: .74rem; }
+.cmt-done-list .cmt { margin-top: 6px; }
+.cmt-new { display: flex; gap: 6px; align-items: flex-end; margin: 0; }
+.cmt-new textarea { flex: 1; resize: vertical; min-height: 32px; font-size: .78rem; padding: 6px 8px; border-radius: 8px; }
+.more-menu > summary { display: inline-block; }
+.head-main .stage-bar select { width: auto; max-width: 190px; }
+.cmt-new textarea { width: auto; min-width: 0; }
+.cmt-new .btn { flex: 0 0 auto; }
+.lead-comments-card .comments-box { background: transparent; border: 0; padding: 0; }
+.lead-comments-card .comments-list { max-height: none; }
+.inbox-thread-head { position: relative; z-index: 5; }
