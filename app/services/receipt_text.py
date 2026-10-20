@@ -68,20 +68,34 @@ def ocr_available() -> bool:
     return shutil.which("tesseract") is not None
 
 
-def image_text(content: bytes) -> str:
+OCR_MODES = ("4", "6", "11")  # 3 jeitos de ler: colunas, bloco único e texto solto (print de app de banco)
+
+
+def image_text(content: bytes, mode: str = "4") -> str:
     """OCR em português. Vazio se o Tesseract não está instalado ou deu erro."""
     if not ocr_available():
         return ""
     with _OCR_SLOT:
         try:
             result = subprocess.run(
-                ["tesseract", "stdin", "stdout", "-l", "por", "--psm", "4"],
+                ["tesseract", "stdin", "stdout", "-l", "por", "--psm", mode, "--dpi", "300"],
                 input=content, capture_output=True, timeout=OCR_TIMEOUT, check=False,
             )
         except subprocess.TimeoutExpired:
             logger.warning("receipt_text: OCR demorou demais")
             return ""
     return result.stdout.decode("utf-8", "ignore")
+
+
+def extract_texts(content: bytes, mime: str) -> list:
+    """Todas as leituras do arquivo: PDF = o texto dele; imagem = uma por modo de OCR."""
+    mime = (mime or "").split(";")[0].strip().lower()
+    if mime == "application/pdf":
+        text = pdf_text(content)
+        return [text] if text.strip() else []
+    if mime in IMAGE_TYPES:
+        return [t for t in (image_text(content, m) for m in OCR_MODES) if t.strip()]
+    return []
 
 
 def extract_text(content: bytes, mime: str) -> str:
@@ -91,6 +105,67 @@ def extract_text(content: bytes, mime: str) -> str:
     if mime in IMAGE_TYPES:
         return image_text(content)
     return ""
+
+
+_KEY_LINE = re.compile(r"\b(valor|total|pago|transferid|enviad|pagamento|quantia)", re.IGNORECASE)
+
+
+def amount_candidates(texts: list, expected: list = ()) -> list:
+    """Todos os valores em reais achados nas leituras, do mais provável pro menos:
+    [{"value", "score", "reads", "key_line", "matches_quote"}].
+    Pontos: perto de "Valor/Total/Pago" (+3), com "R$" (+1), cada leitura que achou (+1),
+    bate com um preço que o time mandou na conversa (+5)."""
+    found: dict = {}
+    for i, text in enumerate(texts):
+        seen_here = set()
+        for line in (text or "").splitlines():
+            key_line = bool(_KEY_LINE.search(_plain(line)))
+            for m in _MONEY.finditer(line):
+                value = _money(m.group(1))
+                if not value or value > 1_000_000:
+                    continue
+                c = found.setdefault(value, {"value": value, "score": 0, "reads": set(), "key_line": False, "matches_quote": False})
+                c["score"] += (3 if key_line else 0) + 1
+                c["key_line"] = c["key_line"] or key_line
+                c["reads"].add(i)
+                seen_here.add(value)
+            for m in _VALUE_LINE.finditer(line):
+                value = _money(m.group(1))
+                if value and value not in seen_here:
+                    c = found.setdefault(value, {"value": value, "score": 0, "reads": set(), "key_line": True, "matches_quote": False})
+                    c["score"] += 3
+                    c["key_line"] = True
+                    c["reads"].add(i)
+    for c in found.values():
+        c["score"] += len(c["reads"])
+        c["matches_quote"] = any(abs(c["value"] - q) <= max(1.0, q * 0.02) for q in expected if q)
+        if c["matches_quote"]:
+            c["score"] += 5
+        c["reads"] = len(c["reads"])
+    return sorted(found.values(), key=lambda c: (c["score"], c["value"]), reverse=True)
+
+
+def classify_many(texts: list, expected: list = ()) -> dict:
+    """classify() juntando todas as leituras e conferindo com os preços enviados (expected).
+    confidence "alta" = dá pra marcar a venda sozinho: o valor bate com um preço que o time
+    mandou, ou está na linha de "Valor/Total" e apareceu igual em mais de uma leitura."""
+    texts = [t for t in texts if (t or "").strip()]
+    if not texts:
+        return {"is_payment_receipt": False, "amount": 0, "paid_at": "", "method": "", "payer": "", "payee": "",
+                "confidence": "baixa", "candidates": []}
+    base = max((classify(t) for t in texts), key=lambda r: (r["is_payment_receipt"], r["confidence"] == "alta"))
+    candidates = amount_candidates(texts, expected)
+    if candidates:
+        best = candidates[0]
+        base["amount"] = best["value"]
+        if base["is_payment_receipt"] or best["key_line"]:
+            base["is_payment_receipt"] = base["is_payment_receipt"] or (best["key_line"] and base["confidence"] != "baixa")
+        sure = best["matches_quote"] or (best["key_line"] and (best["reads"] >= 2 or len(texts) == 1))
+        if base["is_payment_receipt"]:
+            base["confidence"] = "alta" if sure else "media"
+    base["candidates"] = [c["value"] for c in candidates[:4]]
+    base["matches_quote"] = bool(candidates and candidates[0]["matches_quote"])
+    return base
 
 
 def classify(text: str) -> dict:

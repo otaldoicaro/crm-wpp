@@ -131,6 +131,27 @@ def worth_checking(lead) -> bool:
     return not (lead.is_group or stage is None or stage.is_won or stage.is_lost)
 
 
+def _quoted_prices(db, lead) -> list:
+    """Preços que o time mandou nessa conversa (últimos 60 dias) + o último registrado: o valor
+    do comprovante costuma bater com um deles."""
+    import datetime
+
+    from app.models import Conversation, Message
+    from app.services import followup
+
+    since = datetime.datetime.utcnow() - datetime.timedelta(days=60)
+    rows = (
+        db.query(Message.body)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .filter(Conversation.lead_id == lead.id, Message.direction == "out", Message.created_at >= since)
+        .all()
+    )
+    prices = [v for (body,) in rows for v in followup.find_prices(body or "")]
+    if lead.quoted_value:
+        prices.append(lead.quoted_value)
+    return prices
+
+
 def check_message(message_id: str) -> None:
     """Roda em segundo plano depois que a mídia chega (e é copiada)."""
     if not is_enabled():
@@ -157,17 +178,21 @@ def check_message(message_id: str) -> None:
         store = lead.tenant.name
         kind = segments.segment_for(lead.tenant)["sale_kind"]
         lead_id = lead.id
+        quoted = _quoted_prices(db, lead)
     finally:
         db.close()  # a análise pode levar alguns segundos: não segura conexão do banco
 
-    # 1º a leitura grátis (texto do PDF / OCR do print do banco); a IA só se estiver ligada e a
-    # leitura grátis não tiver certeza
+    # 1º a leitura grátis (texto do PDF / OCR do print do banco, 3 leituras), conferindo o valor com
+    # os preços que o time mandou na conversa; a IA paga só entra se estiver ligada e a leitura
+    # grátis não tiver certeza
     from app.services import receipt_text
 
-    text = receipt_text.extract_text(content, mime)
-    result = receipt_text.classify(text) if text.strip() else None
+    texts = receipt_text.extract_texts(content, mime)
+    result = receipt_text.classify_many(texts, quoted) if texts else None
     if (result is None or result.get("confidence") == "baixa") and ai_enabled():
         result = analyze(content, mime, store, kind)
+        if result:
+            result.setdefault("candidates", [result.get("amount") or 0])
     if not result or not result.get("is_payment_receipt") or result.get("confidence") == "baixa":
         return
     amount = float(result.get("amount") or 0)
@@ -182,11 +207,22 @@ def check_message(message_id: str) -> None:
         lead.receipt_message_id = message_id
         lead.receipt_amount = amount
         lead.receipt_info = describe(result)
-        lead.receipt_status = "pending"
+        lead.receipt_candidates = ",".join(str(v) for v in (result.get("candidates") or [])[:4])[:120]
         shown = f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        sure = result.get("confidence") == "alta"
+        if sure:
+            # 🤖 valor conferido (bate com o preço enviado, ou claro e igual nas leituras): fecha sozinho
+            from app.services import autostage
+
+            why = "comprovante de pagamento" + (" (valor bate com o preço enviado)" if result.get("matches_quote") else "")
+            if autostage.apply(db, lead, "ganho", amount=amount, why=why):
+                db.commit()
+                logger.info("receipts: venda de R$ %s marcada sozinha no lead %s", amount, lead_id)
+                return
+        lead.receipt_status = "pending"
         db.add(Message(
             conversation_id=conversation.id, direction="note",
-            body=f"💸 Parece um comprovante de pagamento de R$ {shown}. Confirme a venda no topo da conversa.",
+            body=f"💸 Parece um comprovante de pagamento de R$ {shown}. Confira o valor e confirme a venda no topo da conversa.",
         ))
         db.commit()
         logger.info("receipts: comprovante de R$ %s detectado no lead %s", amount, lead_id)

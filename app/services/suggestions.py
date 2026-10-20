@@ -186,6 +186,14 @@ def on_message(lead: Lead, body: str, outbound: bool) -> None:
     kind, phrase, reason = hit
     if not _applies(lead, kind):
         return
+    from app.services import autostage
+
+    db = autostage.lead_session(lead)
+    if kind in autostage.AUTO_KINDS and db is not None and autostage.apply(
+        db, lead, kind, reason=reason, why=("dados do veículo" if phrase == "dados do veículo" else f"frase “{phrase}”"),
+        outbound=outbound, body=body, phrase=phrase,
+    ):
+        return  # 🤖 aplicado sozinho (com nota na conversa)
     if lead.suggest_kind and PRIORITY.get(lead.suggest_kind, 0) > PRIORITY[kind] and _applies(lead, lead.suggest_kind):
         return
     excerpt = (body or "").strip().replace("\n", " ")

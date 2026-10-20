@@ -187,6 +187,7 @@ class Lead(Base):
     receipt_amount: Mapped[Optional[float]] = mapped_column(nullable=True)
     receipt_info: Mapped[str] = mapped_column(String(255), default="")  # "PIX · 07/10 14:32 · de Fulano"
     receipt_status: Mapped[str] = mapped_column(String(12), default="")  # pending | confirmed | dismissed
+    receipt_candidates: Mapped[str] = mapped_column(String(120), default="")  # outros valores lidos ("400.0,40.0")
     # sugestão de etapa lida nas mensagens (services/suggestions.py), o vendedor confirma ou descarta:
     # qualificado | ganho | perdido | outro; o trecho que disparou; motivo de perda sugerido
     suggest_kind: Mapped[str] = mapped_column(String(12), default="")

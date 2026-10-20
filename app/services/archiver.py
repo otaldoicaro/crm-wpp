@@ -57,6 +57,11 @@ def schedule(delay_seconds: int = 120) -> None:
     def run():
         db = SessionLocal()
         try:
+            from app.services import autostage
+
+            lost = autostage.lose_silent_leads(db)  # negociação parada há 7 dias -> Perdido
+            if lost:
+                logger.info("perdidos automáticos (sem mensagens há %s dias): %s", autostage.LOST_AFTER_DAYS, len(lost))
             n = archive_old_leads(db)
             if n:
                 logger.info("arquivamento automático: %s leads saíram do Pipeline", n)

@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import Conversation, Lead, Message, WhatsAppNumber
-from app.services import attribution, deals, followup, funnel, response_times, suggestions
+from app.services import attribution, autostage, deals, followup, funnel, response_times, suggestions
 from app.services.distribution import assign_lead
 from app.services.lead_match import find_lead_by_phone
 
@@ -85,7 +85,8 @@ def ingest_inbound(
             # cliente que já fechou (ganho/perdido) há mais de 7 dias voltou: negócio novo
             lead = deals.open_new(db, lead, by_customer=True)
         else:
-            funnel.reopen_lost(db, lead, body, when)  # perdido há pouco e voltou a falar: volta pra "Novo"
+            # fechado há pouco e mandou pedido novo (carro, peça, preço): volta pro atendimento
+            lead = autostage.reopen_if_request(db, lead, body, when)
         if not lead.conversations:
             # lead que nasceu do formulário da LP e agora chamou no WhatsApp: o mesmo lead
             if lead.attribution is None and referral:

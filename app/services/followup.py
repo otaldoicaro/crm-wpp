@@ -41,6 +41,20 @@ _PRICE = re.compile(
 )
 
 
+def find_prices(text: str) -> list:
+    """Todos os valores em reais citados na mensagem."""
+    values = []
+    for m in _PRICE.finditer(text or ""):
+        kind, raw = next((k, v) for k, v in m.groupdict().items() if v)
+        try:
+            value = float(raw.replace(",", ".")) * 1000 if kind == "mil" else float(raw.replace(".", "").replace(",", "."))
+        except ValueError:
+            continue
+        if value >= 1:
+            values.append(value)
+    return values
+
+
 def find_price(text: str) -> Optional[float]:
     """Maior valor em reais citado na mensagem (None se não tem preço)."""
     values = []

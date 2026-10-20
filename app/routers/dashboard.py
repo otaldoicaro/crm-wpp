@@ -874,6 +874,7 @@ INBOX_AVISOS = [
     ("perdido", "💡 Parece perdido"),
     ("outro", "💡 Parece que não é venda"),
     ("comprovante", "💸 Comprovante pra confirmar"),
+    ("sem_motivo", "⚠️ Perdido sem motivo"),
 ]
 
 
@@ -889,6 +890,7 @@ def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
         "perdido": and_(Lead.suggest_kind == "perdido", is_open),
         "outro": and_(Lead.suggest_kind == "outro", Lead.tag != "outro"),
         "comprovante": and_(Lead.receipt_status == "pending", is_open),
+        "sem_motivo": and_(Lead.stage_id.in_([st.id for st in stages if st.is_lost]), or_(Lead.loss_reason.is_(None), Lead.loss_reason == "")),
     }
     if aviso == "qualquer":
         return or_(*by_kind.values())
