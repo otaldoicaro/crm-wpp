@@ -2,6 +2,13 @@
 {% for msg in messages %}
   {% if msg.direction == "note" %}
   <div class="msg-note">{{ msg.body }} · {{ msg.created_at|hora("%d/%m %H:%M") }}</div>
+  {% elif msg.direction == "internal" %}
+  {% set author = msg.sender %}
+  <div class="msg-internal" id="msg-{{ msg.id }}">
+    <div class="msg-internal-head">🔒 {{ author.name if author else "Equipe" }}{% if author and author.role == "admin" %} (gestor){% endif %} · <span class="muted">nota interna, o cliente não vê</span></div>
+    <div>{{ msg.body|quebras }}</div>
+    <span class="msg-time">{{ msg.created_at|hora("%d/%m %H:%M") }}</span>
+  </div>
   {% else %}
   {% set deleted = msg.body.startswith("🚫") %}
   {% set failed = msg.body.startswith("⚠️") %}

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, KpiGoal, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app.services import deals, evolution_client, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
+from app.services import autostage, deals, evolution_client, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -1963,6 +1963,36 @@ def reply_lead(
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
 
+@router.post("/leads/{lead_id}/interno")
+def internal_note(
+    lead_id: str,
+    body: str = Form(...),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """🔒 Nota interna na conversa: admin orienta o vendedor (e o vendedor responde) sem nada
+    ir pro WhatsApp. Quem precisa ver recebe a conversa como "não lida"."""
+    lead = _visible_lead(db, tenant, user, lead_id)
+    text = body.strip()
+    if lead is None or not text:
+        return JSONResponse({"ok": False, "error": "conversa não encontrada"}, status_code=404)
+    conversation = lead.active_conversation
+    if conversation is None:
+        return JSONResponse({"ok": False, "error": "esse lead ainda não tem conversa"}, status_code=400)
+    db.add(Message(conversation_id=conversation.id, direction="internal", sender_user_id=user.id, body=text[:4000]))
+    # avisa: o vendedor do lead (se quem escreveu foi outra pessoa) e quem já participou da conversa interna
+    notify = {lead.assigned_user_id} if lead.assigned_user_id else set()
+    notify |= {uid for (uid,) in db.query(Message.sender_user_id).filter(
+        Message.conversation_id == conversation.id, Message.direction == "internal", Message.sender_user_id.isnot(None)
+    ).distinct()}
+    notify.discard(user.id)
+    db.commit()
+    for uid in notify:
+        inbox_state.mark_unread(db, uid, lead.id)
+    return JSONResponse({"ok": True})
+
+
 EDIT_WINDOW = datetime.timedelta(minutes=15)  # o WhatsApp só deixa editar até 15 min depois
 
 
@@ -2139,6 +2169,7 @@ def _record_outbound(
         funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
         followup.on_outbound_text(db, lead, body)  # mandou preço: vai pra "Negociando"
         suggestions.on_message(lead, body, outbound=True)  # 💡 "temos sim", "não temos", "pedido confirmado"...
+        autostage.refund_if_asked(db, lead, body, outbound=True)  # "estorno feito": a venda vira Perdido
     existing = db.query(Message).filter(Message.wa_message_id == wa_id).first() if wa_id else None
     message = existing or Message(conversation_id=conversation.id, direction="out", wa_message_id=wa_id)
     message.sender_user_id = user.id

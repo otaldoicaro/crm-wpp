@@ -365,6 +365,7 @@ class Message(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
+    sender: Mapped[Optional["User"]] = relationship(foreign_keys=[sender_user_id])
 
 
 class ConversionEvent(Base):

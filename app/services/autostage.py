@@ -147,6 +147,8 @@ def reopen_if_request(db, lead: Lead, body: str, when: Optional[datetime.datetim
     stage = lead.stage
     if lead.is_group or stage is None or not (stage.is_won or stage.is_lost):
         return lead
+    if refund_if_asked(db, lead, body, outbound=False):
+        return lead  # pediu o dinheiro de volta: não é pedido novo
     replied = stage.is_lost and lead.loss_reason == segments.NO_REPLY_REASON and not funnel.is_courtesy(body)
     if not replied and not looks_like_request(body, segments.key_for_lead(lead)):
         return lead
@@ -202,6 +204,50 @@ def lose_silent_leads(db, days: int = LOST_AFTER_DAYS, now: Optional[datetime.da
     if commit:
         db.commit()
     return done
+
+
+# ---------- venda devolvida ----------
+_REFUND_IN = (
+    "dinheiro de volta", "devolver o dinheiro", "devolver meu dinheiro", "devolver o valor", "devolucao do dinheiro",
+    "devolucao do valor", "devolucao do meu", "estorno", "estornar", "estorna", "reembolso", "reembolsar",
+    "cancelar a compra", "cancelar o pedido", "cancelar minha compra",
+)
+_REFUND_OUT = (
+    "estorno feito", "estorno realizado", "estornado", "estornamos", "reembolso feito", "reembolso realizado",
+    "reembolsado", "devolvemos o valor", "devolvi o valor", "valor devolvido", "dinheiro devolvido",
+    "fizemos a devolucao", "pix de devolucao", "compra cancelada", "pedido cancelado",
+)
+
+
+def is_refund(text: str, outbound: bool) -> bool:
+    plain = _plain(text)
+    if "troca" in plain and not outbound and not any(w in plain for w in ("dinheiro", "estorno", "reembolso")):
+        return False  # "não serviu, quero trocar": troca mantém a venda
+    return any(re.search(rf"(?<![a-z]){re.escape(p)}", plain) for p in (_REFUND_OUT if outbound else _REFUND_IN))
+
+
+def refund_if_asked(db, lead: Lead, body: str, outbound: bool) -> bool:
+    """Venda (Ganho) em que o cliente pediu o dinheiro de volta (ou o time confirmou o estorno):
+    vai pra Perdido com o motivo "Devolução / reembolso" e sai do faturamento."""
+    from app import segments
+    from app.services import funnel
+
+    stage = lead.stage
+    if lead.is_group or stage is None or not stage.is_won or not is_refund(body, outbound):
+        return False
+    if "perdido" in (lead.suggest_dismissed or "").split(","):
+        return False
+    lost = next((st for st in funnel._stages(db, lead.tenant_id) if st.is_lost), None)
+    if lost is None:
+        return False
+    value = f" de {_brl(lead.deal_value)}" if lead.deal_value else ""
+    funnel.set_stage(lead, lost)
+    lead.loss_reason = segments.REFUND_REASON
+    lead.loss_detail = f"automático: “{(body or '').strip()[:200]}”"
+    _note(db, lead, f"🤖 Etapa automática: {lost.name} ({segments.REFUND_REASON}) — a venda{value} saiu do faturamento"
+                    f": “{(body or '').strip()[:120]}”. Se foi só troca, volte pra Ganho.")
+    db.add(lead)
+    return True
 
 
 def lead_session(lead: Lead):

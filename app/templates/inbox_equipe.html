@@ -202,6 +202,12 @@
       .then(function (r) { if (!r.ok) throw 0; showList(seller); sig = ""; refreshLists(true); })
       .catch(function () { alert("Não foi possível transferir. Tente de novo."); sel.value = ""; });
   });
+  grid.addEventListener("change", function (e) {
+    if (!e.target.matches(".team-reply input[name=interno]")) return;
+    var form = e.target.closest(".team-reply"), on = e.target.checked;
+    form.classList.toggle("internal-mode", on);
+    form.querySelector("textarea").placeholder = on ? "🔒 Nota interna pro vendedor — o cliente NÃO vê" : "Responder... (/ = respostas rápidas)";
+  });
   grid.addEventListener("submit", function (e) {
     var form = e.target.closest(".team-reply"); if (!form) return;
     e.preventDefault();
@@ -209,7 +215,8 @@
     var input = form.querySelector("textarea"), status = c.querySelector(".team-reply-status");
     if (!state || !input.value.trim()) return;
     var btn = form.querySelector("button"); btn.disabled = true;
-    fetch("/leads/" + state.lead + "/reply", { method: "POST", body: new URLSearchParams({ body: input.value, ajax: "1" }) })
+    var internal = form.interno && form.interno.checked;  // 🔒 nota interna: não vai pro WhatsApp
+    fetch("/leads/" + state.lead + (internal ? "/interno" : "/reply"), { method: "POST", body: new URLSearchParams({ body: input.value, ajax: "1" }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         status.textContent = d.ok ? "" : "Não foi enviado: " + d.error;

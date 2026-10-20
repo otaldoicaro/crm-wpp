@@ -81,7 +81,9 @@ def ingest_inbound(
 
         assign_lead(db, lead, number)
     else:
-        if deals.should_reopen(lead, when):
+        if autostage.refund_if_asked(db, lead, body, outbound=False):
+            pass  # comprou e pediu o dinheiro de volta: a venda vira Perdido (não abre negócio novo)
+        elif deals.should_reopen(lead, when):
             # cliente que já fechou (ganho/perdido) há mais de 7 dias voltou: negócio novo
             lead = deals.open_new(db, lead, by_customer=True)
         else:
@@ -159,6 +161,7 @@ def record_outbound_from_phone(
     funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
     followup.on_outbound_text(db, lead, body)  # mandou preço pelo celular: vai pra "Negociando"
     suggestions.on_message(lead, body, outbound=True)  # 💡 "temos sim", "não temos", "pedido confirmado"...
+    autostage.refund_if_asked(db, lead, body, outbound=True)  # "estorno feito": a venda vira Perdido
     db.add(lead)
     message = Message(
         conversation_id=conversation.id,

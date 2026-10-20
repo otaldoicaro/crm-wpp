@@ -253,6 +253,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
       <div id="emojiPicker" hidden style="position:absolute; bottom:56px; left:14px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:8px; display:grid; grid-template-columns:repeat(8,1fr); gap:4px; z-index:10;"></div>
       <button type="button" class="btn ghost small" id="qrToggle" title="Respostas rápidas (ou digite /)" style="flex:0 0 auto;">⚡</button>
       <textarea name="body" id="replyInput" rows="1" placeholder="Responder... (/ = respostas rápidas · Shift+Enter = nova linha)" required autocomplete="off" data-quick-replies data-lead-name="{{ selected_lead.name or '' }}"></textarea>
+      <button type="button" class="btn ghost small" id="internalToggle" title="Nota interna: só a equipe vê (não vai pro WhatsApp do cliente)" style="flex:0 0 auto;">🔒</button>
       <button type="button" class="btn ghost small" id="micBtn" title="Gravar áudio (vai como mensagem de voz)" style="flex:0 0 auto;">🎤</button>
       <button class="btn" type="submit" id="sendBtn">Enviar</button>
     </form>
@@ -442,9 +443,35 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
       // só texto: envia sem recarregar a página (igual WhatsApp) — a caixa fica livre pra
       // mandar a próxima na hora; as mensagens saem na ordem em que foram digitadas
       var sendQueue = Promise.resolve();
+      // 🔒 nota interna: mesma caixa, outro destino (só o CRM, o cliente não recebe)
+      var internalBtn = document.getElementById("internalToggle");
+      function internalMode() { return replyForm.classList.contains("internal-mode"); }
+      internalBtn.addEventListener("click", function () {
+        var on = !internalMode();
+        replyForm.classList.toggle("internal-mode", on);
+        internalBtn.classList.toggle("pill-on", on);
+        input.placeholder = on ? "🔒 Nota interna pra equipe — o cliente NÃO vê" : input.dataset.placeholder;
+        sendBtn.textContent = on ? "Enviar nota" : "Enviar";
+        input.focus();
+      });
+      function sendInternal(text) {
+        var box = document.getElementById("inboxMessages");
+        var note = document.createElement("div");
+        note.className = "msg-internal msg-pending"; note.textContent = "🔒 " + text;
+        box.appendChild(note); box.scrollTop = box.scrollHeight;
+        var data = new FormData(); data.append("body", text);
+        fetch("/leads/{{ selected_lead.id }}/interno", { method: "POST", body: data })
+          .then(function (r) { return r.json(); })
+          .catch(function () { return { ok: false, error: "sem conexão com o CRM" }; })
+          .then(function (d) {
+            if (!d.ok) { note.classList.remove("msg-pending"); note.textContent = "⚠️ Nota não salva — " + (d.error || "erro"); return; }
+            if (window.__inboxRefreshNow) window.__inboxRefreshNow(true);
+          });
+      }
       function sendText() {
         var text = input.value.replace(/\s+$/, "");
         if (!text.trim()) return;
+        if (internalMode()) { input.value = ""; input.dispatchEvent(new Event("input")); input.focus(); sendInternal(text); return; }
         var quote = window.__replyQuote; if (window.__clearReplyQuote) window.__clearReplyQuote();
         input.value = ""; input.dispatchEvent(new Event("input")); input.focus();
         var box = document.getElementById("inboxMessages");
@@ -474,6 +501,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
       }
       replyForm.addEventListener("submit", function (e) {
         if (!staged.length) { e.preventDefault(); sendText(); return; }
+        if (internalMode()) { e.preventDefault(); alert("Nota interna não leva anexo. Desligue o 🔒 pra mandar o arquivo pro cliente."); return; }
         e.preventDefault();
         var files = staged.slice();
         var caption = input.value || "";

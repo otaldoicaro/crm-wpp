@@ -4,6 +4,7 @@ textos e o tipo de venda. As frases das sugestões de etapa ficam em services/su
 Cliente sem ramo (ou com um ramo que não existe mais) usa "autopecas"."""
 
 NO_REPLY_REASON = "Não responde mais"
+REFUND_REASON = "Devolução / reembolso"  # comprou e pediu o dinheiro de volta
 
 SEGMENTS = {
     "autopecas": {
@@ -18,6 +19,7 @@ SEGMENTS = {
             "Não informou o veículo",
             "Desistiu / só pesquisando",
             "Resolveu de outro jeito",
+            REFUND_REASON,
             NO_REPLY_REASON,
             "Outro",
         ],
@@ -38,6 +40,7 @@ SEGMENTS = {
             "Financiamento não aprovado",
             "Avaliação da troca não agradou",
             "Desistiu / só pesquisando",
+            REFUND_REASON,
             NO_REPLY_REASON,
             "Outro",
         ],

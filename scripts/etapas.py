@@ -98,6 +98,7 @@ def review(db, lead: Lead, since: datetime.datetime, read_receipts: bool) -> tup
                 if did:
                     why.append(did)
         else:
+            autostage.refund_if_asked(db, lead, body, outbound=True)
             quoted.extend(followup.find_prices(body))
             funnel.on_message(db, lead, outbound=True)
             followup.on_outbound_text(db, lead, body)
