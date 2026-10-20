@@ -786,9 +786,6 @@ td.goal-bad { background: rgba(214,69,69,.08); }
 .traffic-table .sticky-col { position: sticky; left: 0; background: var(--panel); z-index: 1; min-width: 260px; max-width: 360px; white-space: normal; }
 .traffic-table .group-head th { text-align: center; font-size: .7rem; color: var(--muted); border-bottom: 2px solid var(--line); }
 .traffic-table tbody[hidden] { display: none; }
-#trafficTable[data-group="mídia"] .g-página, #trafficTable[data-group="mídia"] .g-comercial,
-#trafficTable[data-group="página"] .g-mídia, #trafficTable[data-group="página"] .g-comercial,
-#trafficTable[data-group="comercial"] .g-mídia, #trafficTable[data-group="comercial"] .g-página { display: none; }
 
 .receipt-thumb img { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
 .receipt-candidates { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: .78rem; }

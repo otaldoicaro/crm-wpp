@@ -60,6 +60,10 @@ def _finish(node: dict) -> dict:
     node["ticket"] = node["revenue"] / won if won else None
     node["roas"] = node["revenue"] / spend if spend else None
     node["conversion"] = 100 * won / leads if leads else None
+    # taxas entre as etapas do funil
+    node["mql_rate"] = _ratio(node["qualified"], leads, 100)
+    node["opt_rate"] = _ratio(node["opportunities"], node["qualified"], 100)
+    node["win_rate"] = _ratio(won, node["opportunities"], 100)
     return node
 
 
@@ -185,46 +189,55 @@ def find(tree: dict, c: str, s: str = "", a: str = "") -> Optional[list]:
 # ---------- métricas do Dashboard de tráfego (ordem = ordem das colunas) ----------
 # (chave, nome, formato, melhor quando: "low" | "high" | None, grupo, explicação, como ajustar quando sai da meta)
 METRICS = [
-    ("spend", "Investido", "money0", None, "Mídia", "Quanto foi gasto no Meta no período.", ""),
-    ("impressions", "Impressões", "int", None, "Mídia", "Quantas vezes os anúncios apareceram.", ""),
-    ("cpm", "CPM", "money", "low", "Mídia", "Custo por mil impressões.",
-     "Público pequeno ou disputado, ou anúncio com baixa relevância: amplie o público, teste posicionamentos automáticos e criativos novos."),
-    ("frequency", "Frequência", "dec", "low", "Mídia", "Quantas vezes, em média, cada pessoa viu o anúncio por dia.",
-     "As mesmas pessoas estão vendo demais: troque o criativo ou amplie o público."),
-    ("link_clicks", "Cliques no link", "int", None, "Mídia", "Cliques que levaram pra página ou pro WhatsApp.", ""),
-    ("ctr", "CTR (link)", "pct", "high", "Mídia", "Cliques no link ÷ impressões.",
-     "O anúncio não chama atenção: teste outro gancho nos 3 primeiros segundos, outra imagem/vídeo e uma chamada mais clara."),
-    ("cpc", "CPC (link)", "money", "low", "Mídia", "Investido ÷ cliques no link.",
-     "Clique caro: geralmente CTR baixo ou CPM alto. Melhore o criativo ou o público."),
-    ("landing_page_views", "Visualizações da página", "int", None, "Página", "Quantas pessoas carregaram a página de destino.", ""),
-    ("load_rate", "Taxa de carregamento", "pct", "high", "Página", "Visualizações da página ÷ cliques no link.",
-     "Muita gente clica e desiste antes da página abrir: deixe a página mais leve e rápida no celular (imagens menores, menos scripts)."),
-    ("page_conv", "Conversão da página", "pct", "high", "Página", "Leads que chegaram no CRM ÷ visualizações da página.",
-     "A página não convence: revise a oferta, o título, o formulário (menos campos) e o botão de WhatsApp."),
-    ("meta_results", "Resultados (Meta)", "int", None, "Página", "Cadastros + conversas iniciadas que o Meta contou.", ""),
-    ("leads", "Leads", "int", None, "Comercial", "Leads de anúncio que chegaram no CRM.", ""),
-    ("cpl", "CPL", "money", "low", "Comercial", "Investido ÷ leads.",
+    # funil de vendas: investido -> leads -> MQL -> OPT -> venda (o que importa primeiro)
+    ("spend", "Investido", "money0", None, "funil", "Quanto foi gasto no Meta no período.", ""),
+    ("leads", "Leads", "int", None, "funil", "Leads de anúncio que chegaram no CRM.", ""),
+    ("cpl", "CPL", "money", "low", "funil", "Investido ÷ leads.",
      "Lead caro: veja qual etapa piorou (CPM, CTR, carregamento ou conversão da página) e ajuste ela."),
-    ("qualified", "Qualificados", "int", None, "Comercial", "Leads que chegaram em Qualificado (MQL).", ""),
-    ("cpmql", "CPMQL", "money", "low", "Comercial", "Investido ÷ qualificados.",
+    ("mql_rate", "Taxa MQL", "pct", "high", "funil", "Qualificados ÷ leads.",
+     "Muito curioso e pouco cliente: deixe claro no anúncio o que vende (peça, carro, região) e revise o público."),
+    ("qualified", "MQL", "int", None, "funil", "Leads que chegaram em Qualificado.", ""),
+    ("cpmql", "CPMQL", "money", "low", "funil", "Investido ÷ qualificados.",
      "Muito lead desqualificado: ajuste o público e deixe claro no anúncio o que vende (peça, carro, região), pra filtrar curioso."),
-    ("opportunities", "OPT", "int", None, "Comercial", "Leads que receberam preço (chegaram em Negociando).", ""),
-    ("cpo", "CPO", "money", "low", "Comercial", "Investido ÷ oportunidades.",
+    ("opt_rate", "Taxa OPT", "pct", "high", "funil", "Oportunidades ÷ qualificados (quantos MQL receberam preço).",
+     "MQL que não recebe preço: veja o tempo de resposta e se o time está cotando rápido (estoque, foto da peça)."),
+    ("opportunities", "OPT", "int", None, "funil", "Leads que receberam preço (chegaram em Negociando).", ""),
+    ("cpo", "CPO", "money", "low", "funil", "Investido ÷ oportunidades.",
      "Poucos leads chegam a receber preço: veja o tempo de resposta e se o time está pedindo carro/peça logo no início."),
-    ("won", "Vendas", "int", None, "Comercial", "Leads que viraram venda.", ""),
-    ("cac", "CAC", "money", "low", "Comercial", "Investido ÷ vendas.",
-     "Venda cara: veja se o problema está no tráfego (CPL/CPMQL) ou no fechamento (CPO, taxa de venda das oportunidades)."),
-    ("conversion", "Conversão em venda", "pct", "high", "Comercial", "Vendas ÷ leads.",
+    ("win_rate", "Taxa de ganho", "pct", "high", "funil", "Vendas ÷ oportunidades (quantos que receberam preço compraram).",
+     "Recebem preço e não compram: revise preço/condições, follow-up e os motivos de perda no Dashboard Comercial."),
+    ("won", "Vendas", "int", None, "funil", "Leads que viraram venda.", ""),
+    ("cac", "CAC", "money", "low", "funil", "Investido ÷ vendas.",
+     "Venda cara: veja se o problema está no tráfego (CPL/CPMQL) ou no fechamento (Taxa OPT, Taxa de ganho)."),
+    ("conversion", "Conversão em venda", "pct", "high", "funil", "Vendas ÷ leads.",
      "Poucos leads viram venda: revise atendimento, follow-up e motivos de perda no Dashboard Comercial."),
-    ("revenue", "Faturamento", "money0", None, "Comercial", "Soma das vendas.", ""),
-    ("ticket", "Ticket médio", "money", "high", "Comercial", "Faturamento ÷ vendas.",
+    ("revenue", "Faturamento", "money0", None, "funil", "Soma das vendas.", ""),
+    ("ticket", "Ticket médio", "money", "high", "funil", "Faturamento ÷ vendas.",
      "Ticket baixo: ofereça itens complementares (kit, instalação) e destaque peças de maior valor nos anúncios."),
-    ("roas", "ROAS", "x", "high", "Comercial", "Faturamento ÷ investido (2,0x = cada R$ 1 virou R$ 2).",
+    ("roas", "ROAS", "x", "high", "funil", "Faturamento ÷ investido (2,0x = cada R$ 1 virou R$ 2).",
      "Retorno baixo: corte as campanhas/anúncios com pior CAC e coloque a verba nos que vendem."),
+    # mídia (Meta)
+    ("impressions", "Impressões", "int", None, "midia", "Quantas vezes os anúncios apareceram.", ""),
+    ("cpm", "CPM", "money", "low", "midia", "Custo por mil impressões.",
+     "Público pequeno ou disputado, ou anúncio com baixa relevância: amplie o público, teste posicionamentos automáticos e criativos novos."),
+    ("frequency", "Frequência", "dec", "low", "midia", "Quantas vezes, em média, cada pessoa viu o anúncio por dia.",
+     "As mesmas pessoas estão vendo demais: troque o criativo ou amplie o público."),
+    ("link_clicks", "Cliques no link", "int", None, "midia", "Cliques que levaram pra página ou pro WhatsApp.", ""),
+    ("ctr", "CTR (link)", "pct", "high", "midia", "Cliques no link ÷ impressões.",
+     "O anúncio não chama atenção: teste outro gancho nos 3 primeiros segundos, outra imagem/vídeo e uma chamada mais clara."),
+    ("cpc", "CPC (link)", "money", "low", "midia", "Investido ÷ cliques no link.",
+     "Clique caro: geralmente CTR baixo ou CPM alto. Melhore o criativo ou o público."),
+    # página de destino
+    ("landing_page_views", "Visualizações da página", "int", None, "pagina", "Quantas pessoas carregaram a página de destino.", ""),
+    ("load_rate", "Taxa de carregamento", "pct", "high", "pagina", "Visualizações da página ÷ cliques no link.",
+     "Muita gente clica e desiste antes da página abrir: deixe a página mais leve e rápida no celular (imagens menores, menos scripts)."),
+    ("page_conv", "Conversão da página", "pct", "high", "pagina", "Leads que chegaram no CRM ÷ visualizações da página.",
+     "A página não convence: revise a oferta, o título, o formulário (menos campos) e o botão de WhatsApp."),
+    ("meta_results", "Resultados (Meta)", "int", None, "pagina", "Cadastros + conversas iniciadas que o Meta contou.", ""),
 ]
 METRIC = {m[0]: m for m in METRICS}
 GOAL_METRICS = [m for m in METRICS if m[3]]  # as que têm "melhor quando" podem ter meta
-METRIC_GROUPS = ["Mídia", "Página", "Comercial"]
+METRIC_GROUPS = [("funil", "🤝 Funil de vendas"), ("midia", "📣 Mídia (Meta)"), ("pagina", "🌐 Página de destino")]
 
 
 def goal_status(goals: dict, key: str, value) -> str:

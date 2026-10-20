@@ -92,15 +92,27 @@ def detect_accounts(db, tenant: Tenant) -> list:
     return accounts
 
 
+CHUNK_DAYS = 10  # 90 dias de uma vez, por anúncio e por dia, passa do limite do Meta ("reduce the amount of data")
+
+
 def fetch_insights(account_id: str, since: datetime.date, until: datetime.date) -> list:
-    """Uma linha por anúncio por dia (só dias com gasto ou impressão)."""
+    """Uma linha por anúncio por dia, buscando de 10 em 10 dias."""
+    rows, start = [], since
+    while start <= until:
+        end = min(until, start + datetime.timedelta(days=CHUNK_DAYS - 1))
+        rows.extend(_fetch_range(account_id, start, end))
+        start = end + datetime.timedelta(days=1)
+    return rows
+
+
+def _fetch_range(account_id: str, since: datetime.date, until: datetime.date) -> list:
     url = f"{GRAPH}/act_{account_id}/insights"
     params = {
         "level": "ad",
         "fields": INSIGHT_FIELDS,
         "time_increment": 1,
         "time_range": json.dumps({"since": since.isoformat(), "until": until.isoformat()}),
-        "limit": 500,
+        "limit": 200,
     }
     rows = []
     while url:

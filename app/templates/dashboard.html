@@ -258,7 +258,7 @@
   {%- for key, label, kind, better, group, help, tip in METRICS %}
   {% set v = n[key] if n[key] is defined else none %}
   {% set st = goal_status(goals, key, v) %}
-  <td class="num g-{{ group|lower }} {{ 'goal-' ~ st if st }}" data-k="{{ key }}" data-v="{{ v if v is not none else '' }}">{{ fmt_metric(key, v) if v is not none and (v or kind not in ("int", "money0") or n.spend) else "—" }}</td>
+  <td class="num g-{{ group }} {{ 'goal-' ~ st if st }}" data-k="{{ key }}" data-v="{{ v if v is not none else '' }}">{{ fmt_metric(key, v) if v is not none and (v or kind not in ("int", "money0") or n.spend) else "—" }}</td>
   {%- endfor %}
 {%- endmacro %}
 <div class="section-title" id="trafego"><h3 style="margin:0">Tráfego pago x comercial</h3></div>
@@ -269,9 +269,9 @@
   <p class="muted" style="margin-top:0">O investimento ainda não chegou do Meta. Ele é buscado sozinho a cada 3h (na 1ª vez, os últimos 90 dias). Enquanto isso, a tabela mostra leads e vendas de cada campanha.</p>
   {% endif %}
   {# ---- todos os KPIs do período, em 3 grupos; com meta: verde dentro / vermelho fora + como ajustar ---- #}
-  {% for group in METRIC_GROUPS %}
+  {% for group, group_label in METRIC_GROUPS %}
   <div class="kpi-group">
-    <div class="kpi-group-title">{{ {"Mídia": "📣 Mídia (Meta)", "Página": "🌐 Página de destino", "Comercial": "🤝 Comercial (CRM)"}[group] }}</div>
+    <div class="kpi-group-title">{{ group_label }}</div>
     <div class="traffic-kpis">
       {% for key, label, kind, better, g, help, tip in METRICS if g == group %}
       {% set v = t[key] %}
@@ -287,7 +287,7 @@
     </div>
   </div>
   {% endfor %}
-  <p class="muted traffic-note">Passe o mouse num número pra ver a conta. Mídia e página vêm do Meta (atualizado a cada 3h); leads, qualificados, OPT e vendas vêm do CRM. Conversão da página = leads que chegaram no CRM ÷ visualizações da página (campanha de clique pro WhatsApp não tem página: aparece “—”). Frequência = média por dia.{% if seller %} <b>Atenção:</b> com vendedor filtrado, leads e vendas são só dele, mas o investimento é o da campanha inteira.{% endif %}</p>
+  <p class="muted traffic-note">Passe o mouse num número pra ver a conta. Mídia e página vêm do Meta (atualizado a cada 3h); leads, MQL, OPT e vendas vêm do CRM. Taxa MQL = MQL ÷ leads · Taxa OPT = OPT ÷ MQL · Taxa de ganho = vendas ÷ OPT. Conversão da página = leads que chegaram no CRM ÷ visualizações da página (campanha de clique pro WhatsApp não tem página: aparece “—”). Frequência = média por dia.{% if seller %} <b>Atenção:</b> com vendedor filtrado, leads e vendas são só dele, mas o investimento é o da campanha inteira.{% endif %}</p>
 
   {# ---- 🎯 metas ---- #}
   <details class="kpi-goals" id="metas" {{ "open" if request.query_params.get("salvo") and request.url.fragment == "metas" }}>
@@ -321,15 +321,15 @@
     <button type="button" class="btn ghost small" id="trafficDir" data-dir="desc" title="Inverter a ordem">⬇ Maior primeiro</button>
     <span class="tipo-chips traffic-groups">
       <button type="button" class="pill pill-on" data-group="">Tudo</button>
-      {% for g in METRIC_GROUPS %}<button type="button" class="pill" data-group="{{ g|lower }}">{{ g }}</button>{% endfor %}
+      {% for g, glabel in METRIC_GROUPS %}<button type="button" class="pill" data-group="{{ g }}">{{ glabel }}</button>{% endfor %}
     </span>
   </div>
 
   <div class="traffic-scroll">
   <table class="table-simple traffic-table" id="trafficTable">
     <thead>
-      <tr class="group-head"><th></th>{% for g in METRIC_GROUPS %}<th colspan="{{ METRICS|selectattr(4, 'equalto', g)|list|length }}" class="g-{{ g|lower }}">{{ g }}</th>{% endfor %}</tr>
-      <tr><th class="sticky-col">Campanha</th>{% for key, label, kind, better, group, help, tip in METRICS %}<th class="num g-{{ group|lower }}" title="{{ help }}">{{ label }}</th>{% endfor %}</tr>
+      <tr class="group-head"><th class="sticky-col"></th>{% for g, glabel in METRIC_GROUPS %}<th colspan="{{ METRICS|selectattr(4, 'equalto', g)|list|length }}" class="g-{{ g }}">{{ glabel }}</th>{% endfor %}</tr>
+      <tr><th class="sticky-col">Campanha</th>{% for key, label, kind, better, group, help, tip in METRICS %}<th class="num g-{{ group }}" title="{{ help }}">{{ label }}</th>{% endfor %}</tr>
     </thead>
     {% for c in traffic.campaigns %}
     <tbody class="traffic-camp">
@@ -443,7 +443,11 @@
   document.querySelectorAll(".traffic-groups .pill").forEach(function (chip) {
     chip.addEventListener("click", function () {
       document.querySelectorAll(".traffic-groups .pill").forEach(function (c) { c.classList.toggle("pill-on", c === chip); });
-      table.dataset.group = chip.dataset.group;
+      var g = chip.dataset.group;
+      table.querySelectorAll("[class*='g-']").forEach(function (cell) {
+        var mine = (cell.className.match(/\bg-(\w+)/) || [])[1];
+        if (mine) cell.style.display = !g || mine === g ? "" : "none";
+      });
     });
   });
 })();
