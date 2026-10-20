@@ -97,7 +97,7 @@ def send_pending() -> dict:
                     or not reached or (kind == "won" and not lead.deal_value)):
                 ev.status, ev.error = "skipped", "etapa desfeita, sem valor, ou pixel do cliente mudou"
                 continue
-            event = meta_capi.build_event(lead, kind, ev.event_id, int(ev.created_at.timestamp()))
+            event = meta_capi.build_event(lead, kind, ev.event_id, int(ev.created_at.timestamp()), tenant.meta_waba_id)
             result = meta_capi.send(tenant, [event])
             ev.attempts = (ev.attempts or 0) + 1
             ev.payload_json = json.dumps({"kind": kind, "event": event})

@@ -716,6 +716,7 @@ def save_meta_events(
     pixel: str = Form(""),
     token: str = Form(""),
     teste: str = Form(""),
+    waba: str = Form(""),
     ligado: str = Form(""),
     acao: str = Form("salvar"),
     db: Session = Depends(get_db),
@@ -742,6 +743,10 @@ def save_meta_events(
         tenant.meta_capi_token = token.strip()
         tenant.meta_capi_checked_at = None
     tenant.meta_capi_test_code = teste.strip()[:40]
+    new_waba = re.sub(r"\D", "", waba)
+    if new_waba != (tenant.meta_waba_id or ""):
+        tenant.meta_capi_checked_at = None
+    tenant.meta_waba_id = new_waba
     ok, msg = meta_capi.verify_pixel(tenant)
     tenant.meta_capi_checked_at = datetime.datetime.utcnow() if ok else None
     tenant.meta_capi_enabled = bool(ligado) and ok

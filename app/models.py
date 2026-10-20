@@ -54,6 +54,9 @@ class Tenant(Base):
     meta_capi_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     meta_capi_test_code: Mapped[str] = mapped_column(String(40), default="")  # modo teste (Gerenciador de Eventos)
     meta_capi_checked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    # conta do WhatsApp no Meta (WABA): com ela, lead de clique pro WhatsApp vai como "business_messaging"
+    # (o formato que deixa otimizar a campanha de mensagem pela venda); conferida pelo conjunto de dados
+    meta_waba_id: Mapped[str] = mapped_column(String(40), default="")
     # follow-up: depois de quantas horas sem o cliente responder a nossa última mensagem o lead
     # aparece como "📞 follow-up". E se o time precisa agendar o próximo contato dos leads em
     # Qualificado/Negociando (bom pra venda mais longa, ex: serviços). Configurável em /prazos.

@@ -365,6 +365,7 @@
     <form method="post" action="/dashboard/meta-eventos" class="capi-form">
       <label>ID do conjunto de dados (pixel) <input name="pixel" value="{{ tenant.meta_pixel_id }}" inputmode="numeric" placeholder="ex: 1134419885925968"></label>
       <label>Token de acesso <input name="token" type="password" autocomplete="off" placeholder="{{ 'já salvo (deixe em branco pra manter)' if tenant.meta_capi_token else 'gerado nesse pixel no Gerenciador de Eventos' }}"></label>
+      <label>ID da conta do WhatsApp — WABA (opcional) <input name="waba" value="{{ tenant.meta_waba_id }}" inputmode="numeric" placeholder="Configurações do negócio > Contas > Contas do WhatsApp"></label>
       <label>Código de teste (opcional) <input name="teste" value="{{ tenant.meta_capi_test_code }}" placeholder="ex: TEST12345 — apague pra valer de verdade"></label>
       <label class="capi-on"><input type="checkbox" name="ligado" value="1" {{ "checked" if tenant.meta_capi_enabled }}> Enviar eventos</label>
       <div><button class="btn small" type="submit" name="acao" value="salvar">Salvar e conferir o pixel</button>

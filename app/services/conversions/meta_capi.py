@@ -77,13 +77,42 @@ def verify_pixel(tenant) -> tuple:
         return False, "Não consegui falar com o Meta pra testar o token. Tente de novo."
     if not resp.ok:
         return False, "O token não tem acesso a esse pixel: gere o token dentro desse conjunto de dados no Gerenciador de Eventos."
-    return True, f"Pixel “{body.get('name', pixel)}” conferido: é da conta de anúncio {', '.join(found_in)} deste cliente."
+    msg = f"Pixel “{body.get('name', pixel)}” conferido: é da conta de anúncio {', '.join(found_in)} deste cliente."
+    waba = (tenant.meta_waba_id or "").strip()
+    if waba:
+        # a conta do WhatsApp tem que ser a dona desse mesmo conjunto de dados
+        try:
+            resp = requests.get(f"{GRAPH}/{waba}/dataset", params={"access_token": tenant.meta_capi_token}, timeout=20)
+            data = resp.json()
+        except (requests.RequestException, ValueError):
+            return False, msg + " Mas não consegui conferir a conta do WhatsApp (WABA) agora."
+        ids = {str(d.get("id")) for d in (data.get("data") or [])} | {str(data.get("id", ""))}
+        if not resp.ok or pixel not in ids:
+            return False, (msg + f" Mas a conta do WhatsApp {waba} não é dona desse conjunto de dados "
+                           "(ou o token não tem a permissão whatsapp_business_manage_events): tire o WABA pra mandar só pelo pixel.")
+        msg += f" Conta do WhatsApp {waba} ligada a ele: leads de clique pro WhatsApp vão como conversa de WhatsApp (dá pra otimizar a campanha pela venda)."
+    return True, msg
 
 
-def build_event(lead, kind: str, event_id: str, event_time: int) -> dict:
+def build_event(lead, kind: str, event_id: str, event_time: int, waba_id: str = "") -> dict:
     """Evento com os dados do lead (telefone/e-mail/nome criptografados) e, se veio pelo site,
-    os identificadores do clique (fbc/fbp)."""
+    os identificadores do clique (fbc/fbp). Lead de clique pro WhatsApp + conta do WhatsApp (WABA)
+    configurada: vai como "business_messaging" com o ctwa_clid (o formato de otimização do Meta)."""
     att = lead.attribution
+    if waba_id and att and att.ctwa_clid:
+        custom = {"currency": "BRL"}
+        value = lead.deal_value if kind == "won" else lead.quoted_value
+        if value:
+            custom["value"] = round(float(value), 2)
+        return {
+            "event_name": EVENT_FOR_KIND[kind],
+            "event_time": event_time,
+            "event_id": event_id,
+            "action_source": "business_messaging",
+            "messaging_channel": "whatsapp",
+            "user_data": {"whatsapp_business_account_id": waba_id, "ctwa_clid": att.ctwa_clid},
+            "custom_data": custom,
+        }
     user = {"country": [_sha256("br")], "external_id": [_sha256(lead.contact_id or lead.id)]}
     phone = _phone_e164(lead.phone)
     if phone:
