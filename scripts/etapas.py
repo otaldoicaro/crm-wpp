@@ -53,7 +53,7 @@ def _check_receipt(db, lead: Lead, message: Message, quoted: list) -> str:
     content, mime = media_store.load(message.media_stored_key) if message.media_stored_key else (None, None)
     if not content:
         return ""
-    result = receipt_text.classify_many(receipt_text.extract_texts(content, mime), quoted)
+    result = receipt_text.read_receipt(content, mime, quoted)
     amount = float(result.get("amount") or 0)
     if not result.get("is_payment_receipt") or result.get("confidence") == "baixa" or amount <= 0:
         return ""

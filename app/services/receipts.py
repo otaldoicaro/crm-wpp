@@ -187,8 +187,9 @@ def check_message(message_id: str) -> None:
     # grátis não tiver certeza
     from app.services import receipt_text
 
-    texts = receipt_text.extract_texts(content, mime)
-    result = receipt_text.classify_many(texts, quoted) if texts else None
+    result = receipt_text.read_receipt(content, mime, quoted)
+    if not result.get("candidates") and not result.get("is_payment_receipt"):
+        result = None
     if (result is None or result.get("confidence") == "baixa") and ai_enabled():
         result = analyze(content, mime, store, kind)
         if result:

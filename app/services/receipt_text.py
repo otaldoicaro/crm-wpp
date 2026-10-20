@@ -89,15 +89,27 @@ def image_text(content: bytes, mode: str = "4") -> str:
     return result.stdout.decode("utf-8", "ignore")
 
 
-def extract_texts(content: bytes, mime: str) -> list:
-    """Todas as leituras do arquivo: PDF = o texto dele; imagem = uma por modo de OCR."""
+def extract_texts(content: bytes, mime: str, modes: tuple = OCR_MODES) -> list:
+    """Leituras do arquivo: PDF = o texto dele; imagem = uma por modo de OCR pedido."""
     mime = (mime or "").split(";")[0].strip().lower()
     if mime == "application/pdf":
         text = pdf_text(content)
         return [text] if text.strip() else []
     if mime in IMAGE_TYPES:
-        return [t for t in (image_text(content, m) for m in OCR_MODES) if t.strip()]
+        return [t for t in (image_text(content, m) for m in modes) if t.strip()]
     return []
+
+
+def read_receipt(content: bytes, mime: str, expected: list = ()) -> dict:
+    """Leitura econômica: 1 leitura primeiro (a maioria das fotos nem é comprovante, ou o valor já
+    sai claro); só faz as outras 2 quando parece comprovante e o valor ainda não está conferido."""
+    texts = extract_texts(content, mime, OCR_MODES[:1])
+    result = classify_many(texts, expected)
+    mime_plain = (mime or "").split(";")[0].strip().lower()
+    if mime_plain in IMAGE_TYPES and result.get("is_payment_receipt") and result.get("confidence") != "alta":
+        texts += extract_texts(content, mime, OCR_MODES[1:])
+        result = classify_many(texts, expected)
+    return result
 
 
 def extract_text(content: bytes, mime: str) -> str:
