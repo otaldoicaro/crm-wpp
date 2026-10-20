@@ -2034,6 +2034,16 @@ def reply_lead(
             quoted = None
     quote = {"id": quoted.wa_message_id, "from_me": quoted.direction == "out", "text": quoted.body} if quoted else None
     ok, wa_id, secret = messaging.send_text(number, lead.phone, body, quote)
+    if ok is None:
+        # servidor lento: o WhatsApp pode ter mandado. Fica "⏳ confirmando envio" até o aviso do
+        # WhatsApp chegar (aí vira enviada, sem duplicar) — nunca "não enviada" sem certeza
+        message = _record_outbound(db, conversation, user, "", body, pending=True)
+        if quoted is not None:
+            message.quote_wa_id, message.quote_text = quoted.wa_message_id, (quoted.body or "Mensagem")[:300]
+            db.commit()
+        if ajax:
+            return JSONResponse({"ok": True, "pending": True})
+        return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
     if ok:
         response_times.mark_outbound(lead)
     message = _record_outbound(db, conversation, user, wa_id, body if ok else f"⚠️ Não enviada: {body}", secret=secret)
@@ -2215,6 +2225,12 @@ def reply_lead_media(
     ok, wa_id, media_id, error, secret = messaging.send_media(
         number, lead.phone, content, file.filename or "arquivo", mime_type, media_kind, caption
     )
+    if ok is None:  # servidor lento: fica "⏳ confirmando envio" até o WhatsApp avisar (sem duplicar)
+        placeholder = {"image": "📷 Imagem", "video": "🎥 Vídeo", "audio": "🎤 Áudio", "document": "📄 Documento"}[media_kind]
+        message = _record_outbound(db, conversation, user, "", f"{placeholder}{' — ' + caption if caption else ''}",
+                                   "", media_kind, pending=True)
+        background.add_task(media_store.store_sent_copy, message.id, content, mime_type)
+        return JSONResponse({"ok": True, "pending": True})
     if not ok:
         return JSONResponse({"ok": False, "error": error}, status_code=502)
     response_times.mark_outbound(lead)
@@ -2243,6 +2259,7 @@ def _record_outbound(
     media_id: str = "",
     media_type: str = "",
     secret: str = "",
+    pending: bool = False,
 ) -> Message:
     # no Evolution o webhook "fromMe" dessa mesma mensagem pode chegar antes
     # deste commit; aí ela já está salva e só marcamos quem enviou
@@ -2261,6 +2278,8 @@ def _record_outbound(
     message.secret = secret or message.secret
     if wa_id and not message.ack:
         message.ack = 1  # enviada ✓ (entregue/lida chegam depois pelo webhook)
+    if pending and not wa_id:
+        message.ack = messaging.UNCONFIRMED  # ⏳ confirmando envio (ver inbound.record_outbound_from_phone)
     conversation.last_message_at = datetime.datetime.utcnow()
     conversation.last_preview = body[:200]
     db.add(message)

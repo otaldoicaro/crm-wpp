@@ -120,7 +120,6 @@ def ingest_inbound(
         media_id=media_id,
         media_type=media_type,
         secret=secret,
-        ack=0 if when is not None else 1,  # recuperada: não se sabe se foi lida
     )
     if when is not None:
         message.created_at = when  # mensagem recuperada: fica na hora em que aconteceu
@@ -132,6 +131,29 @@ def ingest_inbound(
     db.add(conversation)
     db.commit()
     return message
+
+
+def _unconfirmed_match(db: Session, lead: Lead, body: str, media_type: str) -> Optional[Message]:
+    """Mensagem enviada pelo CRM nos últimos 15 min que ficou sem confirmação (servidor lento) e é a
+    mesma que o WhatsApp está avisando agora (mesmo texto, ou mesmo tipo de mídia)."""
+    since = datetime.datetime.utcnow() - datetime.timedelta(minutes=15)
+    candidates = (
+        db.query(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .filter(Conversation.lead_id == lead.id, Message.direction == "out", Message.wa_message_id == "",
+                Message.created_at >= since)
+        .order_by(Message.created_at)
+        .all()
+    )
+    text = (body or "").strip()
+    for m in candidates:
+        own = m.body
+        for prefix in ("⚠️ Sem confirmação do WhatsApp (confira no celular antes de reenviar): ", "⚠️ Não enviada: "):
+            if own.startswith(prefix):
+                own = own[len(prefix):]
+        if (media_type and m.media_type == media_type) or (not media_type and not m.media_type and own.strip() == text):
+            return m
+    return None
 
 
 def record_outbound_from_phone(
@@ -156,6 +178,7 @@ def record_outbound_from_phone(
         return None
 
     conversation = _get_or_create_conversation(db, number, lead)
+    pending = _unconfirmed_match(db, lead, body, media_type) if when is None else None
     if when is None or lead.last_outbound_at is None or when > lead.last_outbound_at:
         response_times.mark_outbound(lead, when)  # vendedor respondeu pelo celular
     funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
@@ -163,6 +186,15 @@ def record_outbound_from_phone(
     suggestions.on_message(lead, body, outbound=True)  # 💡 "temos sim", "não temos", "pedido confirmado"...
     autostage.refund_if_asked(db, lead, body, outbound=True)  # "estorno feito": a venda vira Perdido
     db.add(lead)
+    if pending is not None:
+        # era a mensagem que o CRM mandou e ficou "⏳ confirmando envio": confirma ela (não duplica)
+        pending.wa_message_id, pending.ack, pending.secret = wa_message_id, max(pending.ack, 1), secret or pending.secret
+        if pending.body.startswith("⚠️"):
+            pending.body = body
+        if media_type and not pending.media_id:
+            pending.media_id = media_id
+        db.commit()
+        return pending
     message = Message(
         conversation_id=conversation.id,
         direction="out",
@@ -171,6 +203,7 @@ def record_outbound_from_phone(
         media_id=media_id,
         media_type=media_type,
         secret=secret,
+        ack=0 if when is not None else 1,  # recuperada: não se sabe se foi lida
     )
     if when is not None:
         message.created_at = when  # mensagem recuperada: fica na hora em que aconteceu

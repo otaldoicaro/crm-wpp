@@ -14,12 +14,19 @@ from app.services.whatsapp_client import media_kind_for_mime  # noqa: F401  (ree
 logger = logging.getLogger("messaging")
 
 
-def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dict] = None) -> tuple[bool, str, str]:
-    """Devolve (ok, id_da_mensagem_no_whatsapp, messageSecret). quote: ver evolution_client.send_text."""
+UNCONFIRMED = -1  # Message.ack: pediu pro WhatsApp mandar mas a resposta não veio a tempo
+
+
+def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dict] = None) -> tuple:
+    """Devolve (ok, id_da_mensagem_no_whatsapp, messageSecret). quote: ver evolution_client.send_text.
+    ok=None: o Evolution não respondeu a tempo (servidor lento) — pode ter saído; a confirmação
+    chega depois pelo webhook (inbound.record_outbound_from_phone casa com a mensagem)."""
     if number.provider == "evolution":
         try:
             wa_id, secret = evolution_client.send_text(number.evolution_instance, phone, body, quote)
             return True, wa_id, secret
+        except evolution_client.EvolutionTimeout:
+            return None, "", ""
         except evolution_client.EvolutionError:
             return False, "", ""
     result = whatsapp_client.send_text_message(number, phone, body)
@@ -39,6 +46,8 @@ def send_media(
                 wa_id, secret = evolution_client.send_media(
                     number.evolution_instance, phone, content, filename, mime_type, media_kind, caption
                 )
+        except evolution_client.EvolutionTimeout:
+            return None, "", "", "", ""  # servidor lento: pode ter saído (confirma pelo webhook)
         except evolution_client.EvolutionError as exc:
             return False, "", "", friendly_error(exc), ""
         # no Evolution a mídia é buscada depois pelo id da própria mensagem
@@ -67,3 +76,25 @@ def fetch_media(number: WhatsAppNumber, media_id: str) -> tuple[Optional[bytes],
     if number.provider == "evolution":
         return evolution_client.fetch_media(number.evolution_instance, media_id)
     return whatsapp_client.fetch_media(number, media_id)
+
+
+def expire_unconfirmed(minutes: int = 3) -> int:
+    """Mensagem "⏳ confirmando envio" que o WhatsApp não confirmou em X min: avisa pra conferir
+    no celular antes de reenviar (não diz "não enviada": pode ter saído e o aviso se perdido)."""
+    import datetime
+
+    from app.db import SessionLocal
+    from app.models import Message
+
+    db = SessionLocal()
+    try:
+        cutoff = datetime.datetime.utcnow() - datetime.timedelta(minutes=minutes)
+        rows = db.query(Message).filter(Message.ack == UNCONFIRMED, Message.created_at < cutoff).all()
+        for m in rows:
+            m.ack = 0
+            if not m.body.startswith("⚠️"):
+                m.body = f"⚠️ Sem confirmação do WhatsApp (confira no celular antes de reenviar): {m.body}"
+        db.commit()
+        return len(rows)
+    finally:
+        db.close()

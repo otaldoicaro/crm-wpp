@@ -29,6 +29,10 @@ class EvolutionError(Exception):
     pass
 
 
+class EvolutionTimeout(EvolutionError):
+    """O pedido foi feito mas a resposta não chegou a tempo (servidor lento): não dá pra saber se saiu."""
+
+
 def is_configured() -> bool:
     return bool(EVOLUTION_API_URL and EVOLUTION_API_KEY)
 
@@ -39,6 +43,9 @@ def _request(method: str, path: str, timeout: int = 15, **kwargs) -> dict:
     headers = {"apikey": EVOLUTION_API_KEY}
     try:
         resp = requests.request(method, f"{EVOLUTION_API_URL}{path}", headers=headers, timeout=timeout, **kwargs)
+    except requests.Timeout as exc:
+        # pediu, mas a resposta não veio a tempo: pode ter sido enviada mesmo assim
+        raise EvolutionTimeout(f"o Evolution demorou pra responder: {exc}") from exc
     except requests.RequestException as exc:
         raise EvolutionError(f"sem resposta do Evolution: {exc}") from exc
     try:
@@ -151,7 +158,7 @@ def send_text(instance: str, phone_digits: str, text: str, quote: Optional[dict]
             "key": {"id": quote["id"], "remoteJid": jid_for(phone_digits), "fromMe": bool(quote.get("from_me"))},
             "message": {"conversation": quote.get("text") or ""},
         }
-    body = _request("POST", f"/message/sendText/{instance}", json=payload)
+    body = _request("POST", f"/message/sendText/{instance}", json=payload, timeout=45)
     return _sent(body)
 
 
@@ -167,7 +174,7 @@ def send_media(
         "fileName": filename,
         "caption": caption,
     }
-    body = _request("POST", f"/message/sendMedia/{instance}", json=payload, timeout=60)
+    body = _request("POST", f"/message/sendMedia/{instance}", json=payload, timeout=120)
     return _sent(body)
 
 
@@ -175,7 +182,7 @@ def send_audio(instance: str, phone_digits: str, content: bytes) -> tuple:
     """Áudio como mensagem de voz (a bolinha verde do WhatsApp, "gravado na hora"). O Evolution
     converte o que vier (webm/ogg/mp3/m4a do navegador ou arquivo) pro formato do WhatsApp."""
     payload = {"number": phone_digits, "audio": base64.b64encode(content).decode()}
-    body = _request("POST", f"/message/sendWhatsAppAudio/{instance}", json=payload, timeout=90)
+    body = _request("POST", f"/message/sendWhatsAppAudio/{instance}", json=payload, timeout=120)
     return _sent(body)
 
 

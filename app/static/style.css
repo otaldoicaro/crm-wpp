@@ -816,3 +816,5 @@ td.goal-bad { background: rgba(214,69,69,.08); }
 
 .waba-box input { width: 170px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
 .waba-box code { font-size: .78rem; }
+
+.pending-send { color: #b07a00; font-weight: 700; }

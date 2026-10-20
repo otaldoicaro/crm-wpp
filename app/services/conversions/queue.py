@@ -147,6 +147,12 @@ def schedule(delay_seconds: int = 60) -> None:
                 logger.info("conversões enviadas pro Meta: %s", sent)
         except Exception:
             logger.exception("conversões: falhou")
+        try:
+            from app.services import messaging
+
+            messaging.expire_unconfirmed()  # "⏳ confirmando envio" sem confirmação há 3 min: avisa
+        except Exception:
+            logger.exception("mensagens sem confirmação: falhou")
         schedule(INTERVAL_SECONDS)
 
     timer = threading.Timer(delay_seconds, run)
