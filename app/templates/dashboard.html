@@ -254,71 +254,109 @@
 {% macro money(v, cents=False) -%}
 {%- if v is none or (not v and v != 0) %}—{% else %}R$ {{ ("{:,.2f}" if cents else "{:,.0f}").format(v).replace(",", "X").replace(".", ",").replace("X", ".") }}{% endif -%}
 {%- endmacro %}
-{% macro traffic_cells(n) -%}
-  <td class="num">{{ money(n.spend) if n.spend else "—" }}</td>
-  <td class="num">{{ n.leads }}</td>
-  <td class="num">{{ money(n.cpl, True) if n.cpl else "—" }}</td>
-  <td class="num">{{ n.qualified }}</td>
-  <td class="num">{{ money(n.cost_per_qualified, True) if n.cost_per_qualified else "—" }}</td>
-  <td class="num">{{ n.opportunities }}</td>
-  <td class="num">{{ money(n.cpo, True) if n.cpo else "—" }}</td>
-  <td class="num">{{ n.won }}</td>
-  <td class="num">{{ money(n.cac, True) if n.cac else "—" }}</td>
-  <td class="num">{{ money(n.revenue) if n.revenue else "—" }}</td>
-  <td class="num">{{ money(n.ticket) if n.ticket else "—" }}</td>
-  <td class="num {{ 'roas-good' if n.roas and n.roas >= 1 else ('roas-bad' if n.roas is not none else '') }}">{{ ("%.1fx"|format(n.roas)).replace(".", ",") if n.roas is not none else "—" }}</td>
+{% macro metric_cells(n) -%}
+  {%- for key, label, kind, better, group, help, tip in METRICS %}
+  {% set v = n[key] if n[key] is defined else none %}
+  {% set st = goal_status(goals, key, v) %}
+  <td class="num g-{{ group|lower }} {{ 'goal-' ~ st if st }}" data-k="{{ key }}" data-v="{{ v if v is not none else '' }}">{{ fmt_metric(key, v) if v is not none and (v or kind not in ("int", "money0") or n.spend) else "—" }}</td>
+  {%- endfor %}
 {%- endmacro %}
 <div class="section-title" id="trafego"><h3 style="margin:0">Tráfego pago x comercial</h3></div>
 {% set period_qs = "date_range=" ~ (date_range|urlencode) ~ "&date_from=" ~ (date_from|urlencode) ~ "&date_to=" ~ (date_to|urlencode) ~ "&seller=" ~ (seller|urlencode) %}
+{% set t = traffic.total %}
 <div class="card">
-  {% set t = traffic.total %}
-  {% if traffic.has_spend %}
-  <div class="traffic-kpis">
-    <div><span>Investimento</span><b>{{ money(t.spend) }}</b></div>
-    <div><span>Leads de anúncio</span><b>{{ t.leads }}</b></div>
-    <div><span>Custo por lead</span><b>{{ money(t.cpl, True) if t.cpl else "—" }}</b></div>
-    <div title="Leads que chegaram em Negociando (receberam preço), mesmo que depois tenham sido perdidos"><span>Oportunidades (OPT)</span><b>{{ t.opportunities }}</b></div>
-    <div title="Investimento ÷ oportunidades"><span>Custo por oportunidade (CPO)</span><b>{{ money(t.cpo, True) if t.cpo else "—" }}</b></div>
-    <div><span>Vendas</span><b>{{ t.won }}</b></div>
-    <div><span>Custo por venda (CAC)</span><b>{{ money(t.cac, True) if t.cac else "—" }}</b></div>
-    <div><span>Faturamento</span><b>{{ money(t.revenue) }}</b></div>
-    <div><span>Retorno (ROAS)</span><b class="{{ 'roas-good' if t.roas and t.roas >= 1 else 'roas-bad' }}">{{ ("%.1fx"|format(t.roas)).replace(".", ",") if t.roas is not none else "—" }}</b></div>
-  </div>
-  <p class="muted traffic-note">Clique numa campanha pra ver os conjuntos e anúncios. OPT = leads que chegaram em Negociando (receberam preço); CPO = investimento ÷ OPT. ROAS = faturamento ÷ investimento (2,0x = cada R$ 1 investido virou R$ 2 em vendas). Gasto atualizado do Meta a cada 3h.{% if seller %} <b>Atenção:</b> com vendedor filtrado, leads e vendas são só dele, mas o investimento é o da campanha inteira.{% endif %}</p>
-  {% else %}
+  {% if not traffic.has_spend %}
   <p class="muted" style="margin-top:0">O investimento ainda não chegou do Meta. Ele é buscado sozinho a cada 3h (na 1ª vez, os últimos 90 dias). Enquanto isso, a tabela mostra leads e vendas de cada campanha.</p>
   {% endif %}
-  <div style="overflow-x:auto;">
-  <table class="table-simple traffic-table">
-    <thead><tr>
-      <th>Campanha</th><th class="num">Investido</th><th class="num">Leads</th><th class="num">CPL</th><th class="num">Qualif.</th>
-      <th class="num">Custo/qualif.</th><th class="num" title="Oportunidades: leads que chegaram em Negociando (receberam preço), mesmo que depois tenham sido perdidos">OPT</th><th class="num" title="Custo por oportunidade = investido ÷ oportunidades">CPO</th><th class="num">Vendas</th><th class="num">CAC</th><th class="num">Faturamento</th>
-      <th class="num">Ticket médio</th><th class="num">ROAS</th>
-    </tr></thead>
+  {# ---- todos os KPIs do período, em 3 grupos; com meta: verde dentro / vermelho fora + como ajustar ---- #}
+  {% for group in METRIC_GROUPS %}
+  <div class="kpi-group">
+    <div class="kpi-group-title">{{ {"Mídia": "📣 Mídia (Meta)", "Página": "🌐 Página de destino", "Comercial": "🤝 Comercial (CRM)"}[group] }}</div>
+    <div class="traffic-kpis">
+      {% for key, label, kind, better, g, help, tip in METRICS if g == group %}
+      {% set v = t[key] %}
+      {% set st = goal_status(goals, key, v) %}
+      {% set goal = goals.get(key) %}
+      <div class="kpi {{ 'kpi-' ~ st if st }}" title="{{ help }}">
+        <span>{{ label }}</span>
+        <b>{{ fmt_metric(key, v) }}</b>
+        {% if goal %}<small class="kpi-goal">meta {{ "≤" if better == "low" else "≥" }} {{ fmt_metric(key, goal.target) }} {{ "✅" if st == "ok" else ("⚠️" if st == "bad" else "") }}</small>{% endif %}
+        {% if st == "bad" and tip %}<small class="kpi-tip">💡 {{ tip }}</small>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  <p class="muted traffic-note">Passe o mouse num número pra ver a conta. Mídia e página vêm do Meta (atualizado a cada 3h); leads, qualificados, OPT e vendas vêm do CRM. Conversão da página = leads que chegaram no CRM ÷ visualizações da página (campanha de clique pro WhatsApp não tem página: aparece “—”). Frequência = média por dia.{% if seller %} <b>Atenção:</b> com vendedor filtrado, leads e vendas são só dele, mas o investimento é o da campanha inteira.{% endif %}</p>
+
+  {# ---- 🎯 metas ---- #}
+  <details class="kpi-goals" id="metas" {{ "open" if request.query_params.get("salvo") and request.url.fragment == "metas" }}>
+    <summary><b>🎯 Metas dos KPIs</b> <span class="muted">({{ goals|length }} definida{{ "s" if goals|length != 1 }}) — {{ "clique pra definir ou mudar" if user.role == "admin" else "definidas pelo gestor" }}</span></summary>
+    <form method="post" action="/dashboard/metas" class="goals-form">
+      <table class="table-simple">
+        <thead><tr><th>KPI</th><th>Meta</th><th>Agora</th><th>Definida por</th></tr></thead>
+        <tbody>
+        {% for key, label, kind, better, group, help, tip in GOAL_METRICS %}
+        {% set goal = goals.get(key) %}
+        {% set st = goal_status(goals, key, t[key]) %}
+        <tr>
+          <td><b>{{ label }}</b> <span class="muted">({{ "quanto menor, melhor" if better == "low" else "quanto maior, melhor" }})</span></td>
+          <td>{{ "≤" if better == "low" else "≥" }} <input name="meta_{{ key }}" value="{{ (fmt_metric(key, goal.target)|replace('R$ ', '')|replace('%', '')|replace('x', '')) if goal else '' }}" placeholder="{{ {'money': 'R$', 'pct': '%', 'x': 'x', 'dec': 'nº'}.get(kind, '') }}" inputmode="decimal" {{ "disabled" if user.role != "admin" }}></td>
+          <td class="{{ 'goal-' ~ st if st }}">{{ fmt_metric(key, t[key]) }}</td>
+          <td class="muted">{% if goal %}{{ goal.updated_by.name if goal.updated_by else "—" }} · {{ goal.updated_at|hora("%d/%m/%Y %H:%M") }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if user.role == "admin" %}<button class="btn small" type="submit">Salvar metas</button> <span class="muted">Deixe em branco pra ficar sem meta. Use vírgula pros centavos (ex: 12,50).</span>{% endif %}
+    </form>
+  </details>
+
+  {# ---- busca, ordem e grupos de colunas ---- #}
+  <div class="traffic-tools">
+    <input type="search" id="trafficSearch" placeholder="🔎 Procurar campanha, conjunto ou anúncio" autocomplete="off">
+    <select id="trafficSort" aria-label="Ordenar por">
+      {% for key, label, kind, better, group, help, tip in METRICS %}<option value="{{ key }}" {{ "selected" if key == "spend" }}>↕ {{ label }}</option>{% endfor %}
+    </select>
+    <button type="button" class="btn ghost small" id="trafficDir" data-dir="desc" title="Inverter a ordem">⬇ Maior primeiro</button>
+    <span class="tipo-chips traffic-groups">
+      <button type="button" class="pill pill-on" data-group="">Tudo</button>
+      {% for g in METRIC_GROUPS %}<button type="button" class="pill" data-group="{{ g|lower }}">{{ g }}</button>{% endfor %}
+    </span>
+  </div>
+
+  <div class="traffic-scroll">
+  <table class="table-simple traffic-table" id="trafficTable">
+    <thead>
+      <tr class="group-head"><th></th>{% for g in METRIC_GROUPS %}<th colspan="{{ METRICS|selectattr(4, 'equalto', g)|list|length }}" class="g-{{ g|lower }}">{{ g }}</th>{% endfor %}</tr>
+      <tr><th class="sticky-col">Campanha</th>{% for key, label, kind, better, group, help, tip in METRICS %}<th class="num g-{{ group|lower }}" title="{{ help }}">{{ label }}</th>{% endfor %}</tr>
+    </thead>
     {% for c in traffic.campaigns %}
     <tbody class="traffic-camp">
-      <tr class="camp-row" tabindex="0" title="Ver conjuntos e anúncios">
-        <td><span class="caret">▸</span> <span class="plat">{{ c.platform }}</span> {{ c.name }}{% if c.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&{{ period_qs }}">ver {{ c.leads }} leads →</a>{% endif %}</td>
-        {{ traffic_cells(c) }}
+      <tr class="camp-row" tabindex="0" title="Ver conjuntos e anúncios" data-name="{{ c.name|lower }}">
+        <td class="sticky-col"><span class="caret">▸</span> <span class="plat">{{ c.platform }}</span> {{ c.name }}{% if c.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&{{ period_qs }}">ver {{ c.leads }} leads →</a>{% endif %}</td>
+        {{ metric_cells(c) }}
       </tr>
       {% for a in c.children %}
-      <tr class="adset-row" hidden>
-        <td><span class="lvl">Conjunto</span> {{ a.name }}{% if a.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&s={{ a.key|urlencode }}&{{ period_qs }}">ver leads →</a>{% endif %}</td>
-        {{ traffic_cells(a) }}
+      <tr class="adset-row" hidden data-name="{{ a.name|lower }}" data-adset="{{ loop.index }}">
+        <td class="sticky-col"><span class="lvl">Conjunto</span> {{ a.name }}{% if a.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&s={{ a.key|urlencode }}&{{ period_qs }}">ver leads →</a>{% endif %}</td>
+        {{ metric_cells(a) }}
       </tr>
+      {% set adset_index = loop.index %}
       {% for ad in a.children %}
-      <tr class="ad-row" hidden>
-        <td><span class="lvl">Anúncio</span> {{ ad.name }}{% if ad.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&s={{ a.key|urlencode }}&a={{ ad.key|urlencode }}&{{ period_qs }}">ver leads →</a>{% endif %}</td>
-        {{ traffic_cells(ad) }}
+      <tr class="ad-row" hidden data-name="{{ ad.name|lower }}" data-adset="{{ adset_index }}">
+        <td class="sticky-col"><span class="lvl">Anúncio</span> {{ ad.name }}{% if ad.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&s={{ a.key|urlencode }}&a={{ ad.key|urlencode }}&{{ period_qs }}">ver leads →</a>{% endif %}</td>
+        {{ metric_cells(ad) }}
       </tr>
       {% endfor %}
       {% endfor %}
     </tbody>
     {% else %}
-    <tbody><tr><td colspan="13" class="muted">Sem campanhas no período (aparece assim que leads de anúncio chegarem ou o investimento for buscado).</td></tr></tbody>
+    <tbody><tr><td colspan="{{ METRICS|length + 1 }}" class="muted">Sem campanhas no período (aparece assim que leads de anúncio chegarem ou o investimento for buscado).</td></tr></tbody>
     {% endfor %}
   </table>
   </div>
+  <p class="muted traffic-note">Células em <span class="goal-ok">verde</span> estão dentro da meta e em <span class="goal-bad">vermelho</span>, fora.</p>
   {% if user.role == "admin" %}
   <details class="traffic-accounts">
     <summary class="muted">⚙ Contas de anúncio do Meta deste cliente: {{ meta_accounts or "detectando pelos anúncios dos leads…" }}</summary>
@@ -331,15 +369,84 @@
   {% endif %}
 </div>
 <script>
-document.querySelectorAll(".traffic-camp .camp-row").forEach(function (row) {
-  function toggle() {
-    var body = row.parentNode, open = !body.classList.contains("open");
+(function () {
+  var table = document.getElementById("trafficTable"); if (!table) return;
+  var bodies = function () { return Array.prototype.slice.call(table.querySelectorAll("tbody.traffic-camp")); };
+  function setOpen(body, open) {
     body.classList.toggle("open", open);
     body.querySelectorAll(".adset-row, .ad-row").forEach(function (r) { r.hidden = !open; });
   }
-  row.addEventListener("click", function (e) { if (!e.target.closest("a")) toggle(); });
-  row.addEventListener("keydown", function (e) { if (e.key === "Enter") toggle(); });
-});
+  bodies().forEach(function (body) {
+    var row = body.querySelector(".camp-row");
+    row.addEventListener("click", function (e) { if (!e.target.closest("a")) setOpen(body, !body.classList.contains("open")); });
+    row.addEventListener("keydown", function (e) { if (e.key === "Enter") setOpen(body, !body.classList.contains("open")); });
+  });
+
+  // 🔎 busca: campanha que bate aparece inteira; senão, só os conjuntos/anúncios que batem
+  var search = document.getElementById("trafficSearch");
+  search.addEventListener("input", function () {
+    var q = search.value.trim().toLowerCase();
+    bodies().forEach(function (body) {
+      var camp = body.querySelector(".camp-row");
+      var rows = body.querySelectorAll(".adset-row, .ad-row");
+      if (!q) { body.hidden = false; setOpen(body, false); return; }
+      if (camp.dataset.name.indexOf(q) !== -1) { body.hidden = false; setOpen(body, false); return; }
+      var hits = Array.prototype.filter.call(rows, function (r) { return r.dataset.name.indexOf(q) !== -1; });
+      body.hidden = !hits.length;
+      if (!hits.length) return;
+      body.classList.add("open");
+      var adsets = {};
+      hits.forEach(function (r) { adsets[r.dataset.adset] = true; });
+      rows.forEach(function (r) {
+        var isAdset = r.classList.contains("adset-row");
+        r.hidden = !(hits.indexOf(r) !== -1 || (isAdset && adsets[r.dataset.adset]) || (!isAdset && hits.some(function (h) { return h.classList.contains("adset-row") && h.dataset.adset === r.dataset.adset; })));
+      });
+    });
+  });
+
+  // ↕ ordem por qualquer métrica (campanhas; e dentro de cada uma, conjuntos e anúncios)
+  var sortSel = document.getElementById("trafficSort"), dirBtn = document.getElementById("trafficDir");
+  function val(row) {
+    var cell = row.querySelector('td[data-k="' + sortSel.value + '"]');
+    var v = cell ? parseFloat(cell.dataset.v) : NaN;
+    return isNaN(v) ? null : v;
+  }
+  function cmp(a, b) {
+    var va = val(a), vb = val(b), desc = dirBtn.dataset.dir === "desc";
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1;  // sem valor sempre por último
+    if (vb === null) return -1;
+    return desc ? vb - va : va - vb;
+  }
+  function sortAll() {
+    bodies().sort(function (a, b) { return cmp(a.querySelector(".camp-row"), b.querySelector(".camp-row")); })
+      .forEach(function (b) { table.appendChild(b); });
+    bodies().forEach(function (body) {
+      var groups = Array.prototype.map.call(body.querySelectorAll(".adset-row"), function (adset) {
+        var ads = Array.prototype.filter.call(body.querySelectorAll(".ad-row"), function (r) { return r.dataset.adset === adset.dataset.adset; });
+        return { adset: adset, ads: ads.sort(cmp) };
+      });
+      groups.sort(function (a, b) { return cmp(a.adset, b.adset); }).forEach(function (g) {
+        body.appendChild(g.adset); g.ads.forEach(function (r) { body.appendChild(r); });
+      });
+    });
+  }
+  sortSel.addEventListener("change", sortAll);
+  dirBtn.addEventListener("click", function () {
+    var desc = dirBtn.dataset.dir !== "desc";
+    dirBtn.dataset.dir = desc ? "desc" : "asc";
+    dirBtn.textContent = desc ? "⬇ Maior primeiro" : "⬆ Menor primeiro";
+    sortAll();
+  });
+
+  // colunas: Tudo / Mídia / Página / Comercial
+  document.querySelectorAll(".traffic-groups .pill").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      document.querySelectorAll(".traffic-groups .pill").forEach(function (c) { c.classList.toggle("pill-on", c === chip); });
+      table.dataset.group = chip.dataset.group;
+    });
+  });
+})();
 </script>
 
 {% endif %}

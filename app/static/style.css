@@ -760,3 +760,32 @@ main:has(.kanban) { max-width: none; padding-left: 16px; padding-right: 16px; }
 .inbox-filters-2 select[name=aviso] { grid-column: 1 / -1; }
 select.filter-on { border-color: var(--y); box-shadow: 0 0 0 2px var(--y-soft); }
 .inbox-filters-2 .fav-toggle { border: 1px solid var(--line); cursor: pointer; justify-content: center; }
+
+/* ---------- Dashboard de tráfego: KPIs em grupos, metas, tabela completa ---------- */
+.kpi-group { margin-bottom: 12px; }
+.kpi-group-title { font-weight: 800; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 4px 0 6px; }
+.traffic-kpis .kpi { position: relative; }
+.traffic-kpis .kpi small { font-size: .7rem; line-height: 1.3; }
+.kpi-goal { color: var(--muted); }
+.kpi.kpi-ok { border-color: #2e9e5b; background: rgba(46,158,91,.08); }
+.kpi.kpi-bad { border-color: #d64545; background: rgba(214,69,69,.08); }
+.kpi-tip { color: var(--text); margin-top: 4px; }
+.goal-ok { color: #1e7d45; font-weight: 800; }
+.goal-bad { color: #c0392b; font-weight: 800; }
+td.goal-ok { background: rgba(46,158,91,.08); }
+td.goal-bad { background: rgba(214,69,69,.08); }
+.kpi-goals { margin: 6px 0 14px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+.kpi-goals summary { cursor: pointer; }
+.goals-form table { margin: 8px 0; }
+.goals-form input { width: 110px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+.traffic-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 10px; }
+.traffic-tools input[type=search] { flex: 1 1 260px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; font: inherit; background: var(--panel); }
+.traffic-tools select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.traffic-scroll { overflow-x: auto; }
+.traffic-table th, .traffic-table td { white-space: nowrap; }
+.traffic-table .sticky-col { position: sticky; left: 0; background: var(--panel); z-index: 1; min-width: 260px; max-width: 360px; white-space: normal; }
+.traffic-table .group-head th { text-align: center; font-size: .7rem; color: var(--muted); border-bottom: 2px solid var(--line); }
+.traffic-table tbody[hidden] { display: none; }
+#trafficTable[data-group="mídia"] .g-página, #trafficTable[data-group="mídia"] .g-comercial,
+#trafficTable[data-group="página"] .g-mídia, #trafficTable[data-group="página"] .g-comercial,
+#trafficTable[data-group="comercial"] .g-mídia, #trafficTable[data-group="comercial"] .g-página { display: none; }

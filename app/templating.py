@@ -37,6 +37,13 @@ templates.env.filters["hora"] = fmt_local
 templates.env.filters["duracao"] = response_times.human
 templates.env.filters["ha"] = response_times.ago
 templates.env.globals["rt"] = response_times
+from app.services import traffic as _traffic  # noqa: E402
+
+templates.env.globals["METRICS"] = _traffic.METRICS
+templates.env.globals["METRIC_GROUPS"] = _traffic.METRIC_GROUPS
+templates.env.globals["GOAL_METRICS"] = _traffic.GOAL_METRICS
+templates.env.globals["goal_status"] = _traffic.goal_status
+templates.env.globals["fmt_metric"] = _traffic.fmt
 templates.env.globals["auto_stage"] = funnel.is_automatic  # etapas que só o CRM preenche
 templates.env.globals["loss_reasons"] = segments.loss_reasons  # motivos de perda do ramo do cliente
 templates.env.globals["segment_for"] = segments.segment_for

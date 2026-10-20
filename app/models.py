@@ -413,7 +413,29 @@ class CampaignSpend(Base):
     campaign_id: Mapped[str] = mapped_column(String(40), default="", index=True)
     adset_id: Mapped[str] = mapped_column(String(40), default="")
     ad_id: Mapped[str] = mapped_column(String(40), default="", index=True)
+    # métricas de mídia do Meta (por dia): alcance, cliques no link, visualizações da página de
+    # destino e resultados do Meta (cadastros + conversas iniciadas)
+    reach: Mapped[int] = mapped_column(Integer, default=0)
+    link_clicks: Mapped[int] = mapped_column(Integer, default=0)
+    landing_page_views: Mapped[int] = mapped_column(Integer, default=0)
+    meta_results: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+
+
+class KpiGoal(Base):
+    """🎯 Meta de um KPI do tráfego (CPL, CTR, CPM...) por cliente, com quem e quando definiu."""
+
+    __tablename__ = "kpi_goals"
+    __table_args__ = (UniqueConstraint("tenant_id", "metric", name="uq_kpi_goal_tenant_metric"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    metric: Mapped[str] = mapped_column(String(30))  # chave de traffic.METRICS
+    target: Mapped[float] = mapped_column(default=0.0)
+    updated_by_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+
+    updated_by: Mapped[Optional["User"]] = relationship()
 
 
 class InboxRead(Base):

@@ -23,21 +23,43 @@ def _node(name: str, platform: str, key: str = "") -> dict:
     return {
         "key": key, "lead_ids": [],
         "name": name, "platform": PLATFORM_LABEL.get(platform, platform), "leads": 0, "qualified": 0, "opportunities": 0,
-        "won": 0, "revenue": 0.0, "spend": 0.0, "impressions": 0, "clicks": 0, "children": {},
+        "won": 0, "revenue": 0.0, "spend": 0.0, "impressions": 0, "clicks": 0, "reach": 0, "link_clicks": 0,
+        "landing_page_views": 0, "meta_results": 0, "lp_link_clicks": 0, "page_leads": 0, "children": {},
     }
 
 
+def _ratio(part, whole, scale: float = 1.0):
+    return part / whole * scale if part is not None and whole else None
+
+
 def _finish(node: dict) -> dict:
+    kids = [_finish(child) for child in node["children"].values()]
+    node["children"] = sorted(kids, key=lambda n: (n["spend"], n["leads"]), reverse=True)
+    # leads de anúncio com página de destino (clique pro WhatsApp não tem página: fica de fora)
+    if kids:
+        node["page_leads"] = sum(k["page_leads"] for k in kids)
+    elif node["key"] and node["landing_page_views"]:  # anúncio (o "Total" já vem somado)
+        node["page_leads"] = node["leads"]
     spend, leads, won = node["spend"], node["leads"], node["won"]
+    impressions, link_clicks, lpv = node["impressions"], node["link_clicks"], node["landing_page_views"]
+    # mídia (Meta)
+    node["cpm"] = _ratio(spend, impressions, 1000) if spend else None
+    node["frequency"] = _ratio(impressions, node["reach"])  # média por dia (alcance somado dia a dia)
+    node["ctr"] = _ratio(link_clicks, impressions, 100)  # CTR do link
+    node["cpc"] = _ratio(spend, link_clicks) if spend else None  # CPC do link
+    # página de destino
+    node["load_rate"] = _ratio(lpv, node["lp_link_clicks"], 100) if lpv else None  # taxa de carregamento
+    node["page_conv"] = _ratio(node["page_leads"], lpv, 100) if lpv else None  # leads no CRM ÷ visualizações
+    node["cost_per_result"] = _ratio(spend, node["meta_results"]) if spend else None
+    # comercial (CRM)
     node["cpl"] = spend / leads if spend and leads else None
     node["cost_per_qualified"] = spend / node["qualified"] if spend and node["qualified"] else None
+    node["cpmql"] = node["cost_per_qualified"]
     node["cpo"] = spend / node["opportunities"] if spend and node["opportunities"] else None
     node["cac"] = spend / won if spend and won else None
     node["ticket"] = node["revenue"] / won if won else None
     node["roas"] = node["revenue"] / spend if spend else None
     node["conversion"] = 100 * won / leads if leads else None
-    kids = [_finish(child) for child in node["children"].values()]
-    node["children"] = sorted(kids, key=lambda n: (n["spend"], n["leads"]), reverse=True)
     return node
 
 
@@ -102,6 +124,8 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
             CampaignSpend.platform, CampaignSpend.campaign_id, CampaignSpend.campaign, CampaignSpend.adset_id,
             CampaignSpend.adset, CampaignSpend.ad_id, CampaignSpend.ad,
             func.sum(CampaignSpend.spend), func.sum(CampaignSpend.impressions), func.sum(CampaignSpend.clicks),
+            func.sum(CampaignSpend.reach), func.sum(CampaignSpend.link_clicks),
+            func.sum(CampaignSpend.landing_page_views), func.sum(CampaignSpend.meta_results),
         )
         .filter(CampaignSpend.tenant_id == tenant_id)
     )
@@ -110,7 +134,7 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
     if date_to:
         spend_query = spend_query.filter(CampaignSpend.date <= date_to)
     has_spend = False
-    for platform, cid, cname, sid, sname, aid, aname, spend, impressions, clicks in spend_query.group_by(
+    for platform, cid, cname, sid, sname, aid, aname, spend, impressions, clicks, reach, link_clicks, lpv, results in spend_query.group_by(
         CampaignSpend.platform, CampaignSpend.campaign_id, CampaignSpend.campaign, CampaignSpend.adset_id,
         CampaignSpend.adset, CampaignSpend.ad_id, CampaignSpend.ad,
     ):
@@ -121,12 +145,20 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
             node["spend"] += spend or 0
             node["impressions"] += impressions or 0
             node["clicks"] += clicks or 0
+            node["reach"] += reach or 0
+            node["link_clicks"] += link_clicks or 0
+            node["landing_page_views"] += lpv or 0
+            if lpv:  # só anúncio com página de destino entra na taxa de carregamento
+                node["lp_link_clicks"] += link_clicks or 0
+            node["meta_results"] += results or 0
 
     total = _node("Total", "")
     for camp in campaigns.values():
-        for key in ("leads", "qualified", "opportunities", "won", "revenue", "spend", "impressions", "clicks"):
+        for key in ("leads", "qualified", "opportunities", "won", "revenue", "spend", "impressions", "clicks", "reach",
+                    "link_clicks", "landing_page_views", "meta_results", "lp_link_clicks"):
             total[key] += camp[key]
     result = [_finish(c) for c in campaigns.values()]
+    total["page_leads"] = sum(c["page_leads"] for c in result)
     result.sort(key=lambda n: (n["spend"], n["leads"]), reverse=True)
     return {"campaigns": result, "total": _finish(total), "has_spend": has_spend}
 
@@ -148,3 +180,80 @@ def find(tree: dict, c: str, s: str = "", a: str = "") -> Optional[list]:
                 return None
             trail.append(ad)
     return trail
+
+
+# ---------- métricas do Dashboard de tráfego (ordem = ordem das colunas) ----------
+# (chave, nome, formato, melhor quando: "low" | "high" | None, grupo, explicação, como ajustar quando sai da meta)
+METRICS = [
+    ("spend", "Investido", "money0", None, "Mídia", "Quanto foi gasto no Meta no período.", ""),
+    ("impressions", "Impressões", "int", None, "Mídia", "Quantas vezes os anúncios apareceram.", ""),
+    ("cpm", "CPM", "money", "low", "Mídia", "Custo por mil impressões.",
+     "Público pequeno ou disputado, ou anúncio com baixa relevância: amplie o público, teste posicionamentos automáticos e criativos novos."),
+    ("frequency", "Frequência", "dec", "low", "Mídia", "Quantas vezes, em média, cada pessoa viu o anúncio por dia.",
+     "As mesmas pessoas estão vendo demais: troque o criativo ou amplie o público."),
+    ("link_clicks", "Cliques no link", "int", None, "Mídia", "Cliques que levaram pra página ou pro WhatsApp.", ""),
+    ("ctr", "CTR (link)", "pct", "high", "Mídia", "Cliques no link ÷ impressões.",
+     "O anúncio não chama atenção: teste outro gancho nos 3 primeiros segundos, outra imagem/vídeo e uma chamada mais clara."),
+    ("cpc", "CPC (link)", "money", "low", "Mídia", "Investido ÷ cliques no link.",
+     "Clique caro: geralmente CTR baixo ou CPM alto. Melhore o criativo ou o público."),
+    ("landing_page_views", "Visualizações da página", "int", None, "Página", "Quantas pessoas carregaram a página de destino.", ""),
+    ("load_rate", "Taxa de carregamento", "pct", "high", "Página", "Visualizações da página ÷ cliques no link.",
+     "Muita gente clica e desiste antes da página abrir: deixe a página mais leve e rápida no celular (imagens menores, menos scripts)."),
+    ("page_conv", "Conversão da página", "pct", "high", "Página", "Leads que chegaram no CRM ÷ visualizações da página.",
+     "A página não convence: revise a oferta, o título, o formulário (menos campos) e o botão de WhatsApp."),
+    ("meta_results", "Resultados (Meta)", "int", None, "Página", "Cadastros + conversas iniciadas que o Meta contou.", ""),
+    ("leads", "Leads", "int", None, "Comercial", "Leads de anúncio que chegaram no CRM.", ""),
+    ("cpl", "CPL", "money", "low", "Comercial", "Investido ÷ leads.",
+     "Lead caro: veja qual etapa piorou (CPM, CTR, carregamento ou conversão da página) e ajuste ela."),
+    ("qualified", "Qualificados", "int", None, "Comercial", "Leads que chegaram em Qualificado (MQL).", ""),
+    ("cpmql", "CPMQL", "money", "low", "Comercial", "Investido ÷ qualificados.",
+     "Muito lead desqualificado: ajuste o público e deixe claro no anúncio o que vende (peça, carro, região), pra filtrar curioso."),
+    ("opportunities", "OPT", "int", None, "Comercial", "Leads que receberam preço (chegaram em Negociando).", ""),
+    ("cpo", "CPO", "money", "low", "Comercial", "Investido ÷ oportunidades.",
+     "Poucos leads chegam a receber preço: veja o tempo de resposta e se o time está pedindo carro/peça logo no início."),
+    ("won", "Vendas", "int", None, "Comercial", "Leads que viraram venda.", ""),
+    ("cac", "CAC", "money", "low", "Comercial", "Investido ÷ vendas.",
+     "Venda cara: veja se o problema está no tráfego (CPL/CPMQL) ou no fechamento (CPO, taxa de venda das oportunidades)."),
+    ("conversion", "Conversão em venda", "pct", "high", "Comercial", "Vendas ÷ leads.",
+     "Poucos leads viram venda: revise atendimento, follow-up e motivos de perda no Dashboard Comercial."),
+    ("revenue", "Faturamento", "money0", None, "Comercial", "Soma das vendas.", ""),
+    ("ticket", "Ticket médio", "money", "high", "Comercial", "Faturamento ÷ vendas.",
+     "Ticket baixo: ofereça itens complementares (kit, instalação) e destaque peças de maior valor nos anúncios."),
+    ("roas", "ROAS", "x", "high", "Comercial", "Faturamento ÷ investido (2,0x = cada R$ 1 virou R$ 2).",
+     "Retorno baixo: corte as campanhas/anúncios com pior CAC e coloque a verba nos que vendem."),
+]
+METRIC = {m[0]: m for m in METRICS}
+GOAL_METRICS = [m for m in METRICS if m[3]]  # as que têm "melhor quando" podem ter meta
+METRIC_GROUPS = ["Mídia", "Página", "Comercial"]
+
+
+def goal_status(goals: dict, key: str, value) -> str:
+    """"ok" | "bad" | "" (sem meta ou sem valor)."""
+    goal = goals.get(key)
+    meta = METRIC.get(key)
+    if goal is None or value is None or not meta or not meta[3] or not goal.target:
+        return ""
+    good = value <= goal.target if meta[3] == "low" else value >= goal.target
+    return "ok" if good else "bad"
+
+
+def fmt(key: str, value) -> str:
+    """Valor formatado do jeito brasileiro (R$ 1.234,56 · 2,4% · 1,8x)."""
+    if value is None:
+        return "—"
+    kind = METRIC[key][2] if key in METRIC else "dec"
+
+    def br(v, decimals):
+        return f"{v:,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    if kind == "money0":
+        return f"R$ {br(value, 0)}" if value else "—"
+    if kind == "money":
+        return f"R$ {br(value, 2)}"
+    if kind == "pct":
+        return f"{br(value, 2 if value < 10 else 1)}%"
+    if kind == "x":
+        return f"{br(value, 1)}x"
+    if kind == "dec":
+        return br(value, 2)
+    return br(value, 0)

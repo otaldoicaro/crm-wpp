@@ -28,7 +28,28 @@ GRAPH = f"https://graph.facebook.com/{META_GRAPH_VERSION}"
 FIRST_SYNC_DAYS = 90
 REFRESH_DAYS = 3
 INTERVAL_SECONDS = 3 * 60 * 60
-INSIGHT_FIELDS = "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks"
+INSIGHT_FIELDS = (
+    "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,reach,"
+    "inline_link_clicks,actions"
+)
+
+
+def _action(row: dict, *types: str) -> int:
+    total = 0
+    for item in row.get("actions") or []:
+        if item.get("action_type") in types:
+            try:
+                total += int(float(item.get("value") or 0))
+            except ValueError:
+                pass
+    return total
+
+
+def _results(row: dict) -> int:
+    """"Resultado" do Meta: cadastros (o "lead" já soma pixel + formulário; sem ele, soma os dois)
+    + conversas iniciadas no WhatsApp/Direct."""
+    leads = _action(row, "lead") or _action(row, "offsite_conversion.fb_pixel_lead", "onsite_conversion.lead_grouped")
+    return leads + _action(row, "onsite_conversion.messaging_conversation_started_7d")
 
 
 class MetaError(RuntimeError):
@@ -101,8 +122,9 @@ def sync_tenant(db, tenant: Tenant, days: int | None = None) -> int:
         db.commit()
         logger.info("meta_spend: %s -> contas de anúncio detectadas: %s", tenant.name, tenant.meta_ad_accounts)
     if days is None:
+        # só conta como "já tem" se tiver as métricas novas (alcance etc.): senão busca os 90 dias de novo
         has_data = db.query(CampaignSpend.id).filter(
-            CampaignSpend.tenant_id == tenant.id, CampaignSpend.source == "meta_api"
+            CampaignSpend.tenant_id == tenant.id, CampaignSpend.source == "meta_api", CampaignSpend.reach > 0
         ).first()
         days = REFRESH_DAYS if has_data else FIRST_SYNC_DAYS
     until = datetime.date.today()
@@ -133,6 +155,10 @@ def sync_tenant(db, tenant: Tenant, days: int | None = None) -> int:
             spend=float(r.get("spend") or 0),
             impressions=int(r.get("impressions") or 0),
             clicks=int(r.get("clicks") or 0),
+            reach=int(r.get("reach") or 0),
+            link_clicks=int(r.get("inline_link_clicks") or 0),
+            landing_page_views=_action(r, "landing_page_view", "omni_landing_page_view"),
+            meta_results=_results(r),
         ))
     db.commit()
     return len(rows)

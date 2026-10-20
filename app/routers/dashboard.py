@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
-from app.models import CampaignSpend, Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
+from app.models import CampaignSpend, Conversation, KpiGoal, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app.services import deals, evolution_client, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
@@ -708,6 +708,43 @@ def set_meta_accounts(
     db.commit()
     threading.Thread(target=meta_spend.sync_all, kwargs={"days": meta_spend.FIRST_SYNC_DAYS}, daemon=True).start()
     return RedirectResponse(url="/dashboard?aba=trafego&salvo=1#trafego", status_code=302)
+
+
+@router.post("/dashboard/metas")
+async def save_kpi_goals(
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """🎯 Metas dos KPIs do tráfego (campo meta_<chave>; vazio = sem meta). Guarda quem e quando."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403)
+    form = await request.form()
+
+    def apply():
+        current = {g.metric: g for g in db.query(KpiGoal).filter(KpiGoal.tenant_id == tenant.id)}
+        for key, *_ in traffic.GOAL_METRICS:
+            raw = str(form.get(f"meta_{key}", "")).replace("%", "").replace("x", "").replace("X", "").strip()
+            try:
+                value = _parse_brl(raw) if raw else 0.0
+            except ValueError:
+                continue
+            goal = current.get(key)
+            if not value:
+                if goal is not None:
+                    db.delete(goal)
+                continue
+            if goal is None:
+                goal = KpiGoal(tenant_id=tenant.id, metric=key)
+                db.add(goal)
+            elif abs(goal.target - value) < 1e-9:
+                continue  # não mudou: mantém quem/quando definiu
+            goal.target, goal.updated_by_user_id, goal.updated_at = value, user.id, datetime.datetime.utcnow()
+        db.commit()
+
+    await run_in_threadpool(apply)
+    return RedirectResponse(url="/dashboard?aba=trafego&salvo=1#metas", status_code=302)
 
 
 SEARCH_LIMIT = 100
@@ -2405,5 +2442,6 @@ def dashboard_view(
             ) if aba == "clientes" else None,
             "aba": aba,
             "meta_accounts": tenant.meta_ad_accounts,
+            "goals": {g.metric: g for g in db.query(KpiGoal).filter(KpiGoal.tenant_id == tenant.id)} if aba == "trafego" else {},
         },
     )
