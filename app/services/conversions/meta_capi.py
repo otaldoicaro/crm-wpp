@@ -77,21 +77,7 @@ def verify_pixel(tenant) -> tuple:
         return False, "Não consegui falar com o Meta pra testar o token. Tente de novo."
     if not resp.ok:
         return False, "O token não tem acesso a esse pixel: gere o token dentro desse conjunto de dados no Gerenciador de Eventos."
-    msg = f"Pixel “{body.get('name', pixel)}” conferido: é da conta de anúncio {', '.join(found_in)} deste cliente."
-    waba = (tenant.meta_waba_id or "").strip()
-    if waba:
-        # a conta do WhatsApp tem que ser a dona desse mesmo conjunto de dados
-        try:
-            resp = requests.get(f"{GRAPH}/{waba}/dataset", params={"access_token": tenant.meta_capi_token}, timeout=20)
-            data = resp.json()
-        except (requests.RequestException, ValueError):
-            return False, msg + " Mas não consegui conferir a conta do WhatsApp (WABA) agora."
-        ids = {str(d.get("id")) for d in (data.get("data") or [])} | {str(data.get("id", ""))}
-        if not resp.ok or pixel not in ids:
-            return False, (msg + f" Mas a conta do WhatsApp {waba} não é dona desse conjunto de dados "
-                           "(ou o token não tem a permissão whatsapp_business_manage_events): tire o WABA pra mandar só pelo pixel.")
-        msg += f" Conta do WhatsApp {waba} ligada a ele: leads de clique pro WhatsApp vão como conversa de WhatsApp (dá pra otimizar a campanha pela venda)."
-    return True, msg
+    return True, f"Pixel “{body.get('name', pixel)}” conferido: é da conta de anúncio {', '.join(found_in)} deste cliente."
 
 
 def build_event(lead, kind: str, event_id: str, event_time: int, waba_id: str = "") -> dict:
@@ -169,3 +155,51 @@ def send_test(tenant) -> dict:
         "custom_data": {"currency": "BRL", "value": 1.0},
     }
     return send(tenant, [event])
+
+
+def verify_waba(tenant, number) -> tuple:
+    """(ok, mensagem, dataset_id). O WABA tem que ter ESTE telefone (o do número no CRM) e um
+    conjunto de dados; o token do cliente precisa de acesso (whatsapp_business_manage_events)."""
+    waba = (number.meta_waba_id or "").strip()
+    if not waba.isdigit():
+        return False, "Coloque o ID da conta do WhatsApp (só números).", ""
+    if not tenant.meta_capi_token:
+        return False, "Salve primeiro o token de acesso (acima).", ""
+    try:
+        resp = requests.get(f"{GRAPH}/{waba}/phone_numbers", params={
+            "fields": "display_phone_number", "access_token": tenant.meta_capi_token}, timeout=20)
+        phones = resp.json()
+    except (requests.RequestException, ValueError):
+        return False, "Não consegui falar com o Meta agora. Tente de novo.", ""
+    if not resp.ok:
+        return False, ("O token não tem acesso a essa conta do WhatsApp: dê acesso ao usuário do sistema "
+                       "(permissão de eventos do WhatsApp) e gere o token de novo."), ""
+    mine = re.sub(r"\D", "", number.phone_number or "")
+    listed = [re.sub(r"\D", "", p.get("display_phone_number", "")) for p in phones.get("data", [])]
+    if not any(p and (p == mine or p[-8:] == mine[-8:]) for p in listed):
+        return False, f"Essa conta do WhatsApp não tem o número {number.phone_number} (tem: {', '.join(listed) or 'nenhum'}).", ""
+    try:
+        resp = requests.get(f"{GRAPH}/{waba}/dataset", params={"access_token": tenant.meta_capi_token}, timeout=20)
+        data = resp.json()
+    except (requests.RequestException, ValueError):
+        return False, "Não consegui ler o conjunto de dados dessa conta do WhatsApp.", ""
+    ids = [str(d.get("id")) for d in (data.get("data") or []) if d.get("id")] or ([str(data["id"])] if data.get("id") else [])
+    if not resp.ok or not ids:
+        return False, "Essa conta do WhatsApp ainda não tem conjunto de dados (crie no Gerenciador de Eventos ligando a conta do WhatsApp).", ""
+    return True, f"Conta do WhatsApp {waba} conferida (número {number.phone_number}, conjunto de dados {ids[0]}).", ids[0]
+
+
+def send_to(tenant, destination: str, events: list) -> dict:
+    """Manda pra um destino do cliente (pixel ou conjunto de dados de um WhatsApp dele)."""
+    if not (tenant.meta_capi_enabled and tenant.meta_capi_token):
+        return {"ok": False, "status_code": 0, "body": {"error": "envio desligado pra este cliente"}}
+    payload = {"data": events}
+    if tenant.meta_capi_test_code:
+        payload["test_event_code"] = tenant.meta_capi_test_code
+    try:
+        resp = requests.post(f"{GRAPH}/{destination}/events", params={"access_token": tenant.meta_capi_token},
+                             json=payload, timeout=20)
+        body = resp.json() if resp.content else {}
+        return {"ok": resp.ok, "status_code": resp.status_code, "body": body}
+    except (requests.RequestException, ValueError) as exc:
+        return {"ok": False, "status_code": 0, "body": {"error": str(exc)}}

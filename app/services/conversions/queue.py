@@ -19,7 +19,7 @@ import threading
 from sqlalchemy.orm import object_session
 
 from app.db import SessionLocal
-from app.models import ConversionEvent, Lead, Tenant
+from app.models import Conversation, ConversionEvent, Lead, Tenant, WhatsAppNumber
 from app.services.conversions import meta_capi
 
 logger = logging.getLogger("conversions")
@@ -35,6 +35,26 @@ def from_meta_ad(lead: Lead) -> bool:
     if att is None:
         return False
     return bool(att.ctwa_clid or att.ad_id or att.fbclid or att.fbc or (att.utm_source or "").strip().lower() in META_SOURCES)
+
+
+def route_for(db, lead: Lead, tenant: Tenant) -> str:
+    """Pra onde vai o evento deste lead, sempre um destino DESTE cliente:
+    - lead de clique pro WhatsApp e o número que recebeu tem conta do WhatsApp (WABA) conferida ->
+      conjunto de dados dessa conta, como conversa de WhatsApp ("dataset|waba");
+    - senão, o pixel do cliente, se conferido ("pixel|").  "" = não manda."""
+    att = lead.attribution
+    if att is not None and att.ctwa_clid:
+        number_id = lead.whatsapp_number_id
+        if not number_id:
+            conv = db.query(Conversation).filter(Conversation.lead_id == lead.id).order_by(Conversation.created_at).first()
+            number_id = conv.whatsapp_number_id if conv else None
+        number = db.get(WhatsAppNumber, number_id) if number_id else None
+        if (number is not None and number.tenant_id == tenant.id and number.meta_waba_checked_at
+                and number.meta_dataset_id and number.meta_waba_id):
+            return f"{number.meta_dataset_id}|{number.meta_waba_id}"
+    if tenant.meta_capi_checked_at and tenant.meta_pixel_id:
+        return f"{tenant.meta_pixel_id}|"
+    return ""
 
 
 def kind_for_stage(stage, stages) -> str:
@@ -56,10 +76,13 @@ def on_stage(lead: Lead, stage) -> None:
     if db is None or lead.is_group or lead.deleted_at or lead.tag == "outro":
         return
     tenant = db.get(Tenant, lead.tenant_id)
-    if tenant is None or not (tenant.meta_capi_enabled and tenant.meta_capi_checked_at and tenant.meta_pixel_id):
+    if tenant is None or not (tenant.meta_capi_enabled and tenant.meta_capi_token):
         return
     kind = kind_for_stage(stage, funnel._stages(db, lead.tenant_id))
     if not kind or not from_meta_ad(lead):
+        return
+    destination = route_for(db, lead, tenant)
+    if not destination:
         return
     event_name = meta_capi.EVENT_FOR_KIND[kind]
     exists = db.query(ConversionEvent.id).filter(
@@ -70,7 +93,7 @@ def on_stage(lead: Lead, stage) -> None:
         return
     db.add(ConversionEvent(
         tenant_id=lead.tenant_id, lead_id=lead.id, platform="meta", event_name=event_name, status="pending",
-        event_id=f"{lead.id}-{kind}", destination=tenant.meta_pixel_id,
+        event_id=f"{lead.id}-{kind}", destination=destination,
         payload_json=json.dumps({"kind": kind}),
     ))
 
@@ -93,12 +116,13 @@ def send_pending() -> dict:
             stage_kind = kind_for_stage(lead.stage, funnel._stages(db, lead.tenant_id)) if lead and lead.stage else ""
             reached = lead is not None and (stage_kind == kind or (kind == "opportunity" and stage_kind == "won"))
             # travas: mesmo cliente, mesmo pixel conferido de quando entrou na fila, etapa ainda vale
-            if (lead is None or tenant is None or lead.tenant_id != tenant.id or ev.destination != tenant.meta_pixel_id
-                    or not reached or (kind == "won" and not lead.deal_value)):
-                ev.status, ev.error = "skipped", "etapa desfeita, sem valor, ou pixel do cliente mudou"
+            if (lead is None or tenant is None or lead.tenant_id != tenant.id or not reached
+                    or (kind == "won" and not lead.deal_value) or route_for(db, lead, tenant) != ev.destination):
+                ev.status, ev.error = "skipped", "etapa desfeita, sem valor, ou destino do cliente mudou"
                 continue
-            event = meta_capi.build_event(lead, kind, ev.event_id, int(ev.created_at.timestamp()), tenant.meta_waba_id)
-            result = meta_capi.send(tenant, [event])
+            dest, waba = ev.destination.split("|", 1)
+            event = meta_capi.build_event(lead, kind, ev.event_id, int(ev.created_at.timestamp()), waba)
+            result = meta_capi.send_to(tenant, dest, [event])
             ev.attempts = (ev.attempts or 0) + 1
             ev.payload_json = json.dumps({"kind": kind, "event": event})
             ev.response_json = json.dumps(result["body"])[:4000]

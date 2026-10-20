@@ -126,6 +126,12 @@ class WhatsAppNumber(Base):
     # vendedor dono do número (o WhatsApp do celular dele). Lead que chega nesse
     # número vai direto pra ele; vazio = número compartilhado, entra no rodízio.
     owner_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # conta do WhatsApp no Meta (WABA) deste número e o conjunto de dados dela: com eles, venda/oportunidade
+    # de lead de clique pro WhatsApp vai como conversa de WhatsApp (dá pra otimizar a campanha pela venda).
+    # Conferido no Meta: o WABA tem que ter ESTE telefone (meta_waba_checked_at)
+    meta_waba_id: Mapped[str] = mapped_column(String(40), default="")
+    meta_dataset_id: Mapped[str] = mapped_column(String(40), default="")
+    meta_waba_checked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # último clique do link rotativo (/go/{tenant}) mandado pra este número
     last_routed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

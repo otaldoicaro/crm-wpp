@@ -807,3 +807,12 @@ td.goal-bad { background: rgba(214,69,69,.08); }
 .capi-form .capi-on { display: flex; align-items: center; gap: 6px; }
 .capi-msg { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 .capi-log { font-size: .8rem; margin-top: 8px; }
+
+.traffic-table th.sortable { cursor: pointer; user-select: none; }
+.traffic-table th.sortable:hover { color: var(--text); }
+.traffic-table th.sorted-desc .sort-arrow::after { content: " ▼"; }
+.traffic-table th.sorted-asc .sort-arrow::after { content: " ▲"; }
+.spend-only { cursor: pointer; border: 1px solid var(--line); }
+
+.waba-box input { width: 170px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+.waba-box code { font-size: .78rem; }

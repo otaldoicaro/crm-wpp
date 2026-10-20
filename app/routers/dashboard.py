@@ -708,7 +708,7 @@ def set_meta_accounts(
     tenant.meta_ad_accounts = ",".join(dict.fromkeys(ids))
     db.commit()
     threading.Thread(target=meta_spend.sync_all, kwargs={"days": meta_spend.FIRST_SYNC_DAYS}, daemon=True).start()
-    return RedirectResponse(url="/dashboard?aba=trafego&salvo=1#trafego", status_code=302)
+    return RedirectResponse(url="/dashboard?aba=integracoes&salvo=1#integracoes", status_code=302)
 
 
 @router.post("/dashboard/meta-eventos")
@@ -729,7 +729,7 @@ def save_meta_events(
 
     if user.role != "admin":
         raise HTTPException(status_code=403)
-    back = "/dashboard?aba=trafego"
+    back = "/dashboard?aba=integracoes"
     if acao == "testar":
         result = meta_capi.send_test(tenant)
         msg = "✅ Evento de teste enviado: confira em Gerenciador de Eventos > Eventos de teste." if result["ok"] else \
@@ -743,15 +743,53 @@ def save_meta_events(
         tenant.meta_capi_token = token.strip()
         tenant.meta_capi_checked_at = None
     tenant.meta_capi_test_code = teste.strip()[:40]
-    new_waba = re.sub(r"\D", "", waba)
-    if new_waba != (tenant.meta_waba_id or ""):
-        tenant.meta_capi_checked_at = None
-    tenant.meta_waba_id = new_waba
-    ok, msg = meta_capi.verify_pixel(tenant)
+    if new_pixel:
+        ok, msg = meta_capi.verify_pixel(tenant)
+    else:
+        ok, msg = False, "Sem pixel: só os números com conta do WhatsApp conferida (tabela abaixo) vão enviar."
     tenant.meta_capi_checked_at = datetime.datetime.utcnow() if ok else None
-    tenant.meta_capi_enabled = bool(ligado) and ok
+    has_waba = db.query(WhatsAppNumber.id).filter(
+        WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.meta_waba_checked_at.isnot(None)).first() is not None
+    tenant.meta_capi_enabled = bool(ligado) and (ok or has_waba)
+    ok = ok or (has_waba and not new_pixel)
     db.commit()
     return RedirectResponse(url=back + ("&salvo=1" if ok else "") + "&capi=" + quote(("✅ " if ok else "⚠️ ") + msg) + "#eventos-meta", status_code=302)
+
+
+@router.post("/dashboard/whatsapp-waba")
+async def save_whatsapp_waba(
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Conta do WhatsApp (WABA) de cada número: conferida no Meta (o WABA tem que ter esse telefone)."""
+    from app.services.conversions import meta_capi
+
+    if user.role != "admin":
+        raise HTTPException(status_code=403)
+    form = await request.form()
+
+    def apply() -> list:
+        msgs = []
+        for number in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True)):
+            raw = re.sub(r"\D", "", str(form.get(f"waba_{number.id}", "")))
+            if raw == (number.meta_waba_id or "") and number.meta_waba_checked_at:
+                continue  # não mudou e já está conferido
+            number.meta_waba_id = raw
+            number.meta_dataset_id, number.meta_waba_checked_at = "", None
+            if not raw:
+                continue
+            ok, msg, dataset = meta_capi.verify_waba(tenant, number)
+            if ok:
+                number.meta_dataset_id, number.meta_waba_checked_at = dataset, datetime.datetime.utcnow()
+            msgs.append(("✅ " if ok else "⚠️ ") + f"{number.label}: {msg}")
+        db.commit()
+        return msgs
+
+    msgs = await run_in_threadpool(apply)
+    text_msg = " · ".join(msgs) or "Nada mudou."
+    return RedirectResponse(url="/dashboard?aba=integracoes&capi=" + quote(text_msg[:1500]) + "#waba", status_code=302)
 
 
 @router.post("/dashboard/metas")
@@ -2285,7 +2323,7 @@ def dashboard_view(
     if not is_admin:
         seller = ""  # vendedor vê os números gerais da equipe + os dele (nunca os de outro vendedor)
     # abas: Comercial (padrão) · Tráfego · Clientes. Vendedor só vê a Comercial.
-    if aba not in ("comercial", "trafego", "clientes") or not is_admin:
+    if aba not in ("comercial", "trafego", "clientes", "integracoes") or not is_admin:
         aba = "comercial"
 
     now = datetime.datetime.utcnow()
@@ -2351,8 +2389,11 @@ def dashboard_view(
         )
 
     # tempo de atendimento (período + vendedor escolhidos); "aguardando" e "sem interação" só em aberto
-    open_leads = [lead for lead in leads if lead.stage_id not in won_stage_ids and lead.stage_id not in lost_stage_ids]
-    rt_all, rt_open = response_times.summary(leads), response_times.summary(open_leads)
+    # o pesado (tempos de resposta, funil e follow-ups por vendedor) só na aba Comercial, que é onde
+    # aparece: abrir Tráfego/Clientes/Integrações não recalcula isso pra milhares de leads
+    heavy = aba == "comercial"
+    open_leads = [lead for lead in leads if lead.stage_id not in won_stage_ids and lead.stage_id not in lost_stage_ids] if heavy else []
+    rt_all, rt_open = response_times.summary(leads if heavy else []), response_times.summary(open_leads)
     rt_box = {
         "median_first": rt_all["median_first"],
         "within_15": rt_all["within_15"],
@@ -2386,7 +2427,7 @@ def dashboard_view(
     # funil lado a lado por vendedor: só vendedores de fato (admin não entra); o vendedor
     # logado vê só a linha dele + a linha da equipe toda
     seller_rows = []
-    for s in sellers:
+    for s in (sellers if heavy else []):
         if s.role != "agent" or (not is_admin and s.id != user.id):
             continue
         mine = [lead for lead in all_period_leads if lead.assigned_user_id == s.id]
@@ -2394,7 +2435,7 @@ def dashboard_view(
             continue
         seller_rows.append(seller_row(s, mine))
     seller_rows.sort(key=lambda r: (r["won"], r["total"]), reverse=True)
-    team_row = seller_row(None, all_period_leads)
+    team_row = seller_row(None, all_period_leads if heavy else [])
     commercial_funnel = funnel.summary(leads, stages)
     lost_leads = [lead for lead in leads if lead.stage_id in lost_stage_ids]
     loss_counts: dict = {}
@@ -2406,7 +2447,7 @@ def dashboard_view(
         for r, n in sorted(loss_counts.items(), key=lambda kv: kv[1], reverse=True)
     ]
     my_numbers = None
-    if not is_admin:
+    if not is_admin and heavy:
         mine = [lead for lead in all_period_leads if lead.assigned_user_id == user.id]
         my_numbers = {"row": seller_row(user, mine), "funnel": funnel.summary(mine, stages)}
     unassigned = sum(1 for lead in all_period_leads if not lead.assigned_user_id)
@@ -2521,7 +2562,9 @@ def dashboard_view(
             "meta_accounts": tenant.meta_ad_accounts,
             "goals": {g.metric: g for g in db.query(KpiGoal).filter(KpiGoal.tenant_id == tenant.id)} if aba == "trafego" else {},
             "capi_events": db.query(ConversionEvent).filter(ConversionEvent.tenant_id == tenant.id, ConversionEvent.platform == "meta")
-            .order_by(ConversionEvent.created_at.desc()).limit(12).all() if aba == "trafego" and is_admin else [],
+            .order_by(ConversionEvent.created_at.desc()).limit(12).all() if aba == "integracoes" and is_admin else [],
             "capi_msg": request.query_params.get("capi", ""),
+            "wa_numbers": db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
+            .order_by(WhatsAppNumber.label).all() if aba == "integracoes" and is_admin else [],
         },
     )
