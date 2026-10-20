@@ -52,7 +52,39 @@ def _brl(value: float) -> str:
 # perdas que o cliente costuma dizer negociando ("tá caro, faz por 300?", "preciso pra hoje"):
 # continuam só como sugestão pro vendedor confirmar
 SUGGEST_ONLY_LOSS = ("Preço", "Prazo de entrega / disponibilidade")
-SHORT_ONLY_PHRASES = ("infelizmente nao",)  # genérica: só vale em mensagem curta ("infelizmente não 😕")
+SHORT_ONLY_PHRASES = ("infelizmente nao", "nao tenho")  # genéricas: só valem em mensagem curta ("infelizmente não 😕", "não tenho amigo")
+# depois do "pago", o time dizendo que não tem / se desculpando / cobrando interesse = não vendeu
+NOT_SOLD_AFTER_OUT = ("nao tenho", "nao temos", "nao possuo", "nao possuimos", "ficar devendo", "fico devendo",
+                      "desculpe", "desculpa", "ainda tem interesse", "ainda teria interesse", "segue interessado",
+                      "continua interessado", "infelizmente")
+NOT_SOLD_AFTER_IN = ("desisti", "cancelar", "cancela", "nao quero mais", "ja comprei", "comprei em outro")
+
+
+def paid_phrase(body: str, outbound: bool) -> Optional[str]:
+    """Frase de pagamento de fato ("pix recebido", "já paguei", "recebi a peça"), sem negação antes
+    ("ainda não recebemos o pagamento") nem pergunta ("já pagou?"). None = não é prova de venda."""
+    from app.services import suggestions
+
+    plain = _plain(body)
+    for phrase in (suggestions.PAID_OUT if outbound else suggestions.PAID_IN):
+        for m in re.finditer(rf"(?<![a-z]){re.escape(phrase)}(?![a-z])", plain):
+            before = plain[:m.start()].split()[-3:]
+            if any(w in ("nao", "nem", "sem", "falta", "faltou") for w in before):
+                continue
+            if plain[m.end():].lstrip().startswith("?"):
+                continue
+            return phrase
+    return None
+
+
+def not_sold_after(texts: list) -> Optional[str]:
+    """Mensagens [(texto, saída?)] depois do "pago": alguma diz que a venda não rolou? Devolve o trecho."""
+    for body, outbound in texts:
+        plain = _plain(body)
+        for p in (NOT_SOLD_AFTER_OUT if outbound else NOT_SOLD_AFTER_IN):
+            if re.search(rf"(?<![a-z]){re.escape(p)}(?![a-z])", plain):
+                return (body or "").strip()[:80]
+    return None
 
 
 def apply(db, lead: Lead, kind: str, *, reason: str = "", amount: Optional[float] = None, why: str = "",
@@ -82,6 +114,8 @@ def apply(db, lead: Lead, kind: str, *, reason: str = "", amount: Optional[float
             return False
         if not outbound and amount is None and not lead.quoted_value:
             return False  # "pode separar" sem nunca ter recebido preço: ainda não dá pra dizer que vendeu
+        if amount is None and not paid_phrase(body, outbound):
+            return False  # sem comprovante, só fecha com pagamento de fato; o resto fica como 💡 sugestão
         funnel.set_stage(lead, target)
         lead.deal_value = value
         lead.receipt_status = "confirmed" if amount else lead.receipt_status

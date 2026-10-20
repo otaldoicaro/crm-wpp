@@ -312,22 +312,34 @@
     </form>
   </details>
 
-  {# ---- busca, ordem e grupos de colunas ---- #}
+  {# ---- nível (como no Gerenciador), busca, só com investimento e grupos de colunas ---- #}
   <div class="traffic-tools">
+    <span class="tipo-chips traffic-levels">
+      <button type="button" class="pill pill-on" data-level="campanhas">📁 Campanhas ({{ traffic.campaigns|length }})</button>
+      <button type="button" class="pill" data-level="conjuntos" title="Cada conjunto somado em todas as campanhas em que roda (pelo nome)">👥 Conjuntos ({{ traffic.adsets|length }})</button>
+      <button type="button" class="pill" data-level="anuncios" title="Cada anúncio somado em todos os conjuntos em que roda (pelo nome)">🖼 Anúncios ({{ traffic.ads|length }})</button>
+    </span>
     <input type="search" id="trafficSearch" placeholder="🔎 Procurar campanha, conjunto ou anúncio" autocomplete="off">
-    <label class="pill spend-only pill-on" title="Esconde campanhas sem investimento no período (ex: leads antigos de campanha parada)"><input type="checkbox" id="spendOnly" checked hidden> 💰 Só com investimento no período</label>
+    <label class="pill spend-only pill-on" title="Esconde o que não teve investimento no período (ex: leads antigos de campanha parada)"><input type="checkbox" id="spendOnly" checked hidden> 💰 Só com investimento no período</label>
     <span class="tipo-chips traffic-groups">
       <button type="button" class="pill pill-on" data-group="">Tudo</button>
       {% for g, glabel in METRIC_GROUPS %}<button type="button" class="pill" data-group="{{ g }}">{{ glabel }}</button>{% endfor %}
     </span>
   </div>
 
-  <div class="traffic-scroll">
-  <table class="table-simple traffic-table" id="trafficTable">
+  {% macro table_head(first_label) %}
     <thead>
       <tr class="group-head"><th class="sticky-col"></th>{% for g, glabel in METRIC_GROUPS %}<th colspan="{{ METRICS|selectattr(4, 'equalto', g)|list|length }}" class="g-{{ g }}">{{ glabel }}</th>{% endfor %}</tr>
-      <tr><th class="sticky-col">Campanha</th>{% for key, label, kind, better, group, help, tip in METRICS %}<th class="num g-{{ group }} sortable{{ ' sorted-desc' if key == 'spend' }}" data-sort="{{ key }}" title="{{ help }} — clique pra ordenar (de novo: inverte)">{{ label }}<span class="sort-arrow"></span></th>{% endfor %}</tr>
+      <tr class="col-head"><th class="sticky-col">{{ first_label }}</th>{% for key, label, kind, better, group, help, tip in METRICS %}<th class="num g-{{ group }} sortable{{ ' sorted-desc' if key == 'spend' }}" data-sort="{{ key }}" title="{{ help }} — clique pra ordenar (de novo: inverte)">{{ label }}<span class="sort-arrow"></span></th>{% endfor %}</tr>
     </thead>
+  {% endmacro %}
+  {% macro table_foot(total, count, what) %}
+    <tfoot><tr><td class="sticky-col">Total · {{ count }} {{ what }}</td>{{ metric_cells(total) }}</tr></tfoot>
+  {% endmacro %}
+
+  <div class="traffic-scroll" data-level="campanhas">
+  <table class="table-simple traffic-table">
+    {{ table_head("Campanha") }}
     {% for c in traffic.campaigns %}
     <tbody class="traffic-camp" data-spend="{{ 1 if c.spend else 0 }}">
       <tr class="camp-row" tabindex="0" title="Ver conjuntos e anúncios" data-name="{{ c.name|lower }}">
@@ -351,48 +363,49 @@
     {% else %}
     <tbody><tr><td colspan="{{ METRICS|length + 1 }}" class="muted">Sem campanhas no período (aparece assim que leads de anúncio chegarem ou o investimento for buscado).</td></tr></tbody>
     {% endfor %}
+    {{ table_foot(t, traffic.campaigns|length, "campanhas") }}
   </table>
   </div>
-  <p class="muted traffic-note">Células em <span class="goal-ok">verde</span> estão dentro da meta e em <span class="goal-bad">vermelho</span>, fora.</p>
+
+  {# conjuntos e anúncios somados pelo nome, independente da campanha: abre pra ver onde cada um roda #}
+  {% for level, rows, first_label, what, where_label in [("conjuntos", traffic.adsets, "Conjunto (público)", "conjuntos", "Campanha"), ("anuncios", traffic.ads, "Anúncio (criativo)", "anúncios", "Campanha › Conjunto")] %}
+  <div class="traffic-scroll" data-level="{{ level }}" hidden>
+  <table class="table-simple traffic-table">
+    {{ table_head(first_label) }}
+    {% for g in rows %}
+    <tbody class="traffic-camp" data-spend="{{ 1 if g.spend else 0 }}">
+      <tr class="camp-row" tabindex="0" title="Ver onde roda" data-name="{{ g.name|lower }}">
+        <td class="sticky-col"><span class="caret">▸</span> <span class="plat">{{ g.platform }}</span> {{ g.name }} <span class="runs-in">em {{ g.children|length }} {{ "lugar" if g.children|length == 1 else "lugares" }}</span></td>
+        {{ metric_cells(g) }}
+      </tr>
+      {% for p in g.children %}
+      <tr class="adset-row" hidden data-name="{{ p.where|lower }}" data-adset="{{ loop.index }}">
+        <td class="sticky-col"><span class="lvl">{{ where_label }}</span> {{ p.where }}{% if p.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ p.c_key|urlencode }}&s={{ p.s_key|urlencode }}{% if p.a_key %}&a={{ p.a_key|urlencode }}{% endif %}&{{ period_qs }}">ver leads →</a>{% endif %}</td>
+        {{ metric_cells(p) }}
+      </tr>
+      {% endfor %}
+    </tbody>
+    {% else %}
+    <tbody><tr><td colspan="{{ METRICS|length + 1 }}" class="muted">Nada no período.</td></tr></tbody>
+    {% endfor %}
+    {{ table_foot(t, rows|length, what) }}
+  </table>
+  </div>
+  {% endfor %}
+  <p class="muted traffic-note">Células em <span class="goal-ok">verde</span> estão dentro da meta e em <span class="goal-bad">vermelho</span>, fora. Em Conjuntos e Anúncios, o que tem o mesmo nome em campanhas/conjuntos diferentes é somado numa linha só (clique pra ver onde roda).</p>
 </div>
 <script>
 (function () {
-  var table = document.getElementById("trafficTable"); if (!table) return;
-  var bodies = function () { return Array.prototype.slice.call(table.querySelectorAll("tbody.traffic-camp")); };
+  var boxes = Array.prototype.slice.call(document.querySelectorAll(".traffic-scroll[data-level]"));
+  if (!boxes.length) return;
+  var search = document.getElementById("trafficSearch"), spendOnly = document.getElementById("spendOnly");
+  var sortKey = "spend", sortDesc = true;
+
+  function bodies(table) { return Array.prototype.slice.call(table.querySelectorAll("tbody.traffic-camp")); }
   function setOpen(body, open) {
     body.classList.toggle("open", open);
     body.querySelectorAll(".adset-row, .ad-row").forEach(function (r) { r.hidden = !open; });
   }
-  bodies().forEach(function (body) {
-    var row = body.querySelector(".camp-row");
-    row.addEventListener("click", function (e) { if (!e.target.closest("a")) setOpen(body, !body.classList.contains("open")); });
-    row.addEventListener("keydown", function (e) { if (e.key === "Enter") setOpen(body, !body.classList.contains("open")); });
-  });
-
-  // 🔎 busca: campanha que bate aparece inteira; senão, só os conjuntos/anúncios que batem
-  var search = document.getElementById("trafficSearch");
-  search.addEventListener("input", function () {
-    var q = search.value.trim().toLowerCase();
-    bodies().forEach(function (body) {
-      var camp = body.querySelector(".camp-row");
-      var rows = body.querySelectorAll(".adset-row, .ad-row");
-      if (!q) { body.hidden = spendOnly.checked && body.dataset.spend !== "1"; setOpen(body, false); return; }
-      if (camp.dataset.name.indexOf(q) !== -1) { body.hidden = false; setOpen(body, false); return; }
-      var hits = Array.prototype.filter.call(rows, function (r) { return r.dataset.name.indexOf(q) !== -1; });
-      body.hidden = !hits.length;
-      if (!hits.length) return;
-      body.classList.add("open");
-      var adsets = {};
-      hits.forEach(function (r) { adsets[r.dataset.adset] = true; });
-      rows.forEach(function (r) {
-        var isAdset = r.classList.contains("adset-row");
-        r.hidden = !(hits.indexOf(r) !== -1 || (isAdset && adsets[r.dataset.adset]) || (!isAdset && hits.some(function (h) { return h.classList.contains("adset-row") && h.dataset.adset === r.dataset.adset; })));
-      });
-    });
-  });
-
-  // ↕ clique no nome da coluna: ordena por ela (maior primeiro); clicou de novo, inverte
-  var sortKey = "spend", sortDesc = true;
   function val(row) {
     var cell = row.querySelector('td[data-k="' + sortKey + '"]');
     var v = cell ? parseFloat(cell.dataset.v) : NaN;
@@ -405,44 +418,87 @@
     if (vb === null) return -1;
     return sortDesc ? vb - va : va - vb;
   }
-  function sortAll() {
-    bodies().sort(function (a, b) { return cmp(a.querySelector(".camp-row"), b.querySelector(".camp-row")); })
-      .forEach(function (b) { table.appendChild(b); });
-    bodies().forEach(function (body) {
-      var groups = Array.prototype.map.call(body.querySelectorAll(".adset-row"), function (adset) {
-        var ads = Array.prototype.filter.call(body.querySelectorAll(".ad-row"), function (r) { return r.dataset.adset === adset.dataset.adset; });
-        return { adset: adset, ads: ads.sort(cmp) };
-      });
-      groups.sort(function (a, b) { return cmp(a.adset, b.adset); }).forEach(function (g) {
-        body.appendChild(g.adset); g.ads.forEach(function (r) { body.appendChild(r); });
+
+  boxes.forEach(function (box) {
+    var table = box.querySelector("table");
+    bodies(table).forEach(function (body) {
+      var row = body.querySelector(".camp-row");
+      row.addEventListener("click", function (e) { if (!e.target.closest("a")) setOpen(body, !body.classList.contains("open")); });
+      row.addEventListener("keydown", function (e) { if (e.key === "Enter") setOpen(body, !body.classList.contains("open")); });
+    });
+  });
+
+  // 🔎 busca: linha principal que bate aparece inteira; senão, só os itens de dentro que batem
+  function applyFilters() {
+    var q = search.value.trim().toLowerCase();
+    boxes.forEach(function (box) {
+      bodies(box.querySelector("table")).forEach(function (body) {
+        var top = body.querySelector(".camp-row"), rows = body.querySelectorAll(".adset-row, .ad-row");
+        if (!q) { body.hidden = spendOnly.checked && body.dataset.spend !== "1"; setOpen(body, false); return; }
+        if (top.dataset.name.indexOf(q) !== -1) { body.hidden = false; setOpen(body, false); return; }
+        var hits = Array.prototype.filter.call(rows, function (r) { return r.dataset.name.indexOf(q) !== -1; });
+        body.hidden = !hits.length;
+        if (!hits.length) return;
+        body.classList.add("open");
+        rows.forEach(function (r) {
+          var isAdset = r.classList.contains("adset-row");
+          r.hidden = !(hits.indexOf(r) !== -1
+            || (isAdset && hits.some(function (h) { return h.dataset.adset === r.dataset.adset; }))
+            || (!isAdset && hits.some(function (h) { return h.classList.contains("adset-row") && h.dataset.adset === r.dataset.adset; })));
+        });
       });
     });
   }
-  table.querySelectorAll("th.sortable").forEach(function (th) {
+  search.addEventListener("input", applyFilters);
+  spendOnly.addEventListener("change", function () { spendOnly.parentNode.classList.toggle("pill-on", spendOnly.checked); applyFilters(); });
+  applyFilters();
+
+  // ↕ clique no nome da coluna: ordena por ela (maior primeiro); clicou de novo, inverte (vale pras 3 visões)
+  function sortAll() {
+    boxes.forEach(function (box) {
+      var table = box.querySelector("table"), foot = table.querySelector("tfoot");
+      bodies(table).sort(function (a, b) { return cmp(a.querySelector(".camp-row"), b.querySelector(".camp-row")); })
+        .forEach(function (b) { table.insertBefore(b, foot); });
+      bodies(table).forEach(function (body) {
+        var groups = Array.prototype.map.call(body.querySelectorAll(".adset-row"), function (adset) {
+          var ads = Array.prototype.filter.call(body.querySelectorAll(".ad-row"), function (r) { return r.dataset.adset === adset.dataset.adset; });
+          return { adset: adset, ads: ads.sort(cmp) };
+        });
+        groups.sort(function (a, b) { return cmp(a.adset, b.adset); }).forEach(function (g) {
+          body.appendChild(g.adset); g.ads.forEach(function (r) { body.appendChild(r); });
+        });
+      });
+    });
+  }
+  document.querySelectorAll(".traffic-table th.sortable").forEach(function (th) {
     th.addEventListener("click", function () {
       sortDesc = th.dataset.sort === sortKey ? !sortDesc : true;
       sortKey = th.dataset.sort;
-      table.querySelectorAll("th.sortable").forEach(function (h) { h.classList.remove("sorted-desc", "sorted-asc"); });
-      th.classList.add(sortDesc ? "sorted-desc" : "sorted-asc");
+      document.querySelectorAll(".traffic-table th.sortable").forEach(function (h) {
+        h.classList.remove("sorted-desc", "sorted-asc");
+        if (h.dataset.sort === sortKey) h.classList.add(sortDesc ? "sorted-desc" : "sorted-asc");
+      });
       sortAll();
     });
   });
 
-  // 💰 só campanhas com investimento no período (padrão)
-  var spendOnly = document.getElementById("spendOnly");
-  function applySpend() {
-    spendOnly.parentNode.classList.toggle("pill-on", spendOnly.checked);
-    bodies().forEach(function (b) { if (!search.value.trim()) b.hidden = spendOnly.checked && b.dataset.spend !== "1"; });
+  // 📁 Campanhas / 👥 Conjuntos / 🖼 Anúncios (lembra a última escolhida)
+  function showLevel(level) {
+    document.querySelectorAll(".traffic-levels .pill").forEach(function (c) { c.classList.toggle("pill-on", c.dataset.level === level); });
+    boxes.forEach(function (box) { box.hidden = box.dataset.level !== level; });
+    try { localStorage.setItem("trafficLevel", level); } catch (e) {}
   }
-  spendOnly.addEventListener("change", applySpend);
-  applySpend();
+  document.querySelectorAll(".traffic-levels .pill").forEach(function (chip) {
+    chip.addEventListener("click", function () { showLevel(chip.dataset.level); });
+  });
+  try { var saved = localStorage.getItem("trafficLevel"); if (saved) showLevel(saved); } catch (e) {}
 
-  // colunas: Tudo / Mídia / Página / Comercial
+  // colunas: Tudo / Funil / Mídia / Página
   document.querySelectorAll(".traffic-groups .pill").forEach(function (chip) {
     chip.addEventListener("click", function () {
       document.querySelectorAll(".traffic-groups .pill").forEach(function (c) { c.classList.toggle("pill-on", c === chip); });
       var g = chip.dataset.group;
-      table.querySelectorAll("[class*='g-']").forEach(function (cell) {
+      document.querySelectorAll(".traffic-table [class*='g-']").forEach(function (cell) {
         var mine = (cell.className.match(/\bg-(\w+)/) || [])[1];
         if (mine) cell.style.display = !g || mine === g ? "" : "none";
       });

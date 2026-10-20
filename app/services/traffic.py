@@ -164,7 +164,37 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
     result = [_finish(c) for c in campaigns.values()]
     total["page_leads"] = sum(c["page_leads"] for c in result)
     result.sort(key=lambda n: (n["spend"], n["leads"]), reverse=True)
-    return {"campaigns": result, "total": _finish(total), "has_spend": has_spend}
+    return {"campaigns": result, "total": _finish(total), "has_spend": has_spend,
+            "adsets": by_name(result, "adset"), "ads": by_name(result, "ad")}
+
+
+RAW_KEYS = ("leads", "qualified", "opportunities", "won", "revenue", "spend", "impressions", "clicks", "reach",
+            "link_clicks", "landing_page_views", "meta_results", "lp_link_clicks", "page_leads")
+
+
+def by_name(campaigns: list, level: str) -> list:
+    """Conjuntos ("adset") ou anúncios ("ad") somados pelo NOME, juntando todas as campanhas e
+    conjuntos em que rodam (igual ao Gerenciador): o mesmo público em 3 campanhas ou o mesmo
+    criativo em 5 conjuntos vira uma linha só. "children" = onde ele roda (cada campanha › conjunto)."""
+    groups: dict = {}
+    for camp in campaigns:
+        for adset in camp["children"]:
+            items = [(adset, camp["name"])] if level == "adset" else \
+                [(ad, f"{camp['name']} › {adset['name']}") for ad in adset["children"]]
+            for node, where in items:
+                group = groups.setdefault((node["platform"], node["name"].strip().lower()), {
+                    **_node(node["name"], ""), "platform": node["platform"], "places": []})
+                for k in RAW_KEYS:
+                    group[k] += node[k]
+                group["places"].append({**node, "where": where, "c_key": camp["key"],
+                                        "s_key": adset["key"], "a_key": node["key"] if level == "ad" else ""})
+    out = []
+    for group in groups.values():
+        places = sorted(group.pop("places"), key=lambda n: (n["spend"], n["leads"]), reverse=True)
+        _finish(group)
+        group["children"] = places
+        out.append(group)
+    return sorted(out, key=lambda n: (n["spend"], n["leads"]), reverse=True)
 
 
 def find(tree: dict, c: str, s: str = "", a: str = "") -> Optional[list]:

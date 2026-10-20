@@ -868,3 +868,16 @@ td.goal-bad { background: rgba(214,69,69,.08); }
 .lead-comments-card .comments-box { background: transparent; border: 0; padding: 0; }
 .lead-comments-card .comments-list { max-height: none; }
 .inbox-thread-head { position: relative; z-index: 5; }
+
+/* tabela de tráfego como no Gerenciador: caixa do tamanho da tela, rola pros lados e pra baixo,
+   cabeçalho, 1ª coluna e total sempre à vista */
+.traffic-scroll { overflow: auto; max-height: calc(100vh - 150px); max-height: calc(100dvh - 150px); border: 1px solid var(--line); border-radius: 10px; }
+.traffic-scroll .traffic-table { margin: 0; border-collapse: separate; border-spacing: 0; }
+.traffic-table thead th { position: sticky; background: var(--panel); z-index: 2; }
+.traffic-table thead .group-head th { top: 0; height: 26px; }
+.traffic-table thead .col-head th { top: 26px; box-shadow: inset 0 -1px 0 var(--line); }
+.traffic-table thead th.sticky-col { z-index: 4; }
+.traffic-table tfoot td { position: sticky; bottom: 0; background: var(--panel-2); font-weight: 700; z-index: 2; box-shadow: inset 0 1px 0 var(--line); }
+.traffic-table tfoot td.sticky-col { z-index: 4; }
+.traffic-table .runs-in { font-size: .7rem; font-weight: 600; color: var(--muted); margin-left: 4px; }
+.traffic-levels .pill { font-weight: 700; }

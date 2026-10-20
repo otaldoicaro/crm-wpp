@@ -4,7 +4,9 @@ no topo da conversa "💡 parece que ... — confirmar?" e o vendedor confirma o
 - Qualificado: o cliente passou os dados do carro (placa, modelo + ano, chassi), ou o time
   respondeu que tem a peça ("temos sim", "tenho em estoque"...).
 - Ganho sem comprovante: o cliente vai pagar na hora/na retirada, ou o time fala em pedido
-  confirmado, nota fiscal, rastreio, saiu pra entrega...
+  confirmado, rastreio, saiu pra entrega... Só vira Ganho sozinho com pagamento de fato
+  (autostage.paid_phrase: "pix recebido", "já paguei", "recebi a peça"...). "Nota fiscal" não
+  conta: o time fala disso pra vender ("original Ford, com nota fiscal").
 - Perdido (com o motivo já escolhido): "já comprei", "achei mais barato", "desisti"... ou o
   time disse que não tem a peça.
 - Outro (não é venda): fornecedor, transportadora, currículo, cobrança...
@@ -57,16 +59,27 @@ def _any(text: str, phrases: tuple) -> Optional[str]:
     return None
 
 
+# pagamento de fato (comprovante, link pago, pago na entrega): só estas fecham Ganho sozinhas
+# (autostage.paid_phrase); as outras frases de "ganho" ficam como 💡 sugestão pro vendedor
+PAID_IN = ("ja paguei", "acabei de pagar", "paguei o pix", "fiz o pix", "fiz o pagamento", "pix feito", "pix enviado",
+           "mandei o pix", "pagamento feito", "pagamento realizado", "segue o comprovante", "segue comprovante",
+           "mandei o comprovante", "ta pago", "ja esta pago", "paguei no link", "paguei pelo link",
+           "paguei na entrega", "paguei o motoboy", "paguei ao motoboy", "paguei o entregador", "recebi a peca",
+           "chegou a peca", "a peca chegou", "peca chegou")
+PAID_OUT = ("pagamento confirmado", "pagamento recebido", "recebemos o pagamento", "recebemos seu pagamento",
+            "pix recebido", "recebi o pix", "recebemos o pix", "recebi seu pix", "caiu o pix", "pix caiu",
+            "pagamento aprovado", "compra aprovada", "venda confirmada", "obrigado pela compra",
+            "agradecemos a compra", "agradecemos pela compra")
+
 # (tipo, quem escreve: "in" cliente / "out" time, frases, motivo de perda)
 RULES_AUTOPECAS = [
     ("ganho", "in", ("pago na hora", "pagar na hora", "pagamento na hora", "pago na retirada", "pago quando buscar",
                      "pago quando chegar", "pago na entrega", "pagar na entrega", "pago no balcao", "vou buscar",
                      "passo ai pra buscar", "passo ai pegar", "ja estou indo", "to indo buscar", "pode separar",
-                     "fechado entao", "pode fechar", "vou levar"), ""),
-    ("ganho", "out", ("pedido confirmado", "venda confirmada", "pagamento confirmado", "pagamento recebido",
-                      "recebemos o pagamento", "nota fiscal", "codigo de rastreio", "codigo de rastreamento",
+                     "fechado entao", "pode fechar", "vou levar") + PAID_IN, ""),
+    ("ganho", "out", ("pedido confirmado", "codigo de rastreio", "codigo de rastreamento",
                       "saiu para entrega", "saiu pra entrega", "ja esta separado", "ja separei", "separado pra voce",
-                      "pode vir buscar", "pode vir retirar", "obrigado pela compra", "obrigado pela preferencia"), ""),
+                      "pode vir buscar", "pode vir retirar") + PAID_OUT, ""),
     ("perdido", "in", ("ja comprei", "comprei em outro", "comprei em outra", "consegui em outro", "consegui em outra",
                        "ja consegui", "achei em outro", "ja achei", "ja resolvi"), "Comprou em outro lugar / concorrente"),
     ("perdido", "in", ("achei mais barato", "achei mais em conta", "muito caro", "ta caro", "esta caro", "caro demais",
@@ -79,7 +92,8 @@ RULES_AUTOPECAS = [
                        "qualquer coisa eu volto", "qualquer coisa volto"), "Desistiu / só pesquisando"),
     ("perdido", "in", ("demora muito", "prazo muito longo", "preciso pra hoje", "nao da pra esperar"),
        "Prazo de entrega / disponibilidade"),
-    ("perdido", "out", ("nao temos", "nao tenho essa", "nao tenho esse", "nao trabalhamos", "em falta",
+    ("perdido", "out", ("nao temos", "nao tenho", "nao tenho essa", "nao tenho esse", "vou ficar devendo",
+                        "fico devendo", "vou ficar te devendo", "nao trabalhamos", "em falta",
                         "sem estoque", "nao temos em estoque", "infelizmente nao temos", "nao encontrei essa",
                         "nao encontramos", "nao possuimos", "nao possuo", "nao temos mais", "nao tem mais",
                         "infelizmente nao", "ja foi vendido", "ja foi vendida", "ja foram vendidos", "foi vendido",
