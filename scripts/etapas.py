@@ -16,6 +16,11 @@ Rodar no terminal do VPS:
     docker exec -it crm-app python -m scripts.etapas 30           # últimos 30 dias
     docker exec -it crm-app python -m scripts.etapas 60 --aplicar # aplica
     (--sem-comprovantes: não lê as imagens, bem mais rápido)
+    (--so-fechamentos: só mexe em quem termina em Ganho ou Perdido; o resto fica como está)
+
+Em segundo plano (não depende do console ficar aberto; o andamento vai pra um arquivo):
+    docker exec -d crm-app sh -c 'python -m scripts.etapas 60 --so-fechamentos --aplicar > /tmp/etapas.log 2>&1'
+    docker exec crm-app tail -n 30 /tmp/etapas.log
 """
 
 import datetime
@@ -113,10 +118,12 @@ def review(db, lead: Lead, since: datetime.datetime, read_receipts: bool) -> tup
 
 
 def main() -> None:
+    sys.stdout.reconfigure(line_buffering=True)  # andamento aparece no log na hora
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     days = int(args[0]) if args else 60
     apply_changes = "--aplicar" in sys.argv
     read_receipts = "--sem-comprovantes" not in sys.argv
+    only_closing = "--so-fechamentos" in sys.argv  # só Ganho/Perdido; quem está no meio do funil fica como está
     since = datetime.datetime.utcnow() - datetime.timedelta(days=days)
     autostage.QUIET = True
     if read_receipts and not receipt_text.ocr_available():
@@ -129,13 +136,22 @@ def main() -> None:
             Lead.is_group.is_(False), Lead.deleted_at.is_(None), Lead.archived_at.is_(None), Lead.tag != "outro",
             Conversation.last_message_at >= since,
         ).distinct()]
-        print(f"\nRevisando {len(ids)} lead(s) com conversa nos últimos {days} dia(s)...\n")
+        print(f"\nRevisando {len(ids)} lead(s) com conversa nos últimos {days} dia(s)"
+              + (" — só fechamentos (Ganho/Perdido)" if only_closing else "") + "...\n")
         for lead_id in ids:
             lead = db.get(Lead, lead_id)
             start = lead.stage.name if lead.stage else "—"
+            if only_closing and lead.stage and (lead.stage.is_won or lead.stage.is_lost):
+                continue  # já fechado: não mexe (nem reabre pra Novo)
             autostage.LOG.clear()
             final, why = review(db, lead, since, read_receipts)
             end = final.stage.name if final.stage else "—"
+            if only_closing and not (final.stage and (final.stage.is_won or final.stage.is_lost)):
+                for obj in list(db.new):
+                    if isinstance(obj, Message) and obj.direction == "note":
+                        db.expunge(obj)
+                db.rollback()
+                continue
             # nenhuma nota no meio da conversa: só um resumo no fim
             for obj in list(db.new):
                 if isinstance(obj, Message) and obj.direction == "note":
