@@ -126,20 +126,36 @@ def _connected(number: WhatsAppNumber | None) -> bool:
             and (number.provider != "evolution" or number.connection_state == "open"))
 
 
-def number_for(db, lead: Lead) -> WhatsAppNumber | None:
-    """WhatsApp do vendedor do lead; sem número conectado, o próximo do rodízio (e o lead vai pra ele)."""
-    from app.services.distribution import pick_number_for_click
+def is_seller(user: User | None) -> bool:
+    """Vendedor que pode receber lead: ativo, na equipe, no rodízio e NÃO admin (admin não atende)."""
+    return (user is not None and user.role == "agent" and user.is_active and not user.removed_at
+            and user.accepting_leads and not user.read_only)
 
-    if lead.assigned_user_id:
+
+def seller_numbers(db, tenant_id: str) -> list:
+    """WhatsApps conectados de vendedores (nunca de admin), quem recebeu há mais tempo primeiro."""
+    numbers = [n for n in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant_id, WhatsAppNumber.is_active.is_(True))
+               if _connected(n) and n.owner_user_id and is_seller(n.owner)]
+    oldest = datetime.datetime(1970, 1, 1)
+    return sorted(numbers, key=lambda n: n.last_routed_at or oldest)
+
+
+def number_for(db, lead: Lead) -> WhatsAppNumber | None:
+    """WhatsApp do vendedor do lead; lead de admin, sem vendedor, ou com o WhatsApp do vendedor
+    desconectado: o próximo vendedor do rodízio (e o lead passa pra ele)."""
+    if lead.assigned_user_id and is_seller(lead.assigned_user):
         own = next((n for n in db.query(WhatsAppNumber).filter(
             WhatsAppNumber.tenant_id == lead.tenant_id, WhatsAppNumber.owner_user_id == lead.assigned_user_id,
-        ) if _connected(n)), None)
+            WhatsAppNumber.is_active.is_(True)) if _connected(n)), None)
         if own is not None:
             return own
-    number = pick_number_for_click(db, lead.tenant_id)
-    if number is not None and number.owner_user_id:
-        lead.assigned_user_id = number.owner_user_id
-    return number if _connected(number) else None
+    candidates = seller_numbers(db, lead.tenant_id)
+    if not candidates:
+        return None
+    number = candidates[0]
+    number.last_routed_at = datetime.datetime.utcnow()
+    lead.assigned_user_id = number.owner_user_id
+    return number
 
 
 def waiting_query(db, tenant: Tenant):

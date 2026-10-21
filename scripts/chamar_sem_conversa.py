@@ -3,6 +3,8 @@
 Mesma mensagem da automação (⚙ Prazos → 🤖 Mensagem automática): confirma a peça e o ano e diz
 que vai verificar. Sai do WhatsApp do vendedor já atribuído; sem vendedor ou com o WhatsApp dele
 desconectado, vai pro próximo do rodízio (e o lead passa pra ele). O lead vai pra Qualificado.
+Lead que está com admin (ou com quem saiu/pausou) é redistribuído entre os vendedores ANTES de
+começar a mandar, um pra cada vendedor na vez (rodízio), e já aparece no Pipeline do vendedor.
 
 Cuidados (é WhatsApp de celular, não a API oficial: mandar muito de uma vez pode bloquear o número):
 - só um cliente por vez (--cliente <identificador>, ex: novaviseu);
@@ -28,7 +30,7 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # pasta do CRM
 
 from app.db import SessionLocal
-from app.models import Lead, Tenant, User
+from app.models import Lead, Tenant
 from app.services import first_contact
 from app.timeutil import to_local
 
@@ -64,21 +66,36 @@ def main() -> None:
         older = query.filter(Lead.created_at < since).count() if query is not None else 0
         print(f"\n{tenant.name}: {len(leads)} lead(s) sem conversa, com a peça, dos últimos {days} dias"
               + (f" ({older} mais antigos ficam de fora)" if older else "") + ".\n")
-        by_seller = Counter((l.assigned_user.name if l.assigned_user else "sem vendedor (vai pro rodízio)") for l in leads)
+        by_seller = Counter((l.assigned_user.name if l.assigned_user else "sem vendedor") for l in leads
+                            if first_contact.is_seller(l.assigned_user))
         for name, n in by_seller.most_common():
             print(f"  {n:4d} · {name}")
+        moving = [l for l in leads if not first_contact.is_seller(l.assigned_user)]
+        sellers = first_contact.seller_numbers(db, tenant.id)
+        if moving:
+            who = Counter((l.assigned_user.name + (" (admin)" if l.assigned_user.role == "admin" else " (fora do rodízio)"))
+                          if l.assigned_user else "sem vendedor" for l in moving)
+            print(f"\n  {len(moving)} estão com admin / sem vendedor / com quem saiu e vão ser redistribuídos entre "
+                  f"{len(sellers)} vendedor(es) com WhatsApp conectado ({', '.join(n.owner.name for n in sellers) or 'nenhum'}):")
+            for name, n in who.most_common():
+                print(f"       {n:4d} · {name}")
         if not leads:
             return
-        days_needed = -(-len(leads) // max(1, per_number * max(1, len(by_seller))))
+        days_needed = -(-len(leads) // max(1, per_number * max(1, len(sellers))))
         print(f"\nRitmo: 1 mensagem a cada {PAUSE[0]}-{PAUSE[1]}s, até {per_number} por WhatsApp por dia "
               f"(≈ {days_needed} dia(s) pra todos, se os WhatsApps estiverem conectados).")
         sample = leads[0]
-        seller = sample.assigned_user or db.query(User).filter(User.tenant_id == tenant.id).first()
+        seller = sample.assigned_user if first_contact.is_seller(sample.assigned_user) else (sellers[0].owner if sellers else None)
         print("\nExemplo de mensagem (" + (sample.name or sample.phone) + "):\n")
         print("  " + first_contact.message_for(tenant, sample, seller).replace("\n", "\n  "))
         if not apply_changes:
-            print("\nNada foi enviado. Pra mandar, rode de novo com --aplicar no final.")
+            print("\nNada foi enviado nem redistribuído. Pra mandar, rode de novo com --aplicar no final.")
             return
+        if moving and sellers:  # redistribui antes de mandar: um pra cada vendedor na vez
+            for i, lead in enumerate(moving):
+                lead.assigned_user_id = sellers[i % len(sellers)].owner_user_id
+            db.commit()
+            print(f"\n↪ {len(moving)} lead(s) redistribuídos entre os vendedores.")
 
         sent_today: Counter = Counter()
         day = to_local(datetime.datetime.utcnow()).date()
