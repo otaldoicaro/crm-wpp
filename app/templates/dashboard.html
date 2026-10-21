@@ -539,14 +539,18 @@ document.addEventListener("submit", function (e) {
       <h4 style="margin:14px 0 4px">💬 Clique pro WhatsApp: conta do WhatsApp (WABA) de cada número</h4>
       <p class="muted" style="margin:0 0 8px">Com o WABA do número, venda/oportunidade de quem veio do anúncio de clique pro WhatsApp vai como <b>conversa de WhatsApp</b> (com o código do clique) — o formato que deixa otimizar a campanha de mensagem pela venda. O CRM confere no Meta se a conta tem esse telefone. Onde achar: Configurações do negócio → Contas → Contas do WhatsApp → clique no número: o ID aparece no endereço da página (<code>selected_asset_id=…</code>) ou no menu <b>⋯</b>.</p>
       <form method="post" action="/dashboard/whatsapp-waba">
-        <label class="wa-token-field">Token do WhatsApp <span class="muted">(do app do cliente, com as permissões de WhatsApp; em branco = usa o token do pixel)</span>
-          <input name="wa_token" type="password" autocomplete="off" placeholder="{{ 'já salvo (deixe em branco pra manter)' if tenant.meta_wa_token else 'cole aqui o token gerado no app' }}"></label>
+        <label class="wa-token-field">Token do WhatsApp {% if tenant.meta_wa_token %}<span class="goal-ok">✓ salvo</span>{% endif %} <span class="muted">(do app do cliente, com as permissões de WhatsApp; em branco = usa o token do pixel)</span>
+          <span class="wa-token-row">
+            <input name="wa_token" type="password" autocomplete="new-password" placeholder="{{ 'já salvo (deixe em branco pra manter)' if tenant.meta_wa_token else 'cole aqui o token gerado no app' }}">
+            <button class="btn small" type="submit" data-busy="Conferindo no Meta…">Salvar token e conferir os números</button>
+          </span></label>
+        <p class="muted" style="margin:0 0 8px">Este botão (ou o “Salvar e conferir” no fim da tabela) salva o token do WhatsApp e confere cada número. O botão “Salvar e conferir o pixel”, lá em cima, salva só o pixel.</p>
         <table class="table-simple">
           <thead><tr><th>Número</th><th>Conta do WhatsApp (WABA)</th><th>Situação</th></tr></thead>
           <tbody>{% for n in wa_numbers %}<tr>
             <td><b>{{ n.label }}</b><div class="muted">{{ n.phone_number or "não pareado" }}</div></td>
             <td><input name="waba_{{ n.id }}" value="{{ n.meta_waba_id }}" inputmode="numeric" placeholder="ID da conta"></td>
-            <td class="{{ 'goal-ok' if n.meta_waba_checked_at else 'muted' }}">{{ ("✅ conferido · dados " ~ n.meta_dataset_id) if n.meta_waba_checked_at else ("⚠️ não conferido" if n.meta_waba_id else "—") }}</td>
+            <td class="{{ 'goal-ok' if n.meta_waba_checked_at else 'muted' }}">{% if n.meta_waba_checked_at %}✅ conferido · dados {{ n.meta_dataset_id }}{% elif n.meta_waba_error %}<span class="goal-bad">⚠️ não conferiu</span><div class="waba-error">{{ n.meta_waba_error }}</div>{% elif n.meta_waba_id %}⚠️ ainda não conferido{% else %}—{% endif %}</td>
           </tr>{% endfor %}</tbody>
         </table>
         <button class="btn small" type="submit" data-busy="Conferindo no Meta…">Salvar e conferir</button>

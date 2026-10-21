@@ -819,10 +819,11 @@ async def save_whatsapp_waba(
             if raw == (number.meta_waba_id or "") and number.meta_waba_checked_at:
                 continue  # não mudou e já está conferido
             number.meta_waba_id = raw
-            number.meta_dataset_id, number.meta_waba_checked_at = "", None
+            number.meta_dataset_id, number.meta_waba_checked_at, number.meta_waba_error = "", None, ""
             if not raw:
                 continue
             ok, msg, dataset = meta_capi.verify_waba(tenant, number)
+            number.meta_waba_error = "" if ok else msg[:500]
             if ok:
                 number.meta_dataset_id, number.meta_waba_checked_at = dataset, datetime.datetime.utcnow()
             msgs.append(("✅ " if ok else "⚠️ ") + f"{number.label}: {msg}")

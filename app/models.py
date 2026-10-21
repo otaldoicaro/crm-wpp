@@ -141,6 +141,7 @@ class WhatsAppNumber(Base):
     meta_waba_id: Mapped[str] = mapped_column(String(40), default="")
     meta_dataset_id: Mapped[str] = mapped_column(String(40), default="")
     meta_waba_checked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    meta_waba_error: Mapped[str] = mapped_column(String(500), default="")  # por que não conferiu (aparece na tabela)
     # último clique do link rotativo (/go/{tenant}) mandado pra este número
     last_routed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

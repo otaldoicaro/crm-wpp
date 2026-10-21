@@ -950,3 +950,6 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 [data-tema="conexao"] .login-card label { font-size: .75rem; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
 [data-tema="conexao"] .login-card .btn { padding: 15px; font-size: 1.05rem; }
 .wa-token-field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; max-width: 560px; font-weight: 600; font-size: .82rem; }
+.wa-token-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-weight: 400; }
+.wa-token-row input { flex: 1; min-width: 240px; }
+.waba-error { font-size: .72rem; color: var(--muted); max-width: 420px; white-space: normal; margin-top: 2px; }
