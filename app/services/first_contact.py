@@ -9,7 +9,9 @@ Regras:
 - sai do WhatsApp do vendedor do lead; se ele não tem número conectado, vai pro próximo número do
   rodízio (o mesmo do link /go) e o lead passa pra esse vendedor;
 - só de HOURS[0] às HOURS[1] (horário de Brasília): formulário de madrugada recebe às 8h;
-- formulário com mais de MAX_AGE sem mensagem: desiste (não manda "vou verificar" dias depois).
+- formulário com mais de MAX_AGE sem mensagem: desiste (não manda "vou verificar" dias depois);
+- só quem informou a peça no formulário (a mensagem sempre confirma o que a pessoa pediu).
+Os leads antigos sem conversa são chamados uma vez pelo scripts/chamar_sem_conversa.py.
 """
 
 from __future__ import annotations
@@ -140,28 +142,35 @@ def number_for(db, lead: Lead) -> WhatsAppNumber | None:
     return number if _connected(number) else None
 
 
-def due_leads(db, tenant: Tenant, now: datetime.datetime) -> list:
-    no_chat = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).all()
+def waiting_query(db, tenant: Tenant):
+    """Leads deste cliente em "Lead sem conversa", sem nenhuma conversa, com a peça no formulário e
+    que ainda não receberam a mensagem."""
     from app.services import funnel
 
-    stage = funnel.stage_named(no_chat, funnel.NO_CHAT_NAME)
+    stage = funnel.stage_named(db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).all(), funnel.NO_CHAT_NAME)
     if stage is None:
-        return []
-    wait = datetime.timedelta(minutes=max(1, tenant.auto_hello_minutes or 3))
+        return None
     return db.query(Lead).filter(
         Lead.tenant_id == tenant.id, Lead.stage_id == stage.id, Lead.auto_hello_at.is_(None),
         Lead.deleted_at.is_(None), Lead.archived_at.is_(None), Lead.is_group.is_(False), Lead.tag != "outro",
-        Lead.phone != "", Lead.created_at <= now - wait, Lead.created_at >= now - MAX_AGE,
-        ~Lead.conversations.any(),
-    ).order_by(Lead.created_at).limit(20).all()
+        Lead.phone != "", Lead.form_details.like("%Peças: %"), ~Lead.conversations.any(),
+    )
 
 
-def send_one(db, tenant: Tenant, lead: Lead) -> str:
+def due_leads(db, tenant: Tenant, now: datetime.datetime) -> list:
+    query = waiting_query(db, tenant)
+    if query is None:
+        return []
+    wait = datetime.timedelta(minutes=max(1, tenant.auto_hello_minutes or 3))
+    return query.filter(Lead.created_at <= now - wait, Lead.created_at >= now - MAX_AGE).order_by(Lead.created_at).limit(20).all()
+
+
+def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = None) -> str:
     """Manda a mensagem deste lead. Devolve "enviada", "confirmando", "falhou" ou "sem número"."""
     from app.routers.dashboard import _record_outbound
     from app.services import funnel, messaging
 
-    number = number_for(db, lead)
+    number = number or number_for(db, lead)
     if number is None:
         db.commit()  # pode ter passado o lead pro próximo do rodízio
         return "sem número"
