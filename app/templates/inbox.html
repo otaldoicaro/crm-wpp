@@ -133,10 +133,10 @@
             <button class="btn ghost small" type="submit" title="O cliente quer comprar de novo">+ Novo negócio</button>
           </form>
           {% endif %}
+          {% if not selected_lead.is_group %}<a class="btn ghost small" href="/leads/{{ selected_lead.id }}?voltar=inbox" title="Ficha completa: dados, origem, histórico de negócios, pagamento">📋 Ver status do lead</a>{% endif %}
           <details class="more-menu">
             <summary class="btn ghost small">⋯ Mais</summary>
             <div class="more-pop">
-              {% if not selected_lead.is_group %}<a href="/leads/{{ selected_lead.id }}?voltar=inbox">📋 Status do lead (ficha completa)</a>{% endif %}
               {% if transfer_people %}
               <form method="post" action="/leads/{{ selected_lead.id }}/transferir" class="transfer-form">
                 <select name="para" aria-label="Passar a conversa pra outro vendedor no CRM">
