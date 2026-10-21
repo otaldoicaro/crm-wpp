@@ -57,7 +57,9 @@ def _clean_ids(text: str) -> list:
 
 def verify_pixel(tenant) -> tuple:
     """(ok, mensagem). O pixel tem que aparecer nas contas de anúncio DESTE cliente, e o token
-    do cliente tem que conseguir ler esse pixel."""
+    do cliente tem que conseguir mandar evento pra ele. O token gerado no Gerenciador de Eventos
+    só manda evento (não lê o pixel: "#100 Missing Permission"), então a conferência é um evento
+    de teste, que só aparece em "Eventos de teste" (precisa do código de teste)."""
     pixel = (tenant.meta_pixel_id or "").strip()
     if not pixel.isdigit():
         return False, "Coloque o ID do conjunto de dados/pixel (só números)."
@@ -68,7 +70,7 @@ def verify_pixel(tenant) -> tuple:
         return False, "Este cliente ainda não tem contas de anúncio cadastradas: sem elas não dá pra conferir de quem é o pixel."
     if not META_ADS_ACCESS_TOKEN:
         return False, "Falta o token do Meta Ads no servidor pra conferir o pixel."
-    found_in = []
+    found_in, name = [], pixel
     for account in accounts:
         try:
             resp = requests.get(f"{GRAPH}/act_{account}/adspixels", params={
@@ -76,21 +78,34 @@ def verify_pixel(tenant) -> tuple:
             data = resp.json()
         except (requests.RequestException, ValueError):
             continue
-        if any(str(p.get("id")) == pixel for p in data.get("data", [])):
+        mine = next((p for p in data.get("data", []) if str(p.get("id")) == pixel), None)
+        if mine is not None:
             found_in.append(account)
+            name = mine.get("name") or name
     if not found_in:
         return False, ("Esse pixel NÃO está ligado a nenhuma conta de anúncio deste cliente "
                        f"({', '.join(accounts)}). Confira se não é o pixel de outro cliente.")
+    code = (tenant.meta_capi_test_code or "").strip()
+    if not code:
+        return False, ("Pra conferir o token, coloque o código de teste (Gerenciador de Eventos → pixel → Eventos de teste) "
+                       "e salve de novo. Depois do teste dar certo, apague o código pra valer de verdade.")
+    event = {
+        "event_name": "PageView", "event_time": int(time.time()), "event_id": f"conferencia-{int(time.time())}",
+        "action_source": "website", "event_source_url": "https://crm.teste/conferencia",
+        "user_data": {"country": [_sha256("br")], "client_user_agent": "CRM conferencia do token"},
+    }
     try:
-        resp = requests.get(f"{GRAPH}/{pixel}", params={"fields": "id,name", "access_token": tenant.meta_capi_token}, timeout=20)
-        body = resp.json()
+        resp = requests.post(f"{GRAPH}/{pixel}/events", params={"access_token": tenant.meta_capi_token},
+                             json={"data": [event], "test_event_code": code}, timeout=20)
+        body = resp.json() if resp.content else {}
     except (requests.RequestException, ValueError):
         return False, "Não consegui falar com o Meta pra testar o token. Tente de novo."
     if not resp.ok:
-        return False, ("O token não tem acesso a esse pixel. Use o token gerado no próprio pixel: Gerenciador de Eventos → "
-                       "pixel → Configurações → API de Conversões → Gerar token de acesso. O token do app do WhatsApp vai "
-                       "no campo de baixo (tabela dos WhatsApps)." + _meta_error(body))
-    return True, f"Pixel “{body.get('name', pixel)}” conferido: é da conta de anúncio {', '.join(found_in)} deste cliente."
+        return False, ("O token não conseguiu mandar evento pra esse pixel. Use o token gerado no próprio pixel: Gerenciador de "
+                       "Eventos → pixel → Configurações → API de Conversões → Gerar token de acesso. O token do app do "
+                       "WhatsApp vai no campo de baixo (tabela dos WhatsApps)." + _meta_error(body))
+    return True, (f"Pixel “{name}” conferido: é da conta de anúncio {', '.join(found_in)} deste cliente, e o token mandou um "
+                  "evento de teste (aparece em Eventos de teste como PageView).")
 
 
 def build_event(lead, kind: str, event_id: str, event_time: int, waba_id: str = "") -> dict:

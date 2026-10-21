@@ -776,7 +776,11 @@ def save_meta_events(
         tenant.meta_capi_token = token.strip()
         tenant.meta_capi_checked_at = None
     tenant.meta_capi_test_code = teste.strip()[:40]
-    if new_pixel:
+    if new_pixel and tenant.meta_capi_checked_at:  # mesmo pixel e token, já conferidos (ex: só apagou o código de teste)
+        ok, msg = True, ("Salvo. Pixel e token continuam conferidos"
+                         + (" — modo teste: os eventos só aparecem em Eventos de teste." if tenant.meta_capi_test_code
+                            else " — valendo de verdade."))
+    elif new_pixel:
         ok, msg = meta_capi.verify_pixel(tenant)
     else:
         ok, msg = False, "Sem pixel: só os números com conta do WhatsApp conferida (tabela abaixo) vão enviar."
