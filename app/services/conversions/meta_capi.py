@@ -48,7 +48,10 @@ def wa_token(tenant) -> str:
 def _meta_error(body) -> str:
     """Motivo que o Meta deu (pra mostrar na tela e saber o que ajustar)."""
     err = body.get("error") if isinstance(body, dict) else None
-    return f" (Meta: {err.get('message', '')[:200]})" if isinstance(err, dict) and err.get("message") else ""
+    if not isinstance(err, dict) or not err.get("message"):
+        return ""
+    detail = " — ".join(x for x in (err.get("error_user_title"), err.get("error_user_msg")) if x)  # o "porquê" de verdade
+    return f" (Meta: {err['message'][:150]}{' — ' + detail[:300] if detail else ''})"
 
 
 def _clean_ids(text: str) -> list:
@@ -89,10 +92,14 @@ def verify_pixel(tenant) -> tuple:
     if not code:
         return False, ("Pra conferir o token, coloque o código de teste (Gerenciador de Eventos → pixel → Eventos de teste) "
                        "e salve de novo. Depois do teste dar certo, apague o código pra valer de verdade.")
+    # evento de site completo (URL, navegador e dados criptografados): sem isso o Meta recusa com "Invalid parameter"
     event = {
         "event_name": "PageView", "event_time": int(time.time()), "event_id": f"conferencia-{int(time.time())}",
-        "action_source": "website", "event_source_url": "https://crm.teste/conferencia",
-        "user_data": {"country": [_sha256("br")], "client_user_agent": "CRM conferencia do token"},
+        "action_source": "website", "event_source_url": "https://www.facebook.com/",
+        "user_data": {
+            "ph": [_sha256("5511999999999")], "external_id": [_sha256(f"conferencia-{pixel}")], "country": [_sha256("br")],
+            "client_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        },
     }
     try:
         resp = requests.post(f"{GRAPH}/{pixel}/events", params={"access_token": tenant.meta_capi_token},
