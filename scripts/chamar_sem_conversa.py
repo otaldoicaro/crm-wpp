@@ -21,6 +21,7 @@ Sem --aplicar só mostra quantos são, de quem, e um exemplo de mensagem por ven
 """
 
 import datetime
+import fcntl
 import os
 import random
 import sys
@@ -90,6 +91,13 @@ def main() -> None:
         print("  " + first_contact.message_for(tenant, sample, seller).replace("\n", "\n  "))
         if not apply_changes:
             print("\nNada foi enviado nem redistribuído. Pra mandar, rode de novo com --aplicar no final.")
+            return
+        # trava: dois envios ao mesmo tempo poderiam mandar a mesma mensagem 2x pro mesmo cliente
+        lock = open("/tmp/chamar_sem_conversa.lock", "w")
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            print("\n⚠️ Já tem um envio rodando. Esse aqui não vai mandar nada (pra não repetir mensagem).")
             return
         if moving and sellers:  # redistribui antes de mandar: um pra cada vendedor na vez
             for i, lead in enumerate(moving):
