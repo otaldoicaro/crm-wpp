@@ -16,10 +16,10 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import Tenant, User, WhatsAppNumber
-from app.config import PUBLIC_BASE_URL
 from app.services import evolution_client
 from app.services.people import team_members
 from app.templating import templates
+from app.tenancy import public_url
 
 router = APIRouter()
 
@@ -78,9 +78,9 @@ def whatsapp_page(
             "active_nav": "whatsapp",
             "numbers": numbers,
             "users": _users(db, tenant) if user.role == "admin" else [],
-            "rotating_link": f"{PUBLIC_BASE_URL}/go/{tenant.id}",
+            "rotating_link": f"{public_url(tenant)}/go/{tenant.id}",
             "seller_links": [
-                (person, f"{PUBLIC_BASE_URL}/go/{tenant.id}/vendedor/{person.id}")
+                (person, f"{public_url(tenant)}/go/{tenant.id}/vendedor/{person.id}")
                 for person in (_users(db, tenant) if user.role == "admin" else [user])
                 if person.role == "agent" or person.id == user.id
             ],

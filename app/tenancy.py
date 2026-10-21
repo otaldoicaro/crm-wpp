@@ -5,7 +5,7 @@ import os
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from app.config import BASE_DOMAIN
+from app.config import BASE_DOMAIN, PUBLIC_BASE_URL
 from app.models import Tenant
 
 DEBUG = os.getenv("DEBUG", "1") == "1"
@@ -74,3 +74,15 @@ def is_known_host(db: Session, host: str) -> bool:
         sub = host[: -(len(BASE_DOMAIN) + 1)]
         return db.query(Tenant.id).filter(Tenant.subdomain == sub).first() is not None
     return False
+
+
+def public_url(tenant) -> str:
+    """Endereço do CRM DESTE cliente pra links que vão pra fora (convite, link rotativo...):
+    o domínio próprio (https://crm.cliente.com.br); sem ele, o endereço reserva
+    https://<identificador>.<BASE_DOMAIN>. Nunca o PUBLIC_BASE_URL, que é um só pro servidor
+    inteiro (e mostraria o domínio de outro cliente)."""
+    if tenant is not None and tenant.custom_domain:
+        return f"https://{tenant.custom_domain}"
+    if tenant is not None and BASE_DOMAIN and BASE_DOMAIN != "localhost":
+        return f"https://{tenant.subdomain}.{BASE_DOMAIN}"
+    return PUBLIC_BASE_URL

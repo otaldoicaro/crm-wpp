@@ -19,13 +19,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import create_session_token, hash_password
-from app.config import PUBLIC_BASE_URL, SESSION_COOKIE_NAME
+from app.config import SESSION_COOKIE_NAME
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app.services import evolution_client
 from app.services.distribution import assign_lead
-from app.tenancy import DEBUG
+from app.tenancy import DEBUG, public_url
 from app.templating import templates
 
 router = APIRouter()
@@ -97,7 +97,7 @@ def team_page(
             "shared_numbers": shared_numbers,
             "numbers_total": len(numbers),
             "connected_total": connected_total,
-            "invite_link": f"{PUBLIC_BASE_URL}/convite/{_ensure_invite_token(db, tenant)}",
+            "invite_link": f"{public_url(tenant)}/convite/{_ensure_invite_token(db, tenant)}",
         },
     )
 
