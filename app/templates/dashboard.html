@@ -543,6 +543,7 @@ document.addEventListener("submit", function (e) {
           <span class="wa-token-row">
             <input name="wa_token" type="password" autocomplete="new-password" placeholder="{{ 'já salvo (deixe em branco pra manter)' if tenant.meta_wa_token else 'cole aqui o token gerado no app' }}">
             <button class="btn small" type="submit" data-busy="Conferindo no Meta…">Salvar token e conferir os números</button>
+            <button class="btn small" type="submit" name="acao" value="descobrir" data-busy="Procurando no Meta…" title="O CRM pergunta ao Meta quais contas do WhatsApp esse token enxerga e preenche o ID de cada número sozinho">🔎 Achar os IDs sozinho</button>
           </span></label>
         <p class="muted" style="margin:0 0 8px">Este botão (ou o “Salvar e conferir” no fim da tabela) salva o token do WhatsApp e confere cada número. O botão “Salvar e conferir o pixel”, lá em cima, salva só o pixel.</p>
         <table class="table-simple">

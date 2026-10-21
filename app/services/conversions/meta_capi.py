@@ -232,6 +232,37 @@ def verify_waba(tenant, number) -> tuple:
     return True, f"Conta do WhatsApp {waba} conferida (número {number.phone_number}, conjunto de dados {ids[0]}).", ids[0]
 
 
+def discover_wabas(tenant) -> tuple:
+    """(ok, mensagem, {waba_id: [telefones só dígitos]}). As contas do WhatsApp que o token do
+    WhatsApp enxerga (lidas do próprio token no Meta) e os números de cada uma: assim ninguém
+    precisa caçar o ID certo (o do Gerenciador do WhatsApp muitas vezes é outro número)."""
+    token = wa_token(tenant)
+    if not token:
+        return False, "Salve primeiro o token do WhatsApp.", {}
+    try:
+        resp = requests.get(f"{GRAPH}/debug_token", params={"input_token": token, "access_token": token}, timeout=20)
+        info = (resp.json() or {}).get("data", {})
+    except (requests.RequestException, ValueError):
+        return False, "Não consegui falar com o Meta agora. Tente de novo.", {}
+    ids = []
+    for scope in info.get("granular_scopes") or []:
+        if scope.get("scope") in ("whatsapp_business_management", "whatsapp_business_manage_events", "whatsapp_business_messaging"):
+            ids += [str(i) for i in scope.get("target_ids") or [] if str(i) not in ids]
+    if not ids:
+        return False, ("O token não enxerga nenhuma conta do WhatsApp. Gere o token no app com as permissões de WhatsApp "
+                       "(whatsapp_business_management e whatsapp_business_manage_events) marcadas." + _meta_error(resp.json() if resp.content else {})), {}
+    found = {}
+    for waba in ids:
+        try:
+            r = requests.get(f"{GRAPH}/{waba}/phone_numbers", params={"fields": "display_phone_number", "access_token": token}, timeout=20)
+            data = r.json()
+        except (requests.RequestException, ValueError):
+            continue
+        if r.ok:
+            found[waba] = [re.sub(r"\D", "", p.get("display_phone_number", "")) for p in data.get("data", [])]
+    return True, f"{len(found)} conta(s) do WhatsApp encontradas pelo token.", found
+
+
 def send_to(tenant, destination: str, events: list, whatsapp: bool = False) -> dict:
     """Manda pra um destino do cliente (pixel ou conjunto de dados de um WhatsApp dele)."""
     token = wa_token(tenant) if whatsapp else tenant.meta_capi_token

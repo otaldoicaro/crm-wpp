@@ -814,8 +814,22 @@ async def save_whatsapp_waba(
             tenant.meta_wa_token = new_token
             for number in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id):
                 number.meta_waba_checked_at = None
-        for number in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True)):
-            raw = re.sub(r"\D", "", str(form.get(f"waba_{number.id}", "")))
+        numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True)).all()
+        found_for: dict = {}
+        if form.get("acao") == "descobrir":  # 🔎 o próprio token diz quais WABAs enxerga e os números de cada um
+            ok, msg, found = meta_capi.discover_wabas(tenant)
+            msgs.append(("🔎 " if ok else "⚠️ ") + msg)
+            for number in numbers:
+                mine = re.sub(r"\D", "", number.phone_number or "")
+                waba = next((w for w, phones in found.items() if mine and any(p and p[-8:] == mine[-8:] for p in phones)), None)
+                if waba:
+                    found_for[number.id] = waba
+            loose = {w: p for w, p in found.items() if w not in found_for.values()}
+            if loose:  # conta que o token enxerga mas cujo número não está no CRM (ou está com outro número)
+                msgs.append("Contas sem número igual no CRM: " + ", ".join(
+                    f"{w} ({', '.join(p) or 'sem número'})" for w, p in loose.items()))
+        for number in numbers:
+            raw = found_for.get(number.id) or re.sub(r"\D", "", str(form.get(f"waba_{number.id}", "")))
             if raw == (number.meta_waba_id or "") and number.meta_waba_checked_at:
                 continue  # não mudou e já está conferido
             number.meta_waba_id = raw
