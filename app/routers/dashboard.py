@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app.services import autostage, comments, deals, evolution_client, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
+from app import features
+from app.services import autostage, car_deal, comments, deals, evolution_client, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -484,6 +485,10 @@ def update_lead(
     deal_value: str = Form(""),
     loss_reason: str = Form(""),
     loss_detail: str = Form(""),
+    pay_mode: Optional[str] = Form(None),  # venda parcelada (features "pagamento_parcelado")
+    down_payment: str = Form(""),
+    installments: str = Form(""),
+    installment_value: str = Form(""),
     voltar: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
@@ -511,6 +516,8 @@ def update_lead(
         pass  # valor ilegível: mantém o que estava (antes apagava)
     if stage:
         funnel.set_stage(lead, stage)
+    if pay_mode is not None and features.has(tenant, "pagamento_parcelado"):
+        car_deal.save_form(lead, pay_mode, down_payment, installments, installment_value, _parse_brl)
     db.add(lead)
     db.commit()
 
@@ -668,7 +675,9 @@ def deadlines_page(
         raise HTTPException(status_code=403)
     return templates.TemplateResponse(request, "prazos.html", {
         "tenant": tenant, "user": user, "active_nav": "pipeline", "stages": funnel._stages(db, tenant.id),
-        "hello_default": first_contact.DEFAULT_TEXT.replace("{empresa}", tenant.name),
+        "hello_default": first_contact.default_text(tenant).replace("{empresa}", tenant.name),
+        "hello_stage": first_contact.target_stage_name(tenant),
+        "feature_list": features.FEATURES, "features_on": features.enabled(tenant),
     })
 
 
@@ -698,8 +707,10 @@ async def save_deadlines(
         tenant.auto_hello_enabled = form.get("auto_hello_enabled") == "1"
         tenant.auto_hello_minutes = max(1, min(60, hours("auto_hello_minutes", 3) or 3))
         text = str(form.get("auto_hello_text", "")).replace("\r\n", "\n").strip()
-        default = first_contact.DEFAULT_TEXT.replace("{empresa}", tenant.name)
+        default = first_contact.default_text(tenant).replace("{empresa}", tenant.name)
         tenant.auto_hello_text = "" if text == default else text[:1500]  # igual ao padrão: segue o padrão
+        if form.get("features_form") == "1":
+            tenant.features = features.store(form.getlist("feature"))
         db.commit()
 
     await run_in_threadpool(apply)
@@ -1393,6 +1404,10 @@ def set_lead_stage(
     deal_value: str = Form(""),
     loss_reason: str = Form(""),
     loss_detail: str = Form(""),
+    pay_mode: Optional[str] = Form(None),  # venda parcelada (features "pagamento_parcelado")
+    down_payment: str = Form(""),
+    installments: str = Form(""),
+    installment_value: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -1417,6 +1432,8 @@ def set_lead_stage(
     funnel.set_stage(lead, stage)
     if value > 0:
         lead.deal_value = value
+    if pay_mode is not None and features.has(tenant, "pagamento_parcelado"):
+        car_deal.save_form(lead, pay_mode, down_payment, installments, installment_value, _parse_brl)
     if stage.is_lost:
         lead.loss_reason, lead.loss_detail = loss_reason, loss_detail.strip()
     db.commit()

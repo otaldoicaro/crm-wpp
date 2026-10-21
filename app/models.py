@@ -42,6 +42,8 @@ class Tenant(Base):
     # ramo do cliente (chave de app/segments.py, ex: "autopecas", "seminovos"): motivos de perda,
     # frases das sugestões de etapa e textos de exemplo
     segment: Mapped[str] = mapped_column(String(40), default="autopecas")
+    # recursos ligados só pra este cliente (app/features.py); vazio = padrão do ramo
+    features: Mapped[str] = mapped_column(String(300), default="")
     # segredo do link de convite (/convite/{token}) pra vendedor criar o próprio login; vazio = sem link
     invite_token: Mapped[str] = mapped_column(String(40), default="", index=True)
     # contas de anúncio do Meta deste cliente ("123,456", sem o act_): descobertas sozinhas pelos
@@ -205,6 +207,12 @@ class Lead(Base):
     stage_entered_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     unanswered_outs: Mapped[int] = mapped_column(Integer, default=0)
     quoted_value: Mapped[Optional[float]] = mapped_column(nullable=True)
+    # venda parcelada (recurso "pagamento_parcelado", ex: seminovos): "avista" | "parcelado" | "";
+    # entrada (0 = sem entrada), quantidade e valor da parcela. deal_value continua o preço do carro.
+    pay_mode: Mapped[str] = mapped_column(String(20), default="")
+    down_payment: Mapped[Optional[float]] = mapped_column(nullable=True)
+    installments: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    installment_value: Mapped[Optional[float]] = mapped_column(nullable=True)
     quoted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     next_action_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     next_action_note: Mapped[str] = mapped_column(String(255), default="")

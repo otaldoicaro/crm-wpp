@@ -30,6 +30,10 @@ SEGMENTS = {
         "first_message": "Olá{nome}! Tudo bem? Aqui é {vendedor}, da {empresa}. Vi que você se interessou "
                          "pelas nossas peças! Me passa qual peça você procura, o modelo do carro e o ano, "
                          "que eu já verifico pra você 😉",
+        # 🤖 mensagem automática pro lead do formulário (first_contact): vazio = first_contact.DEFAULT_TEXT;
+        # e pra qual etapa o lead vai depois dela (o cliente da LP já disse carro, ano e peça)
+        "auto_hello_text": "",
+        "auto_hello_stage": "Qualificado",
     },
     "seminovos": {
         "label": "Seminovos",
@@ -50,6 +54,11 @@ SEGMENTS = {
         "first_message": "Olá{nome}! Tudo bem? Aqui é {vendedor}, da {empresa}. Vi que você se interessou "
                          "pelos nossos carros! Me conta qual modelo você procura e se tem carro pra dar na troca, "
                          "que eu já te ajudo 😉",
+        # aprovado pelo Icaro em 21/10/2026 (mesma pegada da 1ª mensagem manual)
+        "auto_hello_text": "Olá, {nome}! Tudo bem? Aqui é {vendedor}, da {empresa}. Vi que você se interessou "
+                           "pelos nossos carros! Me conta qual modelo você procura e se tem carro pra dar na troca, "
+                           "que eu já te ajudo 😉",
+        "auto_hello_stage": "Em atendimento",  # formulário de carro não diz se vai comprar: o time já falou
     },
 }
 DEFAULT_SEGMENT = "autopecas"

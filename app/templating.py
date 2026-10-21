@@ -15,9 +15,9 @@ import os
 
 from fastapi.templating import Jinja2Templates
 
-from app import segments
+from app import features, segments
 from app.themes import theme_css, theme_for
-from app.services import followup, funnel, response_times, suggestions
+from app.services import car_deal, followup, funnel, response_times, suggestions
 from app.timeutil import fmt_local
 
 templates = Jinja2Templates(directory="app/templates")
@@ -47,6 +47,9 @@ templates.env.globals["fmt_metric"] = _traffic.fmt
 templates.env.globals["auto_stage"] = funnel.is_automatic  # etapas que só o CRM preenche
 templates.env.globals["loss_reasons"] = segments.loss_reasons  # motivos de perda do ramo do cliente
 templates.env.globals["segment_for"] = segments.segment_for
+templates.env.globals["has_feature"] = features.has  # recursos ligados só pra este cliente
+templates.env.globals["pay_terms"] = car_deal.describe  # "Entrada R$ ... + 60x R$ ..."
+templates.env.filters["brl"] = lambda v: f"{float(v or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 templates.env.globals["sug_current"] = suggestions.current  # 💡 sugestão de etapa pendente
 templates.env.globals["SUG_LABEL"] = suggestions.KIND_LABEL
 templates.env.globals["fu_state"] = followup.state  # selos ⏰ parado / 📞 follow-up / 📅 próximo contato

@@ -968,3 +968,14 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .ap .ap-speed { font-size: .72rem; font-weight: 800; padding: 3px 7px; border-radius: 999px; background: rgba(0, 0, 0, .08); min-width: 34px; }
 .ap .ap-speed.fast { box-shadow: inset 0 0 0 1.5px currentColor; }
 .ap audio { display: none; }
+
+/* ---------- venda parcelada (recurso "pagamento_parcelado"): Pagamento · Entrada · 60 x R$ ---------- */
+.pay-fields { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.pay-fields label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.pay-parcelado { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.pay-parcelado[hidden] { display: none !important; }
+.pay-fields input.money { width: 96px; }
+.pay-fields input[name=installments] { width: 50px !important; text-align: center; }
+.stage-bar .pay-fields input { width: 96px; }
+.pay-detail { display: flex; flex-wrap: wrap; gap: 8px; }
+.pay-inst { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }

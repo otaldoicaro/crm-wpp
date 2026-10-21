@@ -38,11 +38,17 @@
   <label class="check"><input type="checkbox" name="auto_hello_enabled" value="1" {{ "checked" if tenant.auto_hello_enabled }}>
     Quem preenche o formulário e não chama no WhatsApp recebe esta mensagem depois de
     <input type="number" min="1" max="60" step="1" name="auto_hello_minutes" value="{{ tenant.auto_hello_minutes or 3 }}" style="width:70px"> minutos,
-    pelo WhatsApp do vendedor do rodízio. O lead vai pra Qualificado.
+    pelo WhatsApp do vendedor do rodízio. O lead vai pra {{ hello_stage }}.
   </label>
   <textarea name="auto_hello_text" rows="7" style="width:100%;max-width:560px;margin-top:8px">{{ tenant.auto_hello_text or hello_default }}</textarea>
-  <p class="muted">Dá pra usar: {nome} (1º nome do cliente) · {vendedor} · {peca} (sem SKU nem preço) · {ano} · {marca} · {modelo} · {empresa}.
+  <p class="muted">Dá pra usar: {nome} (1º nome do cliente) · {vendedor} · {carro} (carros marcados no site) · {peca} (sem SKU nem preço) · {ano} · {marca} · {modelo} · {empresa}.
     Se o formulário não tiver algum dado, a linha com ele não vai. Só manda das 8h às 21h (formulário de madrugada recebe às 8h) e uma vez por lead.</p>
+
+  <h3 id="recursos">⚙️ Recursos deste CRM</h3>
+  <input type="hidden" name="features_form" value="1">
+  {% for key, label in feature_list.items() %}
+  <label class="check"><input type="checkbox" name="feature" value="{{ key }}" {{ "checked" if key in features_on }}> {{ label }}</label>
+  {% endfor %}
 
   <button class="btn" type="submit">Salvar</button>
 </form>

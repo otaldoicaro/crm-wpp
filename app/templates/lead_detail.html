@@ -33,6 +33,7 @@
         </select>
       </label></p>
       <p><label>Valor fechado (R$)<br><input type="number" step="0.01" name="deal_value" id="dealValue" value="{{ lead.deal_value or '' }}" placeholder="preencher quando ganhar"></label></p>
+      {% if has_feature(tenant, "pagamento_parcelado") %}<p class="pay-detail">{% include "_payment_fields.html" %}</p>{% endif %}
       <div class="stage-warning" id="stageWarning" hidden>
         <span>⚠️ Você colocou um <b>valor fechado</b>, mas a etapa ainda não está como <b>{{ won_stage_name }}</b>. Sem isso a venda não conta no Dashboard.</span>
         <button type="button" class="btn small" id="setWon">Mudar etapa para {{ won_stage_name }}</button>

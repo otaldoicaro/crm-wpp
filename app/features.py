@@ -1,0 +1,31 @@
+"""Recursos que se liga/desliga por cliente (tenant.features), pra quando um ajuste é só de
+um CRM ("[Só Conexão]"). Vazio = o padrão do ramo (DEFAULTS_BY_SEGMENT); a tela /prazos grava
+a escolha do cliente ("-" = nenhum ligado). Pra um recurso novo: acrescente em FEATURES e use
+features.has(tenant, "chave") no código."""
+
+from app import segments
+
+FEATURES = {
+    "pagamento_parcelado": "Venda parcelada: forma de pagamento, entrada e parcelas no lead (lidas também da conversa, ex: “60x 2.473,25”, “entrada de 6.700”)",
+    "visita_negociando": "Visita marcada na loja leva o lead pra Negociando",
+}
+DEFAULTS_BY_SEGMENT = {
+    "seminovos": ("pagamento_parcelado", "visita_negociando"),
+}
+
+
+def enabled(tenant) -> set:
+    raw = (getattr(tenant, "features", "") or "").strip()
+    if not raw:
+        return set(DEFAULTS_BY_SEGMENT.get(segments.key_for(tenant), ()))
+    return {k for k in raw.split(",") if k in FEATURES}
+
+
+def has(tenant, key: str) -> bool:
+    return tenant is not None and key in enabled(tenant)
+
+
+def store(keys) -> str:
+    """Valor pra gravar em tenant.features a partir das chaves marcadas na tela."""
+    chosen = [k for k in FEATURES if k in set(keys)]
+    return ",".join(chosen) or "-"

@@ -91,6 +91,7 @@
             </select>
           </label>
           <label class="stage-value">R$ <input name="deal_value" inputmode="decimal" autocomplete="off" placeholder="valor da venda" value="{{ ('%.2f'|format(selected_lead.deal_value or selected_lead.quoted_value)).replace('.', ',') if (selected_lead.deal_value or selected_lead.quoted_value) else '' }}"></label>
+          {% if has_feature(tenant, "pagamento_parcelado") %}{% with lead=selected_lead %}{% include "_payment_fields.html" %}{% endwith %}{% endif %}
           <div class="stage-loss" hidden>{% with reason=selected_lead.loss_reason, detail=selected_lead.loss_detail, required=False %}{% include "_loss_fields.html" %}{% endwith %}</div>
           <button class="btn small" type="submit" hidden>Salvar</button>
           <span class="stage-status muted"></span>
@@ -209,7 +210,8 @@
   var sel = bar.stage_id, value = bar.deal_value, loss = bar.querySelector(".stage-loss"), btn = bar.querySelector("button"), status = bar.querySelector(".stage-status");
   var initial;
   function opt() { return sel.options[sel.selectedIndex]; }
-  function state() { return [sel.value, value.value, bar.loss_reason.value, bar.loss_detail.value].join("|"); }
+  var fields = Array.prototype.slice.call(bar.querySelectorAll("input, select, textarea"));
+  function state() { return fields.map(function (el) { return el.value; }).join("|"); }
   // valor no formato brasileiro enquanto digita: 10000,5 -> 10.000,5 (e 10.000,50 ao sair do campo)
   function money(raw, done) {
     var clean = raw.replace(/[^\d,]/g, ""), cut = clean.indexOf(",");
@@ -223,6 +225,14 @@
   value.addEventListener("input", function () { value.value = money(value.value, false); });
   value.addEventListener("blur", function () { value.value = money(value.value, true); sync(); });
   value.value = money(value.value, true);
+  // venda parcelada (só nos clientes com o recurso): mesmo formato de dinheiro; "À vista" esconde entrada/parcelas
+  bar.querySelectorAll("input.money").forEach(function (el) {
+    el.addEventListener("input", function () { el.value = money(el.value, false); });
+    el.addEventListener("blur", function () { el.value = money(el.value, true); sync(); });
+    el.value = money(el.value, true);
+  });
+  var payMode = bar.querySelector(".pay-mode");
+  if (payMode) payMode.addEventListener("change", function () { bar.querySelector(".pay-parcelado").hidden = payMode.value === "avista"; });
   function sync() {
     var won = opt().dataset.won === "1";
     loss.hidden = opt().dataset.lost !== "1";
@@ -230,7 +240,7 @@
     btn.hidden = state() === initial;
     status.textContent = "";
   }
-  [sel, value, bar.loss_reason, bar.loss_detail].forEach(function (el) { el.addEventListener("input", sync); el.addEventListener("change", sync); });
+  fields.forEach(function (el) { el.addEventListener("input", sync); el.addEventListener("change", sync); });
   sel.addEventListener("change", function () { if (opt().dataset.won === "1" && !value.value.trim()) value.focus(); });
   bar.addEventListener("submit", function (e) {
     e.preventDefault();

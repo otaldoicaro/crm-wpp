@@ -35,7 +35,20 @@ DEFAULT_TEXT = (
     "Vi que você se interessou pela peça {peca}, ano {ano}, né?\n"
     "Vou verificar aqui pra você"
 )
-PLACEHOLDERS = ("nome", "vendedor", "empresa", "peca", "ano", "marca", "modelo")
+PLACEHOLDERS = ("nome", "vendedor", "empresa", "peca", "ano", "marca", "modelo", "carro")
+
+
+def default_text(tenant: Tenant) -> str:
+    """Texto padrão do ramo do cliente (autopeças: DEFAULT_TEXT)."""
+    from app import segments
+
+    return segments.segment_for(tenant).get("auto_hello_text") or DEFAULT_TEXT
+
+
+def target_stage_name(tenant: Tenant) -> str:
+    from app import segments
+
+    return segments.segment_for(tenant).get("auto_hello_stage") or "Qualificado"
 
 
 def _first_name(name: str) -> str:
@@ -46,7 +59,7 @@ def _first_name(name: str) -> str:
 def form_fields(form_details: str) -> dict:
     """Campos do formulário mais recente (o 1º bloco de Lead.form_details)."""
     block = (form_details or "").split("\n\n")[0]
-    labels = {"Marca": "marca", "Modelo": "modelo", "Ano": "ano", "Peças": "peca"}
+    labels = {"Marca": "marca", "Modelo": "modelo", "Ano": "ano", "Peças": "peca", "Carros de interesse": "carro"}
     found = {}
     for line in block.splitlines():
         label, _, value = line.partition(": ")
@@ -64,6 +77,14 @@ def part_names(raw: str) -> str:
         if name:
             names.append(name)
     return ", ".join(names[:-1]) + " e " + names[-1] if len(names) > 1 else (names[0] if names else "")
+
+
+def car_names(raw: str) -> str:
+    """"Fiat Argo 2025 (123) | Renault Kwid 2024 (456)" -> "Fiat Argo 2025 e pelo Renault Kwid 2024"
+    (sem o código; feito pra frase "pelo {carro}", que fica "pelo Fiat Argo 2025 e pelo Renault Kwid 2024")."""
+    names = [re.sub(r"\s*\([^)]*\)\s*$", "", item).strip() for item in (raw or "").split("|")]
+    names = [n for n in names if n][:3]
+    return ", pelo ".join(names[:-1]) + " e pelo " + names[-1] if len(names) > 1 else (names[0] if names else "")
 
 
 def compose(template: str, values: dict) -> str:
@@ -86,7 +107,7 @@ def compose(template: str, values: dict) -> str:
 
 def message_for(tenant: Tenant, lead: Lead, seller: User | None) -> str:
     fields = form_fields(lead.form_details)
-    return compose(tenant.auto_hello_text, {
+    return compose(tenant.auto_hello_text or default_text(tenant), {
         "nome": _first_name(lead.name),
         "vendedor": _first_name(seller.name) if seller else "",
         "empresa": tenant.name,
@@ -94,6 +115,7 @@ def message_for(tenant: Tenant, lead: Lead, seller: User | None) -> str:
         "ano": fields.get("ano", ""),
         "marca": fields.get("marca", ""),
         "modelo": fields.get("modelo", ""),
+        "carro": car_names(fields.get("carro", "")),
     })
 
 
@@ -167,7 +189,7 @@ def send_one(db, tenant: Tenant, lead: Lead) -> str:
 
         response_times.mark_outbound(lead)
     _record_outbound(db, conversation, sender, wa_id, text, secret=secret, pending=ok is None)
-    target = funnel.stage_named(funnel._stages(db, tenant.id), "Qualificado", "Qualificados")
+    target = funnel.stage_named(funnel._stages(db, tenant.id), target_stage_name(tenant))
     if target is not None and (lead.stage is None or lead.stage.order < target.order):
         funnel.set_stage(lead, target)
     who = seller.name if seller else number.label

@@ -87,7 +87,12 @@ def asks_price(text: str) -> bool:
 def on_inbound_text(db, lead: Lead, body: str) -> None:
     """Cliente perguntou o preço ("valor?", "quanto custa?"): lead vai pra Qualificado (se ainda
     não passou de lá). Só avança, nunca volta."""
-    if lead.is_group or not asks_price(body):
+    if lead.is_group:
+        return
+    from app.services import car_deal
+
+    car_deal.on_text(db, lead, body, outbound=False)  # seminovos: "vou passar aí" -> Negociando
+    if not asks_price(body):
         return
     stages = funnel._stages(db, lead.tenant_id)
     target = funnel.stage_named(stages, "Qualificado", "Qualificados")
@@ -187,6 +192,10 @@ def on_outbound_text(db, lead: Lead, body: str) -> None:
     passou de lá)."""
     if lead.is_group:
         return
+    from app.services import car_deal
+
+    if car_deal.on_text(db, lead, body, outbound=True):  # seminovos: parcela/entrada não é o preço do carro
+        body = car_deal.strip_terms(body)
     value = find_price(body)
     if value is None:
         return
