@@ -6,7 +6,7 @@ Dois formatos:
 - POST /webhooks/lp/{tenant_id}: JSON (a LP da Nova Viseu manda com
   Content-Type text/plain + no-cors, pra não precisar de CORS). Campos da LP:
   nome, telefone/whatsapp, email, marca, modelo, ano, pecas, qtd_pecas_encontradas,
-  pagina, utm_*, origem {utm_*, gclid, fbclid}.
+  veiculos, busca (LP de seminovos), pagina, utm_*, origem {utm_*, gclid, fbclid}.
 
 Nos dois casos o lead é um por pessoa: se o telefone já existe (porque a pessoa
 já chamou no WhatsApp, ou já preencheu antes), completa o mesmo lead em vez de
@@ -79,7 +79,7 @@ async def receive_lp_lead(tenant_id: str, request: Request):
         "phone": str(payload.get("whatsapp") or payload.get("telefone") or payload.get("phone") or ""),
         "email": str(payload.get("email") or ""),
         **{k: pick(k) for k in ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid", "fbc", "fbp")},
-        **{k: payload.get(k) for k in ("marca", "modelo", "ano", "pecas", "qtd_pecas_encontradas", "mensagem", "pagina")},
+        **{k: payload.get(k) for k in ("marca", "modelo", "ano", "pecas", "qtd_pecas_encontradas", "veiculos", "busca", "mensagem", "pagina")},
     }
     if not data["phone"] and not data["email"]:
         return JSONResponse({"ok": False, "error": "sem telefone nem e-mail"}, status_code=400, headers=CORS)

@@ -35,6 +35,8 @@ FORM_LABELS = [
     ("ano", "Ano"),
     ("pecas", "Peças"),
     ("qtd_pecas_encontradas", "Peças encontradas no estoque"),
+    ("veiculos", "Carros de interesse"),  # LP de seminovos: carros que a pessoa marcou
+    ("busca", "Busca no site"),
     ("mensagem", "Mensagem"),
     ("pagina", "Página"),
 ]
