@@ -181,12 +181,18 @@ def send(tenant, events: list) -> dict:
 
 
 def send_test(tenant) -> dict:
-    """Evento de teste (precisa do código de teste): confere o caminho todo sem sujar os dados."""
+    """Evento de teste (precisa do código de teste): confere o caminho todo sem sujar os dados.
+    Mesmo formato do evento da conferência do pixel (o Meta aceita esse)."""
     if not tenant.meta_capi_test_code:
         return {"ok": False, "status_code": 0, "body": {"error": "coloque o código de teste do Gerenciador de Eventos"}}
+    now = int(time.time())
     event = {
-        "event_name": "InitiateCheckout", "event_time": int(time.time()), "event_id": f"teste-{int(time.time())}",
-        "action_source": "chat", "user_data": {"ph": [_sha256("5511999999999")], "country": [_sha256("br")]},
+        "event_name": "InitiateCheckout", "event_time": now, "event_id": f"teste-{now}",
+        "action_source": "website", "event_source_url": "https://www.facebook.com/",
+        "user_data": {
+            "ph": [_sha256("5511999999999")], "external_id": [_sha256(f"teste-{tenant.meta_pixel_id}")], "country": [_sha256("br")],
+            "client_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        },
         "custom_data": {"currency": "BRL", "value": 1.0},
     }
     return send(tenant, [event])
