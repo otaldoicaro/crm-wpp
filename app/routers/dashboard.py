@@ -20,7 +20,7 @@ from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app import features
-from app.services import autostage, car_deal, comments, deals, evolution_client, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
+from app.services import autostage, car_deal, comments, deals, evolution_client, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -1040,7 +1040,7 @@ def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
         "ganho": and_(Lead.suggest_kind == "ganho", is_open),
         "perdido": and_(Lead.suggest_kind == "perdido", is_open),
         "outro": and_(Lead.suggest_kind == "outro", Lead.tag != "outro"),
-        "comprovante": and_(Lead.receipt_status == "pending", is_open),
+        "comprovante": and_(Lead.receipt_status == "pending", Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
         "sem_motivo": and_(Lead.stage_id.in_([st.id for st in stages if st.is_lost]), or_(Lead.loss_reason.is_(None), Lead.loss_reason == "")),
         "comentario": Lead.id.in_(db.query(LeadComment.lead_id).filter(
             LeadComment.tenant_id == tenant.id, LeadComment.parent_id.is_(None), LeadComment.resolved_at.is_(None))),
@@ -1475,6 +1475,23 @@ def confirm_receipt(
     lead = _lead_for_action(db, tenant, user, lead_id)
     if lead.receipt_status != "pending":
         return JSONResponse({"ok": True}) if ajax else RedirectResponse(url=voltar or f"/inbox/{lead_id}", status_code=302)
+    if lead.stage and lead.stage.is_won and acao in ("somar", "incluido"):
+        # venda já fechada: outro item da mesma compra (soma) ou o comprovante que já estava no valor
+        try:
+            amount = _parse_brl(valor) or (lead.receipt_amount or 0)
+        except ValueError:
+            amount = lead.receipt_amount or 0
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail="Valor inválido")
+        receipts.log_receipt(lead, amount, lead.receipt_info)
+        lead.receipt_status = "confirmed"
+        if acao == "somar":
+            lead.deal_value = round((lead.deal_value or 0) + amount, 2)
+            _add_note(db, lead, f"💸 Comprovante de R$ {receipts._brl(amount)} somado à venda por {user.name}: "
+                                f"agora R$ {receipts._brl(lead.deal_value)}")
+        db.commit()
+        return JSONResponse({"ok": True}) if ajax else RedirectResponse(
+            url=voltar if voltar.startswith("/") else f"/inbox/{lead_id}", status_code=302)
     if acao == "confirmar":
         won = next((st for st in funnel._stages(db, tenant.id) if st.is_won), None)
         try:
@@ -1487,6 +1504,7 @@ def confirm_receipt(
         funnel.set_stage(lead, won)
         lead.deal_value = amount
         lead.receipt_status = "confirmed"
+        receipts.log_receipt(lead, amount, lead.receipt_info)
         shown = f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         _add_note(db, lead, f"💸 Venda confirmada pelo comprovante (R$ {shown}) por {user.name}")
         db.commit()

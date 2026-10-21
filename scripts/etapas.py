@@ -63,6 +63,7 @@ def _check_receipt(db, lead: Lead, message: Message, quoted: list) -> str:
     if result.get("confidence") == "alta" and autostage.apply(
         db, lead, "ganho", amount=amount, why="comprovante de pagamento"
     ):
+        receipts.log_receipt(lead, amount, lead.receipt_info)
         return f"comprovante conferido {_brl(amount)}"
     lead.receipt_status = "pending"
     return f"comprovante pra confirmar ({_brl(amount)}, valores lidos: {', '.join(_brl(v) for v in result.get('candidates', []))})"

@@ -123,12 +123,75 @@ def describe(result: dict) -> str:
     return " · ".join(p for p in parts if p)[:255]
 
 
+ADD_ON_DAYS = 7  # venda fechada há até 7 dias: comprovante novo pode ser de mais um item da mesma compra
+
+
 def worth_checking(lead) -> bool:
     """Qualquer negócio em aberto (até em "Novo"): cliente que manda comprovante já comprou,
     mesmo que o CRM não tenha visto a conversa antes (ex: vendedor respondeu pelo celular e a
-    mensagem se perdeu). A leitura grátis é leve."""
+    mensagem se perdeu). E venda (Ganho) recente: o cliente que leva mais de um item às vezes paga
+    cada um separado. A leitura grátis é leve."""
+    import datetime
+
     stage = lead.stage
-    return not (lead.is_group or stage is None or stage.is_won or stage.is_lost)
+    if lead.is_group or stage is None or stage.is_lost:
+        return False
+    if stage.is_won:
+        return bool(lead.closed_at and datetime.datetime.utcnow() - lead.closed_at <= datetime.timedelta(days=ADD_ON_DAYS))
+    return True
+
+
+def logged(lead) -> list:
+    """[(valor, descrição)] dos comprovantes já contados no valor da venda."""
+    out = []
+    for line in (lead.receipt_log or "").splitlines():
+        value, _, info = line.partition("|")
+        try:
+            out.append((float(value), info))
+        except ValueError:
+            continue
+    return out
+
+
+def log_receipt(lead, amount: float, info: str) -> None:
+    lead.receipt_log = "\n".join(filter(None, [lead.receipt_log or "", f"{amount:.2f}|{info}"]))[-4000:]
+
+
+def already_counted(lead, amount: float, info: str) -> bool:
+    """O mesmo comprovante mandado de novo (mesmo valor e mesma data/pagador, ou sem como diferenciar)."""
+    return any(abs(v - amount) < 0.01 and (i == info or not i or not info) for v, i in logged(lead))
+
+
+def _brl(value: float) -> str:
+    return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def add_on(db, lead, conversation_id: str, message_id: str, amount: float, result: dict) -> None:
+    """Comprovante numa venda já fechada: soma no valor da venda (ou pergunta, se não tiver certeza)."""
+    from app.models import Message
+
+    info = describe(result)
+    if already_counted(lead, amount, info):
+        return
+    note = None
+    if not logged(lead) and lead.deal_value and abs(lead.deal_value - amount) < 0.01:
+        log_receipt(lead, amount, info)  # o comprovante da própria venda (fechada pelo preço ou pelo vendedor)
+        lead.receipt_status = "confirmed"
+    elif logged(lead) and result.get("confidence") == "alta":
+        # a venda já foi fechada por comprovante e este é outro, com valor conferido: soma sozinho
+        lead.deal_value = round((lead.deal_value or 0) + amount, 2)
+        log_receipt(lead, amount, info)
+        note = (f"💸 Mais um comprovante de R$ {_brl(amount)}: a venda agora soma R$ {_brl(lead.deal_value)} "
+                f"({len(logged(lead))} comprovantes). Se não era da mesma compra, é só corrigir o valor.")
+    else:
+        lead.receipt_message_id, lead.receipt_amount, lead.receipt_info = message_id, amount, info
+        lead.receipt_candidates = ",".join(str(v) for v in (result.get("candidates") or [])[:4])[:120]
+        lead.receipt_status = "pending"
+        note = (f"💸 Mais um comprovante de R$ {_brl(amount)}. Se for de outro item da mesma compra, clique em "
+                "“Somar à venda” no topo da conversa.")
+    if note:
+        db.add(Message(conversation_id=conversation_id, direction="note", body=note))
+    db.commit()
 
 
 def _quoted_prices(db, lead) -> list:
@@ -205,6 +268,9 @@ def check_message(message_id: str) -> None:
         lead = db.get(Lead, lead_id)
         if lead is None or not worth_checking(lead):
             return
+        if lead.stage.is_won:  # venda já fechada: mais um item da mesma compra?
+            add_on(db, lead, conversation.id, message_id, amount, result)
+            return
         lead.receipt_message_id = message_id
         lead.receipt_amount = amount
         lead.receipt_info = describe(result)
@@ -217,6 +283,7 @@ def check_message(message_id: str) -> None:
 
             why = "comprovante de pagamento" + (" (valor bate com o preço enviado)" if result.get("matches_quote") else "")
             if autostage.apply(db, lead, "ganho", amount=amount, why=why):
+                log_receipt(lead, amount, describe(result))
                 db.commit()
                 logger.info("receipts: venda de R$ %s marcada sozinha no lead %s", amount, lead_id)
                 return
