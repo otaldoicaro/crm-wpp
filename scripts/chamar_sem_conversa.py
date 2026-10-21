@@ -4,7 +4,10 @@ Mesma mensagem da automação (⚙ Prazos → 🤖 Mensagem automática): confir
 que vai verificar. Sai do WhatsApp do vendedor já atribuído; sem vendedor ou com o WhatsApp dele
 desconectado, vai pro próximo do rodízio (e o lead passa pra ele). O lead vai pra Qualificado.
 Lead que está com admin (ou com quem saiu/pausou) é redistribuído entre os vendedores ANTES de
-começar a mandar, um pra cada vendedor na vez (rodízio), e já aparece no Pipeline do vendedor.
+começar a mandar, sempre pro vendedor com menos leads da lista, e já aparece no Pipeline dele.
+Com --equilibrar, quem tem mais que a sua parte (ex: 73 enquanto os outros têm 20) também passa o
+excesso pros outros: todo mundo fica com quantidades parecidas e ninguém bate o limite do dia, então
+termina tudo bem antes (o cliente ainda não falou com ninguém, trocar o vendedor não muda nada pra ele).
 
 Cuidados (é WhatsApp de celular, não a API oficial: mandar muito de uma vez pode bloquear o número):
 - só um cliente por vez (--cliente <identificador>, ex: novaviseu);
@@ -16,7 +19,7 @@ Cuidados (é WhatsApp de celular, não a API oficial: mandar muito de uma vez po
 Sem --aplicar só mostra quantos são, de quem, e um exemplo de mensagem por vendedor.
 
     docker exec -it crm-app python -m scripts.chamar_sem_conversa --cliente novaviseu
-    docker exec -d crm-app sh -c 'python -m scripts.chamar_sem_conversa --cliente novaviseu --aplicar > /tmp/chamar.log 2>&1'
+    docker exec -d crm-app sh -c 'python -m scripts.chamar_sem_conversa --cliente novaviseu --equilibrar --aplicar > /tmp/chamar.log 2>&1'
     docker exec crm-app tail -n 15 /tmp/chamar.log
 """
 
@@ -40,6 +43,36 @@ PAUSE = (40, 90)  # segundos entre uma mensagem e outra (sorteado: parece gente,
 
 def _arg(name: str, default: str = "") -> str:
     return sys.argv[sys.argv.index(name) + 1] if name in sys.argv and sys.argv.index(name) + 1 < len(sys.argv) else default
+
+
+def balance(leads: list, sellers: list, even: bool) -> dict:
+    """{lead_id: novo vendedor}. Quem não está com vendedor que pode mandar vai pro que tem menos;
+    com even=True, quem passou da média também solta o excesso (os mais novos primeiro)."""
+    owners = list(dict.fromkeys(n.owner_user_id for n in sellers))
+    if not owners:
+        return {}
+    load = Counter({o: 0 for o in owners})
+    free = []
+    for lead in leads:
+        if lead.assigned_user_id in load and first_contact.is_seller(lead.assigned_user):
+            load[lead.assigned_user_id] += 1
+        else:
+            free.append(lead)
+    if even:
+        target = -(-len(leads) // len(owners))
+        for owner in owners:
+            mine = [l for l in leads if l.assigned_user_id == owner and l not in free]
+            extra = load[owner] - target
+            if extra > 0:
+                free += mine[:extra]  # a lista vem do mais novo pro mais antigo
+                load[owner] -= extra
+    plan = {}
+    for lead in free:
+        owner = min(owners, key=lambda o: load[o])
+        load[owner] += 1
+        if owner != lead.assigned_user_id:
+            plan[lead.id] = owner
+    return plan
 
 
 def _wait_for_hours() -> None:
@@ -82,6 +115,19 @@ def main() -> None:
                 print(f"       {n:4d} · {name}")
         if not leads:
             return
+        plan = balance(leads, sellers, "--equilibrar" in sys.argv)
+        if plan:
+            after = Counter(l.assigned_user_id for l in leads)
+            for lead_id, owner in plan.items():
+                after[next(l.assigned_user_id for l in leads if l.id == lead_id)] -= 1
+                after[owner] += 1
+            names = {n.owner_user_id: n.owner.name for n in sellers}
+            print(f"\n  Depois de redistribuir ({len(plan)} trocam de vendedor):")
+            for owner, n in sorted(((o, n) for o, n in after.items() if o in names), key=lambda x: -x[1]):
+                print(f"  {n:4d} · {names[owner]}")
+            busiest = max((n for o, n in after.items() if o in names), default=0)
+            if busiest > per_number and "--equilibrar" not in sys.argv:
+                print(f"  (alguém fica com mais de {per_number}: o excesso sai no dia seguinte. Com --equilibrar, divide tudo por igual.)")
         days_needed = -(-len(leads) // max(1, per_number * max(1, len(sellers))))
         print(f"\nRitmo: 1 mensagem a cada {PAUSE[0]}-{PAUSE[1]}s, até {per_number} por WhatsApp por dia "
               f"(≈ {days_needed} dia(s) pra todos, se os WhatsApps estiverem conectados).")
@@ -99,11 +145,12 @@ def main() -> None:
         except OSError:
             print("\n⚠️ Já tem um envio rodando. Esse aqui não vai mandar nada (pra não repetir mensagem).")
             return
-        if moving and sellers:  # redistribui antes de mandar: um pra cada vendedor na vez
-            for i, lead in enumerate(moving):
-                lead.assigned_user_id = sellers[i % len(sellers)].owner_user_id
+        if plan:  # redistribui antes de mandar
+            for lead in leads:
+                if lead.id in plan:
+                    lead.assigned_user_id = plan[lead.id]
             db.commit()
-            print(f"\n↪ {len(moving)} lead(s) redistribuídos entre os vendedores.")
+            print(f"\n↪ {len(plan)} lead(s) redistribuídos entre os vendedores.")
 
         sent_today: Counter = Counter()
         day = to_local(datetime.datetime.utcnow()).date()
