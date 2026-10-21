@@ -87,7 +87,7 @@ def upsert_form_lead(db: Session, tenant_id: str, data: dict, source: str = "sit
     db.commit()
     db.refresh(lead)
 
-    utm_keys = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid", "fbc", "fbp")
+    utm_keys = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid", "fbc", "fbp", "ad_id")
     if lead.attribution is None and any(data.get(k) for k in utm_keys):
         db.add(UtmAttribution(lead_id=lead.id, **{k: str(data.get(k) or "")[:250] for k in utm_keys}))
         db.commit()

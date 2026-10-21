@@ -78,7 +78,8 @@ async def receive_lp_lead(tenant_id: str, request: Request):
         "name": str(payload.get("nome") or payload.get("name") or ""),
         "phone": str(payload.get("whatsapp") or payload.get("telefone") or payload.get("phone") or ""),
         "email": str(payload.get("email") or ""),
-        **{k: pick(k) for k in ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid", "fbc", "fbp")},
+        # ad_id: formulário nativo do Meta (via Make) — liga o lead ao gasto do anúncio
+        **{k: pick(k) for k in ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid", "fbc", "fbp", "ad_id")},
         **{k: payload.get(k) for k in ("marca", "modelo", "ano", "pecas", "qtd_pecas_encontradas", "veiculos", "busca", "mensagem", "pagina")},
     }
     if not data["phone"] and not data["email"]:
