@@ -1,0 +1,21 @@
+{# um pedaço da lista de leads da campanha (CAMP_PAGE por vez); o "Ver mais" pede o próximo #}
+{% import "_macros.html" as m %}
+{% for lead in leads %}
+{% set st = stage_by_id.get(lead.stage_id) %}
+<a class="inbox-list-item" href="/inbox/{{ open_id.get(lead.id, lead.id) }}" data-lead="{{ lead.id }}" data-open="{{ open_id.get(lead.id, lead.id) }}" data-stage="{{ lead.stage_id }}" data-name="{{ lead.name or '' }}">
+  {{ m.avatar(lead) }}
+  <div class="inbox-list-item-body">
+    <div class="row1"><span class="name">{{ lead.name or lead.phone }}</span><span class="time">{{ lead.created_at|hora("%d/%m %H:%M") }}</span></div>
+    <div class="row2">
+      <span class="stage-pill {{ 'won' if st and st.is_won else ('lost' if st and st.is_lost else '') }}">{{ st.name if st else "—" }}</span>
+      {% if lead.deal_value and st and st.is_won %}<b class="camp-value">R$ {{ "{:,.0f}".format(lead.deal_value).replace(",", ".") }}</b>{% endif %}
+      <span class="muted camp-seller">{{ lead.assigned_user.name if lead.assigned_user else "sem vendedor" }}</span>
+    </div>
+    {{ m.tempo_atendimento(lead, closed=st and (st.is_won or st.is_lost)) }}
+    {{ m.followup_tags(lead) }}
+  </div>
+</a>
+{% endfor %}
+{% if next_offset is not none %}
+<button type="button" class="btn ghost small camp-more" data-offset="{{ next_offset }}">Ver mais ({{ next_offset }} de {{ filtered_total }})</button>
+{% endif %}

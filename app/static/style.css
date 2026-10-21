@@ -889,3 +889,21 @@ td.goal-bad { background: rgba(214,69,69,.08); }
 .team-wa-label { font-size: .72rem; }
 .team-wa-summary { margin: 0 0 10px; font-size: .86rem; }
 .team-shared { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+
+/* Inbox aberto dentro de outra tela (tela da campanha): só a conversa, sem menu nem lista */
+html.embedded .topbar, html.embedded .readonly-banner { display: none; }
+html.embedded main { padding: 0; max-width: none; }
+html.embedded .inbox-layout { grid-template-columns: 1fr; height: 100vh; height: 100dvh; gap: 0; }
+html.embedded .inbox-side, html.embedded .inbox-thread .back-btn { display: none; }
+html.embedded .inbox-layout > .inbox-thread { border-radius: 0; border: 0; }
+.camp-thread { padding: 0; overflow: hidden; }
+.camp-thread iframe { width: 100%; height: 100%; border: 0; display: block; }
+.camp-more { display: block; width: calc(100% - 24px); margin: 12px; }
+.camp-old-deal { padding: 8px 12px; font-size: .8rem; background: var(--y-soft); border-bottom: 1px solid var(--line); }
+/* 💬 card de comentários maior: mais largo, campo de 3 linhas e botão embaixo */
+.inbox-thread-head .head-comments { flex: 0 1 400px; min-width: 300px; }
+.comments-box { font-size: .84rem; padding: 10px 12px; }
+.comments-list { max-height: 260px; }
+.cmt-new { flex-direction: column; align-items: stretch; }
+.cmt-new textarea { min-height: 66px; font-size: .84rem; width: 100%; }
+.cmt-new .btn { align-self: flex-end; }

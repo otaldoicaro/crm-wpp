@@ -8,6 +8,7 @@
   <title>{% block title %}CRM{% endblock %} · {{ tenant.name if tenant else "" }}</title>
   <link rel="icon" href="{{ theme.favicon }}" type="image/svg+xml">
   {% if theme.fonts_href %}<link rel="stylesheet" href="{{ theme.fonts_href }}">{% endif %}
+  <script>if (window.self !== window.top) document.documentElement.classList.add("embedded");  /* aberto dentro de outra tela (ex: conversa na tela da campanha): sem menu */</script>
   <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
   <style>{{ theme_css(theme) }}</style>
 </head>

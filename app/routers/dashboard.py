@@ -557,6 +557,9 @@ def change_stage(
     return RedirectResponse(url="/", status_code=302)
 
 
+CAMP_PAGE = 20  # leads por vez na tela da campanha ("Ver mais" traz os próximos)
+
+
 @router.get("/dashboard/campanha", response_class=HTMLResponse)
 def campaign_leads(
     request: Request,
@@ -568,12 +571,16 @@ def campaign_leads(
     date_to: str = "",
     seller: str = "",
     q: str = "",
+    etapa: str = "",
+    offset: int = 0,
+    parcial: str = "",
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
     """Os leads de uma campanha (ou conjunto/anúncio) do Dashboard, com a etapa de cada um;
-    clicando, a conversa abre do lado pra ver se o lead é qualificado de verdade."""
+    clicando, a conversa do Inbox abre do lado (dá pra responder, mudar etapa, comentar...).
+    A lista vem de CAMP_PAGE em CAMP_PAGE ("Ver mais" pede o próximo pedaço com parcial=1)."""
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
     range_from, range_to = _period_bounds(date_range, date_from, date_to)
     query = db.query(Lead).filter(
@@ -609,19 +616,38 @@ def campaign_leads(
         needle = q.lower()
         chosen = [l for l in chosen if needle in (l.name or "").lower() or (len(digits) >= 4 and digits in (l.phone or "")) or l.id in by_text]
     stage_by_id = {st.id: st for st in stages}
+    stage_counts = {st.id: sum(1 for lead in chosen if lead.stage_id == st.id) for st in stages}
+    total = len(chosen)
+    if etapa in stage_by_id:
+        chosen = [lead for lead in chosen if lead.stage_id == etapa]
+    else:
+        etapa = ""
+    offset = max(0, offset)
+    page = chosen[offset:offset + CAMP_PAGE]
+    # negócio antigo (recompra): a conversa fica no negócio mais recente da pessoa, então abre ele
+    open_id = {}
+    for lead in page:
+        if not lead.conversations:
+            newest = next((d for d in reversed(deals.history(db, lead)) if d.conversations), None)
+            open_id[lead.id] = newest.id if newest else lead.id
+    item_ctx = {"leads": page, "stage_by_id": stage_by_id, "open_id": open_id,
+                "next_offset": offset + CAMP_PAGE if offset + CAMP_PAGE < len(chosen) else None, "filtered_total": len(chosen)}
+    if parcial:
+        return templates.TemplateResponse(request, "_camp_items.html", {"tenant": tenant, "user": user, **item_ctx})
     return templates.TemplateResponse(
         request,
         "campanha_leads.html",
         {
+            **item_ctx,
+            "total": total,
+            "etapa": etapa,
             "tenant": tenant,
             "user": user,
             "active_nav": "dashboard",
             "trail": trail,
             "node": node,
-            "leads": chosen,
             "stages": stages,
-            "stage_by_id": stage_by_id,
-            "stage_counts": {st.id: sum(1 for lead in chosen if lead.stage_id == st.id) for st in stages},
+            "stage_counts": stage_counts,
             "q": q,
             "camp_params": {"c": c, "s": s, "a": a, "date_range": date_range, "date_from": date_from, "date_to": date_to, "seller": seller},
             "back": "/dashboard?" + urlencode({"aba": "trafego", "date_range": date_range, "date_from": date_from, "date_to": date_to, "seller": seller}) + "#trafego",
