@@ -936,6 +936,9 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 [data-tema="conexao"] input[type=text], [data-tema="conexao"] input[type=email], [data-tema="conexao"] input[type=password],
 [data-tema="conexao"] input[type=number], [data-tema="conexao"] input[type=search], [data-tema="conexao"] input[type=date],
 [data-tema="conexao"] textarea, [data-tema="conexao"] select { border-radius: 10px; }
+[data-tema="conexao"] .topbar .logo-img { height: 42px; }
+[data-tema="conexao"] .login-card .logo-img { height: 58px; }
+@media (max-width: 640px) { [data-tema="conexao"] .topbar .logo-img { height: 32px; } }
 [data-tema="conexao"] .cx-logo b { font-style: italic; font-weight: 900; letter-spacing: -.03em; transform: skewX(-6deg); }
 [data-tema="conexao"] .cx-logo small { font-style: italic; font-weight: 500; font-size: .78rem; letter-spacing: 0; padding-left: 26%; }
 [data-tema="conexao"] .cx-logo.big small { font-size: 1rem; }

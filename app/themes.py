@@ -114,8 +114,9 @@ THEMES = {
         "fonts_href": "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap",
         "favicon": "/static/brand/favicon-cx.svg",
         "theme_color": "#0B0B0C",
-        "logo_topbar": Markup('<span class="cx-logo" aria-label="Conexão Seminovos"><b>CONEX<i>Ã</i>O</b><small>Seminovos</small></span>'),
-        "logo_login": Markup('<span class="cx-logo dark big" aria-label="Conexão Seminovos"><b>CONEX<i>Ã</i>O</b><small>Seminovos</small></span>'),
+        # logo oficial (arquivo da página de ofertas)
+        "logo_topbar": Markup('<img class="logo-img" src="/static/brand/logo-conexao.webp" alt="Conexão Seminovos">'),
+        "logo_login": Markup('<img class="logo-img" src="/static/brand/logo-conexao.webp" alt="Conexão Seminovos">'),
         "vars": {
             "--y": "#FF6A00",
             "--y-dark": "#D95A00",
