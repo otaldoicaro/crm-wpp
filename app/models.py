@@ -378,6 +378,8 @@ class Message(Base):
     # então guardamos o id e buscamos os bytes sob demanda via /media/{message_id}
     media_id: Mapped[str] = mapped_column(String(120), default="")
     media_type: Mapped[str] = mapped_column(String(30), default="")  # audio | image | video | document | sticker
+    # duração do áudio em segundos, como o WhatsApp informa (0 = não sabemos; o player lê do arquivo)
+    media_seconds: Mapped[int] = mapped_column(Integer, default=0)
     # chave da cópia própria da mídia (app/services/media_store.py); vazio = não copiada
     media_stored_key: Mapped[str] = mapped_column(String(160), default="")
     # messageSecret do WhatsApp (base64): necessário pra abrir uma edição futura desta mensagem

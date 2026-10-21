@@ -420,10 +420,11 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
     media_id = wa_message_id if media_type else ""
 
     secret = secret_b64(item.get("message") or {})
+    seconds = _audio_seconds(item.get("message") or {}) if media_type == "audio" else 0
     if key.get("fromMe"):
-        return _with_quote(db, record_outbound_from_phone(db, number, phone, wa_message_id, body, media_id, media_type, secret=secret), context_info)
+        return _with_quote(db, _set_seconds(db, record_outbound_from_phone(db, number, phone, wa_message_id, body, media_id, media_type, secret=secret), seconds), context_info)
 
-    return _with_quote(db, ingest_inbound(
+    return _with_quote(db, _set_seconds(db, ingest_inbound(
         db,
         number,
         from_phone=phone,
@@ -434,7 +435,22 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
         profile_name=item.get("pushName", "") or "",
         referral=_referral_from_context(context_info),
         secret=secret,
-    ), context_info)
+    ), seconds), context_info)
+
+
+def _audio_seconds(message: dict) -> int:
+    """Duração que o WhatsApp manda junto do áudio (audioMessage.seconds)."""
+    try:
+        return max(0, int((message.get("audioMessage") or {}).get("seconds") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _set_seconds(db: Session, message, seconds: int):
+    if message is not None and seconds and hasattr(message, "media_seconds") and not message.media_seconds:
+        message.media_seconds = seconds
+        db.commit()
+    return message
 
 
 def _with_quote(db: Session, message, context_info: dict):

@@ -20,7 +20,14 @@
     {% if deleted %}
       <span class="msg-text">{{ msg.body|quebras }}</span>
     {% elif msg.media_type == "audio" %}
-      <audio controls preload="none" style="max-width:220px; margin-top:4px;"><source src="/media/{{ msg.id }}"></audio>
+      {# player próprio (static/audio-player.js): ▶/⏸, barra que anda com o áudio, tempo e 1x/1.5x/2x #}
+      <div class="ap" data-sec="{{ msg.media_seconds or '' }}">
+        <button type="button" class="ap-play" aria-label="Tocar áudio">▶</button>
+        <div class="ap-track"><div class="ap-fill"></div><input type="range" class="ap-seek" min="0" max="1000" step="1" value="0" aria-label="Posição do áudio"></div>
+        <span class="ap-time">{% if msg.media_seconds %}{{ msg.media_seconds // 60 }}:{{ "%02d"|format(msg.media_seconds % 60) }}{% else %}0:00{% endif %}</span>
+        <button type="button" class="ap-speed" title="Velocidade do áudio">1x</button>
+        <audio preload="{{ 'none' if msg.media_seconds else 'metadata' }}" src="/media/{{ msg.id }}"></audio>
+      </div>
       {% if caption %}<div class="msg-caption">{{ caption|quebras }}</div>{% endif %}
     {% elif msg.media_type == "image" or msg.media_type == "sticker" %}
       <img src="/media/{{ msg.id }}" class="msg-img" loading="lazy" alt="Imagem (clique pra ampliar)" title="Clique pra ampliar">
