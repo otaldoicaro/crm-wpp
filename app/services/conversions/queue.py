@@ -122,7 +122,7 @@ def send_pending() -> dict:
                 continue
             dest, waba = ev.destination.split("|", 1)
             event = meta_capi.build_event(lead, kind, ev.event_id, int(ev.created_at.timestamp()), waba)
-            result = meta_capi.send_to(tenant, dest, [event])
+            result = meta_capi.send_to(tenant, dest, [event], whatsapp=bool(waba))
             ev.attempts = (ev.attempts or 0) + 1
             ev.payload_json = json.dumps({"kind": kind, "event": event})
             ev.response_json = json.dumps(result["body"])[:4000]

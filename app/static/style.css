@@ -949,3 +949,4 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 [data-tema="conexao"] .login-card { border: 0; border-top: 5px solid var(--y); border-radius: 18px; padding: 24px; box-shadow: 0 20px 60px rgba(0, 0, 0, .45); max-width: 100%; }
 [data-tema="conexao"] .login-card label { font-size: .75rem; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
 [data-tema="conexao"] .login-card .btn { padding: 15px; font-size: 1.05rem; }
+.wa-token-field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; max-width: 560px; font-weight: 600; font-size: .82rem; }

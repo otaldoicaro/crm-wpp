@@ -57,6 +57,9 @@ class Tenant(Base):
     # conta do WhatsApp no Meta (WABA): com ela, lead de clique pro WhatsApp vai como "business_messaging"
     # (o formato que deixa otimizar a campanha de mensagem pela venda); conferida pelo conjunto de dados
     meta_waba_id: Mapped[str] = mapped_column(String(40), default="")
+    # token só pro WhatsApp (opcional): o do pixel sai do Gerenciador de Eventos e não tem as permissões
+    # de WhatsApp; o do WhatsApp sai de um app do cliente e pode não ler o pixel. Vazio = usa o do pixel
+    meta_wa_token: Mapped[str] = mapped_column(Text, default="")
     # follow-up: depois de quantas horas sem o cliente responder a nossa última mensagem o lead
     # aparece como "📞 follow-up". E se o time precisa agendar o próximo contato dos leads em
     # Qualificado/Negociando (bom pra venda mais longa, ex: serviços). Configurável em /prazos.

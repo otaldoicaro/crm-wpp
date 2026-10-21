@@ -539,6 +539,8 @@ document.addEventListener("submit", function (e) {
       <h4 style="margin:14px 0 4px">💬 Clique pro WhatsApp: conta do WhatsApp (WABA) de cada número</h4>
       <p class="muted" style="margin:0 0 8px">Com o WABA do número, venda/oportunidade de quem veio do anúncio de clique pro WhatsApp vai como <b>conversa de WhatsApp</b> (com o código do clique) — o formato que deixa otimizar a campanha de mensagem pela venda. O CRM confere no Meta se a conta tem esse telefone. Onde achar: Configurações do negócio → Contas → Contas do WhatsApp → clique no número: o ID aparece no endereço da página (<code>selected_asset_id=…</code>) ou no menu <b>⋯</b>.</p>
       <form method="post" action="/dashboard/whatsapp-waba">
+        <label class="wa-token-field">Token do WhatsApp <span class="muted">(do app do cliente, com as permissões de WhatsApp; em branco = usa o token do pixel)</span>
+          <input name="wa_token" type="password" autocomplete="off" placeholder="{{ 'já salvo (deixe em branco pra manter)' if tenant.meta_wa_token else 'cole aqui o token gerado no app' }}"></label>
         <table class="table-simple">
           <thead><tr><th>Número</th><th>Conta do WhatsApp (WABA)</th><th>Situação</th></tr></thead>
           <tbody>{% for n in wa_numbers %}<tr>

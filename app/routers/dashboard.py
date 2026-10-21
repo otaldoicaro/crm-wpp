@@ -805,6 +805,11 @@ async def save_whatsapp_waba(
 
     def apply() -> list:
         msgs = []
+        new_token = str(form.get("wa_token", "")).strip()
+        if new_token:  # token novo: confere de novo todos os números
+            tenant.meta_wa_token = new_token
+            for number in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id):
+                number.meta_waba_checked_at = None
         for number in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True)):
             raw = re.sub(r"\D", "", str(form.get(f"waba_{number.id}", "")))
             if raw == (number.meta_waba_id or "") and number.meta_waba_checked_at:
