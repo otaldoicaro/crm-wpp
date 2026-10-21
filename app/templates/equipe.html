@@ -50,14 +50,26 @@
   </form>
 </div>
 
+{# 📱 número + situação da conexão (Cloud API não desconecta: sempre "Conectado") #}
+{% macro wa_number(w) -%}
+{% set on = w.provider != "evolution" or w.connection_state == "open" %}
+<div class="team-wa">
+  <span class="wa-status {{ 'on' if on else 'off' }}">{{ "Conectado" if on else "Desconectado" }}</span>
+  <span class="team-wa-phone">{{ w.phone_number|fone or "sem número" }}</span>
+  {% if w.label %}<span class="muted team-wa-label">{{ w.label }}</span>{% endif %}
+</div>
+{%- endmacro %}
+
 <form method="post" action="/equipe/niveis" id="rolesForm"></form>
 <div class="card">
+  <p class="team-wa-summary"><b>📱 {{ connected_total }} de {{ numbers_total }} WhatsApps conectados</b>{% if connected_total < numbers_total %} · <a href="/whatsapp">reconectar os desconectados →</a>{% endif %}</p>
   <div style="overflow-x:auto;">
   <table class="table-simple">
     <thead><tr><th>Nome</th><th class="hide-sm">E-mail</th><th>Nível de acesso</th><th>WhatsApp</th><th>Rodízio</th><th></th></tr></thead>
     <tbody>
     {% for u in users %}
-      {% set n = numbers_by_owner.get(u.id) %}
+      {% set mine = numbers_by_owner.get(u.id, []) %}
+      {% set n = mine[0] if mine else none %}
       <tr style="{{ 'opacity:.5' if not u.is_active }}">
         <td>
           <b>{{ u.name }}</b> {% if u.read_only %}<span class="role-badge agent">👀 Só visualização</span>{% else %}<span class="role-badge {{ 'admin' if u.role == 'admin' else 'agent' }}">{{ "Admin" if u.role == "admin" else "Vendedor" }}</span>{% endif %}
@@ -76,8 +88,7 @@
           {% else %}<span class="pill">{{ "Admin" if u.role == "admin" else "Vendedor" }} (você)</span>{% endif %}
         </td>
         <td>
-          {% if n %}<span class="wa-status {{ 'on' if n.connection_state == 'open' else 'off' }}">{{ "Conectado" if n.connection_state == "open" else "Desconectado" }}</span>
-          {% else %}<span class="muted">não conectou</span>{% endif %}
+          {% for w in mine %}{{ wa_number(w) }}{% else %}<span class="muted">não conectou</span>{% endfor %}
         </td>
         <td>
           {% if u.read_only %}<span class="muted">—</span>
@@ -105,6 +116,12 @@
     </tbody>
   </table>
   </div>
+  {% if shared_numbers %}
+  <div class="team-shared">
+    <div class="wa-label">WhatsApps sem dono (compartilhados: entram no rodízio de todos)</div>
+    {% for w in shared_numbers %}{{ wa_number(w) }}{% endfor %}
+  </div>
+  {% endif %}
   <div class="roles-save" id="rolesSave" hidden>
     <span id="rolesSummary"></span>
     <button type="button" class="btn ghost small" id="rolesCancel">Desfazer</button>

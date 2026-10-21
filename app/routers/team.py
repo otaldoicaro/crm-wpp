@@ -72,14 +72,15 @@ def team_page(
         .group_by(Lead.assigned_user_id)
         .all()
     )
-    numbers_by_owner = {
-        n.owner_user_id: n
-        for n in db.query(WhatsAppNumber).filter(
-            WhatsAppNumber.tenant_id == tenant.id,
-            WhatsAppNumber.owner_user_id.isnot(None),
-            WhatsAppNumber.is_active.is_(True),
-        )
-    }
+    # WhatsApps de cada pessoa (conectado primeiro) e os sem dono (número compartilhado)
+    numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True)).all()
+    numbers.sort(key=lambda n: (n.provider == "evolution" and n.connection_state != "open", n.label.lower()))
+    numbers_by_owner: dict = {}
+    for n in numbers:
+        if n.owner_user_id:
+            numbers_by_owner.setdefault(n.owner_user_id, []).append(n)
+    shared_numbers = [n for n in numbers if not n.owner_user_id]
+    connected_total = sum(1 for n in numbers if n.provider != "evolution" or n.connection_state == "open")
     return templates.TemplateResponse(
         request,
         "equipe.html",
@@ -93,6 +94,9 @@ def team_page(
             "duplicates": duplicates,
             "open_leads": open_leads,
             "numbers_by_owner": numbers_by_owner,
+            "shared_numbers": shared_numbers,
+            "numbers_total": len(numbers),
+            "connected_total": connected_total,
             "invite_link": f"{PUBLIC_BASE_URL}/convite/{_ensure_invite_token(db, tenant)}",
         },
     )

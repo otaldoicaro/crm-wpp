@@ -85,3 +85,15 @@ templates.env.filters["quebras"] = _quebras
 templates.env.filters["legenda"] = _legenda
 # "Carlos  Vendedor" e "carlos vendedor" contam como o mesmo nome
 templates.env.filters["chave_nome"] = lambda s: " ".join((s or "").lower().split())
+
+
+def _fone(phone: str) -> str:
+    """+5521999043392 -> +55 21 99904-3392 (o jeito que o WhatsApp mostra)."""
+    d = re.sub(r"\D", "", phone or "")
+    if d.startswith("55") and len(d) in (12, 13):
+        local = d[4:]
+        return f"+55 {d[2:4]} {local[:-4]}-{local[-4:]}"
+    return phone or ""
+
+
+templates.env.filters["fone"] = _fone

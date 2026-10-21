@@ -881,3 +881,11 @@ td.goal-bad { background: rgba(214,69,69,.08); }
 .traffic-table tfoot td.sticky-col { z-index: 4; }
 .traffic-table .runs-in { font-size: .7rem; font-weight: 600; color: var(--muted); margin-left: 4px; }
 .traffic-levels .pill { font-weight: 700; }
+
+/* 📱 Equipe: número de cada pessoa + situação */
+.team-wa { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 2px 0; }
+.team-wa + .team-wa { margin-top: 6px; }
+.team-wa-phone { font-weight: 700; font-size: .82rem; white-space: nowrap; }
+.team-wa-label { font-size: .72rem; }
+.team-wa-summary { margin: 0 0 10px; font-size: .86rem; }
+.team-shared { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
