@@ -921,3 +921,28 @@ html.embedded .inbox-layout > .inbox-thread { border-radius: 0; border: 0; }
 .traffic-table .ad-row .tm-name { padding-left: 34px; }
 .traffic-table td, .traffic-table th { padding-top: 7px; padding-bottom: 7px; }
 body:has(.traffic-manager) { overflow-x: hidden; }
+
+/* ---------- Conexão Seminovos: visual da página ofertas.seminovosconexao.com.br ---------- */
+[data-tema="conexao"] .topbar { height: 68px; box-shadow: 0 1px 0 rgba(11, 11, 12, .04); }
+[data-tema="conexao"] .topbar nav a:hover { background: #F2F2F4; }
+[data-tema="conexao"] .topbar nav a.active,
+[data-tema="conexao"] .topbar .role-badge.admin { color: #fff; background: var(--y); }
+[data-tema="conexao"] .topbar .btn.ghost { background: #F2F2F4; }
+[data-tema="conexao"] .topbar .btn.ghost:hover { background: var(--line); }
+[data-tema="conexao"] .topbar .role-badge.agent { background: #F2F2F4; }
+[data-tema="conexao"] .btn:not(.ghost):not(.danger), [data-tema="conexao"] button[type=submit]:not([class]) { color: #fff; font-weight: 700; }
+[data-tema="conexao"] .msg-bubble.out { color: #fff; }
+[data-tema="conexao"] .tipo-chips .pill-on, [data-tema="conexao"] .stat-card.c-gold .stat-icon { color: #fff; }
+[data-tema="conexao"] input[type=text], [data-tema="conexao"] input[type=email], [data-tema="conexao"] input[type=password],
+[data-tema="conexao"] input[type=number], [data-tema="conexao"] input[type=search], [data-tema="conexao"] input[type=date],
+[data-tema="conexao"] textarea, [data-tema="conexao"] select { border-radius: 10px; }
+[data-tema="conexao"] .cx-logo b { font-style: italic; font-weight: 900; letter-spacing: -.03em; transform: skewX(-6deg); }
+[data-tema="conexao"] .cx-logo small { font-style: italic; font-weight: 500; font-size: .78rem; letter-spacing: 0; padding-left: 26%; }
+[data-tema="conexao"] .cx-logo.big small { font-size: 1rem; }
+/* login (e telas sem menu): fundo escuro com brilho laranja + card branco com borda laranja, como a busca da LP */
+[data-tema="conexao"] body:has(.login-wrap) {
+  background: radial-gradient(1200px 500px at 85% -10%, rgba(255, 106, 0, .35), transparent 60%) fixed, linear-gradient(160deg, #050505, #1B1B1F) fixed; }
+[data-tema="conexao"] .login-wrap { min-height: calc(100vh - 48px); }
+[data-tema="conexao"] .login-card { border: 0; border-top: 5px solid var(--y); border-radius: 18px; padding: 24px; box-shadow: 0 20px 60px rgba(0, 0, 0, .45); max-width: 100%; }
+[data-tema="conexao"] .login-card label { font-size: .75rem; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
+[data-tema="conexao"] .login-card .btn { padding: 15px; font-size: 1.05rem; }

@@ -107,7 +107,9 @@ THEMES = {
             "--title-transform": "uppercase",
         },
     },
-    # Conexão Seminovos: claro, laranja + preto, Outfit (seminovosconexao.com.br e o site novo no Lovable)
+    # Conexão Seminovos: claro, laranja + preto, Outfit, como a página ofertas.seminovosconexao.com.br
+    # (topo branco, botão laranja com texto branco, login escuro com brilho laranja: ajustes extras
+    # em style.css, seção [data-tema="conexao"])
     "conexao": {
         "fonts_href": "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap",
         "favicon": "/static/brand/favicon-cx.svg",
@@ -128,15 +130,15 @@ THEMES = {
             "--col-bg": "#EEEEF0",
             "--card-bg": "#FFFFFF",
             "--input-bg": "#FFFFFF",
-            "--line": "#DDDDE1",
+            "--line": "#D9D9DE",
             "--muted": "#5D5D63",
             "--text": "#0B0B0C",
             "--link": "#0B0B0C",
             "--link-decoration": "underline",
-            "--topbar-bg": "#0B0B0C",
-            "--topbar-border": "3px solid #FF6A00",
-            "--on-ink": "#F5F5F6",
-            "--on-ink-muted": "#B6B6BD",
+            "--topbar-bg": "#FFFFFF",
+            "--topbar-border": "1px solid #E6E6EA",
+            "--on-ink": "#0B0B0C",
+            "--on-ink-muted": "#5D5D63",
             "--accent-ring": "#0B0B0C",
             "--chat-bg": "#F6F6F7",
             "--chat-dot": "rgba(11, 11, 12, .05)",
@@ -147,7 +149,7 @@ THEMES = {
             "--success-bg": "#E3F5E9",
             "--info": "#1B6BFF",
             "--info-bg": "#E6EEFF",
-            "--radius": "12px",
+            "--radius": "18px",
             "--btn-radius": "999px",
             "--btn-shadow": "none",
             "--title": '"Outfit", "Helvetica Neue", Arial, sans-serif',
