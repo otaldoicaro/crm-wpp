@@ -312,6 +312,10 @@
     </form>
   </details>
 
+</div>
+
+{# ---- tabela "Gerenciador de anúncios": card próprio, largura toda da tela ---- #}
+<div class="card traffic-manager" id="gerenciador">
   {# ---- nível (como no Gerenciador), busca, só com investimento e grupos de colunas ---- #}
   <div class="traffic-tools">
     <span class="tipo-chips traffic-levels">
@@ -343,18 +347,18 @@
     {% for c in traffic.campaigns %}
     <tbody class="traffic-camp" data-spend="{{ 1 if c.spend else 0 }}">
       <tr class="camp-row" tabindex="0" title="Ver conjuntos e anúncios" data-name="{{ c.name|lower }}">
-        <td class="sticky-col"><span class="caret">▸</span> <span class="plat">{{ c.platform }}</span> {{ c.name }}{% if c.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&{{ period_qs }}">ver {{ c.leads }} leads →</a>{% endif %}</td>
+        <td class="sticky-col"><div class="tm-name" title="{{ c.name }}"><span class="caret">▸</span><span class="plat">{{ c.platform }}</span><span class="tm-text">{{ c.name }}</span>{% if c.leads %}<a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&{{ period_qs }}" title="Ver os {{ c.leads }} leads">{{ c.leads }} leads →</a>{% endif %}</div></td>
         {{ metric_cells(c) }}
       </tr>
       {% for a in c.children %}
       <tr class="adset-row" hidden data-name="{{ a.name|lower }}" data-adset="{{ loop.index }}">
-        <td class="sticky-col"><span class="lvl">Conjunto</span> {{ a.name }}{% if a.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&s={{ a.key|urlencode }}&{{ period_qs }}">ver leads →</a>{% endif %}</td>
+        <td class="sticky-col"><div class="tm-name" title="{{ a.name }}"><span class="lvl">Conjunto</span><span class="tm-text">{{ a.name }}</span>{% if a.leads %}<a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&s={{ a.key|urlencode }}&{{ period_qs }}">leads →</a>{% endif %}</div></td>
         {{ metric_cells(a) }}
       </tr>
       {% set adset_index = loop.index %}
       {% for ad in a.children %}
       <tr class="ad-row" hidden data-name="{{ ad.name|lower }}" data-adset="{{ adset_index }}">
-        <td class="sticky-col"><span class="lvl">Anúncio</span> {{ ad.name }}{% if ad.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&s={{ a.key|urlencode }}&a={{ ad.key|urlencode }}&{{ period_qs }}">ver leads →</a>{% endif %}</td>
+        <td class="sticky-col"><div class="tm-name" title="{{ ad.name }}"><span class="lvl">Anúncio</span><span class="tm-text">{{ ad.name }}</span>{% if ad.leads %}<a class="see-leads" href="/dashboard/campanha?c={{ c.key|urlencode }}&s={{ a.key|urlencode }}&a={{ ad.key|urlencode }}&{{ period_qs }}">leads →</a>{% endif %}</div></td>
         {{ metric_cells(ad) }}
       </tr>
       {% endfor %}
@@ -375,12 +379,12 @@
     {% for g in rows %}
     <tbody class="traffic-camp" data-spend="{{ 1 if g.spend else 0 }}">
       <tr class="camp-row" tabindex="0" title="Ver onde roda" data-name="{{ g.name|lower }}">
-        <td class="sticky-col"><span class="caret">▸</span> <span class="plat">{{ g.platform }}</span> {{ g.name }} <span class="runs-in">em {{ g.children|length }} {{ "lugar" if g.children|length == 1 else "lugares" }}</span></td>
+        <td class="sticky-col"><div class="tm-name" title="{{ g.name }}"><span class="caret">▸</span><span class="plat">{{ g.platform }}</span><span class="tm-text">{{ g.name }}</span><span class="runs-in">em {{ g.children|length }} {{ "lugar" if g.children|length == 1 else "lugares" }}</span></div></td>
         {{ metric_cells(g) }}
       </tr>
       {% for p in g.children %}
       <tr class="adset-row" hidden data-name="{{ p.where|lower }}" data-adset="{{ loop.index }}">
-        <td class="sticky-col"><span class="lvl">{{ where_label }}</span> {{ p.where }}{% if p.leads %} <a class="see-leads" href="/dashboard/campanha?c={{ p.c_key|urlencode }}&s={{ p.s_key|urlencode }}{% if p.a_key %}&a={{ p.a_key|urlencode }}{% endif %}&{{ period_qs }}">ver leads →</a>{% endif %}</td>
+        <td class="sticky-col"><div class="tm-name" title="{{ p.where }}"><span class="lvl">{{ where_label }}</span><span class="tm-text">{{ p.where }}</span>{% if p.leads %}<a class="see-leads" href="/dashboard/campanha?c={{ p.c_key|urlencode }}&s={{ p.s_key|urlencode }}{% if p.a_key %}&a={{ p.a_key|urlencode }}{% endif %}&{{ period_qs }}">leads →</a>{% endif %}</div></td>
         {{ metric_cells(p) }}
       </tr>
       {% endfor %}

@@ -907,3 +907,17 @@ html.embedded .inbox-layout > .inbox-thread { border-radius: 0; border: 0; }
 .cmt-new { flex-direction: column; align-items: stretch; }
 .cmt-new textarea { min-height: 66px; font-size: .84rem; width: 100%; }
 .cmt-new .btn { align-self: flex-end; }
+
+/* "Gerenciador de anúncios": card próprio com a largura toda da tela (sai da coluna central)
+   e altura da tela; nome em 1 linha com reticências, o nome inteiro passando o mouse */
+.traffic-manager { width: calc(100vw - 32px); margin-left: calc(50% - 50vw + 16px); margin-top: 16px; }
+.traffic-manager .traffic-scroll { max-height: calc(100vh - 140px); max-height: calc(100dvh - 140px); }
+.traffic-manager .traffic-table .sticky-col { width: 360px; min-width: 360px; max-width: 360px; white-space: nowrap; }
+.tm-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tm-name .tm-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-name .see-leads, .tm-name .runs-in, .tm-name .plat, .tm-name .lvl, .tm-name .caret { flex: 0 0 auto; margin: 0; }
+.traffic-table .adset-row td:first-child, .traffic-table .ad-row td:first-child { padding-left: 12px; }
+.traffic-table .adset-row .tm-name { padding-left: 14px; }
+.traffic-table .ad-row .tm-name { padding-left: 34px; }
+.traffic-table td, .traffic-table th { padding-top: 7px; padding-bottom: 7px; }
+body:has(.traffic-manager) { overflow-x: hidden; }
