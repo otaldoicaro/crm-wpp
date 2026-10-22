@@ -17,6 +17,7 @@ Cuidados (é WhatsApp de celular, não a API oficial: mandar muito de uma vez po
 - nunca manda duas vezes pro mesmo lead (pode parar e rodar de novo).
 
 Sem --aplicar só mostra quantos são, de quem, e um exemplo de mensagem por vendedor.
+Com --reenviar-falhas: tenta de novo as que ficaram "⚠️ Não enviada" (com e sem o 9º dígito).
 
     docker exec -it crm-app python -m scripts.chamar_sem_conversa --cliente novaviseu
     docker exec -d crm-app sh -c 'python -m scripts.chamar_sem_conversa --cliente novaviseu --equilibrar --aplicar > /tmp/chamar.log 2>&1'
@@ -82,6 +83,37 @@ def _wait_for_hours() -> None:
         time.sleep(600)
 
 
+def retry_failed_all(db, tenant, days: int, apply_changes: bool) -> None:
+    """--reenviar-falhas: as mensagens automáticas que ficaram "⚠️ Não enviada" (ex: número digitado
+    sem o 9) vão de novo, pelo mesmo WhatsApp, tentando com e sem o 9º dígito."""
+    since = datetime.datetime.utcnow() - datetime.timedelta(days=days)
+    leads = first_contact.failed_query(db, tenant).filter(Lead.created_at >= since).all()
+    print(f"\n{tenant.name}: {len(leads)} mensagem(ns) automática(s) que não saíram, dos últimos {days} dias.")
+    for lead in leads[:10]:
+        print(f"  · {lead.name or lead.phone} ({lead.phone}) · {lead.assigned_user.name if lead.assigned_user else '—'}")
+    if not apply_changes:
+        print("\nNada foi enviado. Pra tentar de novo, rode com --aplicar no final.")
+        return
+    lock = open("/tmp/chamar_sem_conversa.lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("\n⚠️ Já tem um envio rodando. Esse aqui não vai mandar nada (pra não repetir mensagem).")
+        return
+    results = Counter()
+    for i, lead_id in enumerate([l.id for l in leads], 1):
+        _wait_for_hours()
+        db.expire_all()
+        lead = db.get(Lead, lead_id)
+        result = first_contact.retry_failed(db, tenant, lead)
+        results[result] += 1
+        print(f"{i}/{len(leads)} · {lead.name or lead.phone} · {result}", flush=True)
+        if result != "pulado":
+            time.sleep(random.uniform(*PAUSE))
+    print("\nResumo:", ", ".join(f"{n} {k}" for k, n in results.most_common()))
+    print("(falhou = o número não tem WhatsApp nem com nem sem o 9: o vendedor precisa ligar ou conferir com o cliente)")
+
+
 def main() -> None:
     sys.stdout.reconfigure(line_buffering=True)
     key = _arg("--cliente")
@@ -94,11 +126,14 @@ def main() -> None:
         if tenant is None:
             print("Diga o cliente: --cliente <identificador>. Clientes:", ", ".join(t.subdomain for t in db.query(Tenant)))
             return
+        if "--reenviar-falhas" in sys.argv:
+            retry_failed_all(db, tenant, days, apply_changes)
+            return
         since = datetime.datetime.utcnow() - datetime.timedelta(days=days)
         query = first_contact.waiting_query(db, tenant)
         leads = query.filter(Lead.created_at >= since).order_by(Lead.created_at.desc()).all() if query is not None else []
         older = query.filter(Lead.created_at < since).count() if query is not None else 0
-        print(f"\n{tenant.name}: {len(leads)} lead(s) sem conversa, com a peça, dos últimos {days} dias"
+        print(f"\n{tenant.name}: {len(leads)} lead(s) sem conversa, dos últimos {days} dias"
               + (f" ({older} mais antigos ficam de fora)" if older else "") + ".\n")
         by_seller = Counter((l.assigned_user.name if l.assigned_user else "sem vendedor") for l in leads
                             if first_contact.is_seller(l.assigned_user))

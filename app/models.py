@@ -73,6 +73,8 @@ class Tenant(Base):
     auto_hello_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     auto_hello_minutes: Mapped[int] = mapped_column(Integer, default=3)
     auto_hello_text: Mapped[str] = mapped_column(Text, default="")
+    # pra quem não disse a peça/carro no formulário; vazio = a 1ª mensagem do ramo (segments first_message)
+    auto_hello_generic_text: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     users: Mapped[list["User"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")

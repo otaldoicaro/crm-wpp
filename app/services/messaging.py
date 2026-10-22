@@ -36,6 +36,7 @@ def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dic
     """Devolve (ok, id_da_mensagem_no_whatsapp, messageSecret). quote: ver evolution_client.send_text.
     ok=None: o Evolution não respondeu a tempo (servidor lento) — pode ter saído; a confirmação
     chega depois pelo webhook (inbound.record_outbound_from_phone casa com a mensagem)."""
+    _last.no_whatsapp = False
     if number.provider == "evolution":
         try:
             wa_id, secret = evolution_client.send_text(number.evolution_instance, phone, body, quote)
@@ -48,6 +49,28 @@ def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dic
     result = whatsapp_client.send_text_message(number, phone, body)
     wa_id = result.get("body", {}).get("messages", [{}])[0].get("id", "") if result["ok"] else ""
     return result["ok"], wa_id, ""
+
+
+NO_WHATSAPP = "esse número não tem WhatsApp (tentamos com e sem o 9º dígito). Confira o número com o cliente ou ligue"
+
+
+def send_text_any(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dict] = None) -> tuple:
+    """send_text, mas se o WhatsApp disser que o número não existe, tenta com e sem o 9º dígito
+    (muita gente digita o celular sem o 9, ou o WhatsApp antigo dela está sem ele).
+    Devolve (ok, id, messageSecret, telefone que funcionou)."""
+    ok, wa_id, secret = send_text(number, phone, body, quote)
+    if ok is not False or not getattr(_last, "no_whatsapp", False):
+        return ok, wa_id, secret, phone
+    from app.services.attribution import _phone_variants
+
+    digits = re.sub(r"\D", "", phone or "")
+    for alt in sorted(_phone_variants(digits) - {digits}):
+        ok, wa_id, secret = send_text(number, alt, body, quote)
+        if ok is not False:
+            return ok, wa_id, secret, alt
+    if getattr(_last, "no_whatsapp", False):
+        _last.error = NO_WHATSAPP
+    return ok, wa_id, secret, phone
 
 
 def send_media(
@@ -81,6 +104,9 @@ def friendly_error(exc: Exception) -> str:
     """Erro do Evolution em linguagem de vendedor (o detalhe técnico vai pro log)."""
     text = str(exc).lower()
     logger.warning("falha no envio pelo WhatsApp: %s", exc)
+    if "'exists': false" in text or '"exists": false' in text:
+        _last.no_whatsapp = True
+        return "esse número não tem WhatsApp. Confira o número com o cliente ou ligue"
     if "does not exist" in text or "connection closed" in text or "not connected" in text or "404" in text:
         return "o WhatsApp deste número está desconectado. Peça pro admin reconectar em WhatsApp."
     if "sem resposta" in text or "timeout" in text:

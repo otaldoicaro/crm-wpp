@@ -10,7 +10,10 @@ Regras:
   rodízio (o mesmo do link /go) e o lead passa pra esse vendedor;
 - só de HOURS[0] às HOURS[1] (horário de Brasília): formulário de madrugada recebe às 8h;
 - formulário com mais de MAX_AGE sem mensagem: desiste (não manda "vou verificar" dias depois);
-- só quem informou a peça no formulário (a mensagem sempre confirma o que a pessoa pediu).
+- quem informou a peça (ou o carro) recebe a confirmação do que pediu e vai pra Qualificado; quem não
+  informou recebe a mensagem genérica do ramo ("me passa qual peça, o modelo e o ano") e vai só pra
+  Em atendimento (ainda não sabemos o que ele quer);
+- número que o WhatsApp diz que não existe: tenta com e sem o 9º dígito antes de desistir.
 Os leads antigos sem conversa são chamados uma vez pelo scripts/chamar_sem_conversa.py.
 """
 
@@ -45,6 +48,20 @@ def default_text(tenant: Tenant) -> str:
     from app import segments
 
     return segments.segment_for(tenant).get("auto_hello_text") or DEFAULT_TEXT
+
+
+def generic_text(tenant: Tenant) -> str:
+    """Mensagem pra quem não disse a peça/carro: a do cliente (⚙ Prazos) ou a 1ª mensagem do ramo."""
+    from app import segments
+
+    if (tenant.auto_hello_generic_text or "").strip():
+        return tenant.auto_hello_generic_text
+    return (segments.segment_for(tenant).get("first_message") or "").replace("Olá{nome}", "Olá, {nome}")
+
+
+def has_specific(fields: dict) -> bool:
+    """O formulário diz o que a pessoa quer (peça ou carro)?"""
+    return bool(part_names(fields.get("peca", "")) or car_names(fields.get("carro", "")))
 
 
 def target_stage_name(tenant: Tenant) -> str:
@@ -113,7 +130,8 @@ def compose(template: str, values: dict) -> str:
 
 def message_for(tenant: Tenant, lead: Lead, seller: User | None) -> str:
     fields = form_fields(lead.form_details)
-    return compose(tenant.auto_hello_text or default_text(tenant), {
+    template = (tenant.auto_hello_text or default_text(tenant)) if has_specific(fields) else generic_text(tenant)
+    return compose(template, {
         "nome": _first_name(lead.name),
         "vendedor": _first_name(seller.name) if seller else "",
         "empresa": tenant.name,
@@ -188,8 +206,8 @@ def number_for(db, lead: Lead) -> WhatsAppNumber | None:
 
 
 def waiting_query(db, tenant: Tenant):
-    """Leads deste cliente em "Lead sem conversa", sem nenhuma conversa, com a peça no formulário e
-    que ainda não receberam a mensagem."""
+    """Leads deste cliente em "Lead sem conversa", sem nenhuma conversa e que ainda não receberam a
+    mensagem (com peça/carro: confirmação; sem: a mensagem genérica, se o ramo tiver uma)."""
     from app.services import funnel
 
     stage = funnel.stage_named(db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).all(), funnel.NO_CHAT_NAME)
@@ -198,7 +216,8 @@ def waiting_query(db, tenant: Tenant):
     return db.query(Lead).filter(
         Lead.tenant_id == tenant.id, Lead.stage_id == stage.id, Lead.auto_hello_at.is_(None),
         Lead.deleted_at.is_(None), Lead.archived_at.is_(None), Lead.is_group.is_(False), Lead.tag != "outro",
-        Lead.phone != "", Lead.form_details.like("%Peças: %"), ~Lead.conversations.any(),
+        Lead.phone != "", ~Lead.conversations.any(),
+        *([] if generic_text(tenant) else [Lead.form_details.like("%Peças: %") | Lead.form_details.like("%Carros de interesse: %")]),
     )
 
 
@@ -231,7 +250,9 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
     sender = seller or SimpleNamespace(id=None)  # número compartilhado sem dono
     lead.auto_hello_at = datetime.datetime.utcnow()  # antes de mandar: nunca manda duas vezes
     db.commit()
-    ok, wa_id, secret = messaging.send_text(number, lead.phone, text)
+    ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, text)
+    if ok is not False and used != lead.phone:
+        lead.phone = used  # o número certo era com (ou sem) o 9º dígito
     conversation = db.query(Conversation).filter(
         Conversation.lead_id == lead.id, Conversation.whatsapp_number_id == number.id).first()
     if conversation is None:  # o aviso do WhatsApp sobre essa mesma mensagem pode já ter criado
@@ -241,8 +262,11 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
         db.flush()
     if ok is False:
         _record_outbound(db, conversation, sender, "", f"⚠️ Não enviada ({messaging.last_error()}): {text}")
+        no_whatsapp = messaging.last_error() == messaging.NO_WHATSAPP
         db.add(Message(conversation_id=conversation.id, direction="note",
-                       body="🤖 A mensagem automática do formulário não saiu. Confira o número do cliente e clique em 🔄 pra tentar de novo."))
+                       body="📵 A mensagem automática não saiu: esse número não tem WhatsApp (tentamos com e sem o 9º dígito). "
+                            "Ligue pro cliente ou confira o número." if no_whatsapp else
+                       "🤖 A mensagem automática do formulário não saiu. Confira o número do cliente e clique em 🔄 pra tentar de novo."))
         db.commit()
         return "falhou"
     if ok:
@@ -250,7 +274,9 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
 
         response_times.mark_outbound(lead)
     _record_outbound(db, conversation, sender, wa_id, text, secret=secret, pending=ok is None)
-    target = funnel.stage_named(funnel._stages(db, tenant.id), target_stage_name(tenant))
+    # disse a peça/carro: já está qualificado; mensagem genérica: só Em atendimento (vem do _record_outbound)
+    target = funnel.stage_named(funnel._stages(db, tenant.id), target_stage_name(tenant)) \
+        if has_specific(form_fields(lead.form_details)) else None
     if target is not None and (lead.stage is None or lead.stage.order < target.order):
         funnel.set_stage(lead, target)
     who = seller.name if seller else number.label
@@ -259,6 +285,55 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
                         + (f"; lead passou pra {target.name}" if target is not None else "") + "."))
     db.commit()
     return "confirmando" if ok is None else "enviada"
+
+
+def failed_query(db, tenant: Tenant):
+    """Leads cuja mensagem automática ficou "⚠️ Não enviada" e que nunca falaram com a gente."""
+    return db.query(Lead).join(Conversation, Conversation.lead_id == Lead.id).join(
+        Message, Message.conversation_id == Conversation.id).filter(
+        Lead.tenant_id == tenant.id, Lead.auto_hello_at.isnot(None), Lead.deleted_at.is_(None), Lead.is_group.is_(False),
+        Message.direction == "out", Message.wa_message_id == "", Message.body.like("⚠️ Não enviada%"),
+        ~Lead.conversations.any(Conversation.messages.any(Message.direction == "in")),
+    ).distinct()
+
+
+def retry_failed(db, tenant: Tenant, lead: Lead) -> str:
+    """Tenta de novo a mensagem automática que falhou (agora com e sem o 9º dígito), pelo mesmo
+    WhatsApp, e a mesma mensagem da conversa vira enviada. Devolve "enviada", "falhou" ou "pulado"."""
+    from app.services import funnel, messaging, response_times
+
+    message = (db.query(Message).join(Conversation, Conversation.id == Message.conversation_id)
+               .filter(Conversation.lead_id == lead.id, Message.direction == "out", Message.wa_message_id == "",
+                       Message.body.like("⚠️ Não enviada%")).order_by(Message.created_at.desc()).first())
+    if message is None:
+        return "pulado"
+    conversation = db.get(Conversation, message.conversation_id)
+    number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
+    if not _connected(number):
+        return "pulado"
+    seller = db.get(User, number.owner_user_id) if number.owner_user_id else lead.assigned_user
+    text = message_for(tenant, lead, seller)  # texto de agora (ex: genérica, código da peça já sem)
+    ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, text)
+    if ok is False:
+        message.body = f"⚠️ Não enviada ({messaging.last_error()}): {text}"
+        db.commit()
+        return "falhou"
+    fixed_phone = used != lead.phone
+    if fixed_phone:
+        lead.phone = used
+    message.body, message.wa_message_id, message.secret = text, wa_id, secret
+    message.ack = messaging.UNCONFIRMED if ok is None else 1
+    message.created_at = datetime.datetime.utcnow()
+    response_times.mark_outbound(lead)
+    funnel.on_message(db, lead, outbound=True)
+    target = funnel.stage_named(funnel._stages(db, tenant.id), target_stage_name(tenant)) \
+        if has_specific(form_fields(lead.form_details)) else None
+    if target is not None and (lead.stage is None or lead.stage.order < target.order):
+        funnel.set_stage(lead, target)
+    db.add(Message(conversation_id=conversation.id, direction="note",
+                   body="🤖 Mensagem automática reenviada" + (f" (o número certo era {used}, com/sem o 9º dígito)" if fixed_phone else "") + "."))
+    db.commit()
+    return "enviada"
 
 
 def run() -> dict:

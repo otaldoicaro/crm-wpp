@@ -1,5 +1,6 @@
 import base64
 import datetime
+from types import SimpleNamespace
 import json
 import logging
 import os
@@ -683,6 +684,8 @@ def deadlines_page(
     return templates.TemplateResponse(request, "prazos.html", {
         "tenant": tenant, "user": user, "active_nav": "pipeline", "stages": funnel._stages(db, tenant.id),
         "hello_default": first_contact.default_text(tenant).replace("{empresa}", tenant.name),
+        "hello_generic_default": first_contact.generic_text(SimpleNamespace(auto_hello_generic_text="", segment=tenant.segment))
+        .replace("{empresa}", tenant.name),
         "hello_stage": first_contact.target_stage_name(tenant),
         "feature_list": features.FEATURES, "features_on": features.enabled(tenant),
     })
@@ -716,6 +719,10 @@ async def save_deadlines(
         text = str(form.get("auto_hello_text", "")).replace("\r\n", "\n").strip()
         default = first_contact.default_text(tenant).replace("{empresa}", tenant.name)
         tenant.auto_hello_text = "" if text == default else text[:1500]  # igual ao padrão: segue o padrão
+        generic = str(form.get("auto_hello_generic_text", "")).replace("\r\n", "\n").strip()
+        generic_default = first_contact.generic_text(SimpleNamespace(auto_hello_generic_text="", segment=tenant.segment)).replace(
+            "{empresa}", tenant.name)
+        tenant.auto_hello_generic_text = "" if generic == generic_default else generic[:1500]
         if form.get("features_form") == "1":
             tenant.features = features.store(form.getlist("feature"))
         db.commit()
@@ -2291,7 +2298,9 @@ def resend_message(
     number = db.get(WhatsAppNumber, lead.active_conversation.whatsapp_number_id) if lead.active_conversation else None
     if number is None or not text.strip():
         return JSONResponse({"ok": False, "error": "conversa sem WhatsApp"}, status_code=400)
-    ok, wa_id, secret = messaging.send_text(number, lead.phone, text)
+    ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, text)  # tenta com e sem o 9º dígito
+    if ok is not False and used != lead.phone:
+        lead.phone = used
     if ok is None:  # servidor lento de novo: fica "⏳ confirmando envio"
         message.body, message.ack = text, messaging.UNCONFIRMED
     elif ok:
