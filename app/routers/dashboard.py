@@ -462,6 +462,9 @@ def start_conversation(
             url=f"/leads/{lead_id}?erro_envio=" + quote("O WhatsApp " + number.label + " não conseguiu enviar. Confira se o número do lead está certo e se o WhatsApp está conectado."),
             status_code=302,
         )
+    # quem atende passa a ser o dono do WhatsApp que mandou (número compartilhado/sem dono: quem clicou)
+    owner = number.owner if number.owner_user_id and number.owner and number.owner.is_active else None
+    lead.assigned_user_id = owner.id if owner else user.id
     # consulta de novo: o aviso do WhatsApp sobre essa mesma mensagem pode já ter criado a conversa
     conversation = (
         db.query(Conversation).filter(Conversation.lead_id == lead.id, Conversation.whatsapp_number_id == number.id).first()
@@ -470,6 +473,7 @@ def start_conversation(
         conversation = Conversation(tenant_id=tenant.id, lead_id=lead.id, whatsapp_number_id=number.id, assigned_user_id=lead.assigned_user_id)
         db.add(conversation)
         db.flush()
+    conversation.assigned_user_id = lead.assigned_user_id
     response_times.mark_outbound(lead)
     _record_outbound(db, conversation, user, wa_id, body.strip(), secret=secret)
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
