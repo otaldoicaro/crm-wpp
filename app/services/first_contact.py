@@ -72,12 +72,14 @@ def form_fields(form_details: str) -> dict:
 
 def part_names(raw: str) -> str:
     """"Lanterna Traseira Virtus 2018/22 | SKU 41151 | R$ 299,00" -> "Lanterna Traseira Virtus 2018/22"
-    (sem SKU, preço nem código da peça no fim; várias peças separadas por ";" viram "A e B")."""
+    (sem SKU, preço nem código da peça; várias peças separadas por ";" viram "A e B")."""
     names = []
     for item in re.split(r"\s*;\s*|\n", raw or ""):
         name = re.sub(r"\s*R\$\s*[\d.,]+", "", item.split(" | ")[0]).strip(" -|,")
-        # código da peça no fim ("... 2020/24 26296817", "... 5U0945096A"): não vai pro cliente
-        name = re.sub(r"(\s+(?=[A-Z0-9-]*\d{5})[A-Z0-9-]{6,})+$", "", name).strip(" -|,")
+        # código da peça em qualquer lugar ("... 2020/24 26296817", "... 2013/18 - 2265106526 Preto",
+        # "... 5U0945096A"): não vai pro cliente. Ano ("2013/18") e motor ("1.4") ficam
+        name = re.sub(r"(?:\s+-)?\s+(?=[A-Za-z0-9-]*\d{5})[A-Za-z0-9-]{6,}(?=\s|$)", "", name)
+        name = re.sub(r"\s{2,}", " ", name).strip(" -|,")
         if name:
             names.append(name)
     return ", ".join(names[:-1]) + " e " + names[-1] if len(names) > 1 else (names[0] if names else "")
