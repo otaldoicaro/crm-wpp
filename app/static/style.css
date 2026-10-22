@@ -979,3 +979,4 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .stage-bar .pay-fields input { width: 96px; }
 .pay-detail { display: flex; flex-wrap: wrap; gap: 8px; }
 .pay-inst { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.owner-history ul { margin: 0; padding-left: 18px; font-size: .84rem; } .owner-history li { margin: 3px 0; }

@@ -23,6 +23,7 @@ from app.config import SESSION_COOKIE_NAME
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
+from app.services import ownership
 from app.services import evolution_client
 from app.services.distribution import assign_lead
 from app.tenancy import DEBUG, public_url
@@ -232,6 +233,8 @@ def _remove_member(db: Session, tenant: Tenant, member: User, reassign: bool, dr
         ):
             if lead.stage_id not in terminal:
                 assign_lead(db, lead)  # rodízio entre quem continua ativo
+                ownership.changed(db, lead, member.id, f"{member.name} saiu da equipe (rodízio)")
+                db.commit()
 
     if drop_whatsapp:
         for number in db.query(WhatsAppNumber).filter(

@@ -104,6 +104,13 @@
 </div>
 {% endif %}
 
+{% if owner_history %}
+<div class="card owner-history" style="margin-top:16px;">
+  <h3 style="margin-top:0">↪ Trocas de vendedor</h3>
+  <ul>{% for line in owner_history %}<li>{{ line }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
 {% if lead.form_details %}
 <div class="card form-details-card" style="margin-top:16px;">
   <h3 style="margin-top:0">Formulário da LP / site</h3>

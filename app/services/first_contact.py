@@ -158,7 +158,14 @@ def number_for(db, lead: Lead) -> WhatsAppNumber | None:
         return None
     number = candidates[0]
     number.last_routed_at = datetime.datetime.utcnow()
+    previous, before = lead.assigned_user_id, lead.assigned_user
     lead.assigned_user_id = number.owner_user_id
+    from app.services import ownership
+
+    why = ("estava sem vendedor" if before is None else f"{before.name} é admin" if before.role == "admin"
+           else f"{before.name} está fora do rodízio" if not is_seller(before)
+           else f"o WhatsApp de {before.name} estava desconectado")
+    ownership.changed(db, lead, previous, f"mensagem automática do formulário: {why}")
     return number
 
 

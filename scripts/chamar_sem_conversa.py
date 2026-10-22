@@ -146,9 +146,13 @@ def main() -> None:
             print("\n⚠️ Já tem um envio rodando. Esse aqui não vai mandar nada (pra não repetir mensagem).")
             return
         if plan:  # redistribui antes de mandar
+            from app.services import ownership
+
             for lead in leads:
                 if lead.id in plan:
+                    previous = lead.assigned_user_id
                     lead.assigned_user_id = plan[lead.id]
+                    ownership.changed(db, lead, previous, "redistribuição pra chamar os leads sem conversa")
             db.commit()
             print(f"\n↪ {len(plan)} lead(s) redistribuídos entre os vendedores.")
 

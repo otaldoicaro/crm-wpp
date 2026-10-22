@@ -20,7 +20,7 @@ from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app import features
-from app.services import autostage, car_deal, comments, deals, evolution_client, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
+from app.services import autostage, car_deal, comments, deals, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -415,6 +415,7 @@ def lead_detail(
             "deal_info": None if lead.is_group else deals.summary(db, lead),
             "start_error": request.query_params.get("erro_envio", ""),
             "comments": [] if lead.is_group else comments.thread(db, lead),
+            "owner_history": ownership.history(lead),
         },
     )
 
@@ -464,7 +465,9 @@ def start_conversation(
         )
     # quem atende passa a ser o dono do WhatsApp que mandou (número compartilhado/sem dono: quem clicou)
     owner = number.owner if number.owner_user_id and number.owner and number.owner.is_active else None
+    previous = lead.assigned_user_id
     lead.assigned_user_id = owner.id if owner else user.id
+    ownership.changed(db, lead, previous, f"{user.name} mandou a 1ª mensagem pelo WhatsApp {number.label}")
     # consulta de novo: o aviso do WhatsApp sobre essa mesma mensagem pode já ter criado a conversa
     conversation = (
         db.query(Conversation).filter(Conversation.lead_id == lead.id, Conversation.whatsapp_number_id == number.id).first()
@@ -1644,7 +1647,9 @@ def transfer_lead(
     if target is None:
         raise HTTPException(status_code=404, detail="Vendedor não encontrado")
     previous = lead.assigned_user.name if lead.assigned_user else "ninguém"
+    previous_id = lead.assigned_user_id
     lead.assigned_user_id = target.id
+    ownership.changed(db, lead, previous_id, f"transferido por {user.name}", note=False)  # a nota de transferência vem abaixo
     lead.seen_at = None  # o novo vendedor ainda não viu
     for conversation in lead.conversations:
         conversation.assigned_user_id = target.id
@@ -2443,6 +2448,8 @@ def _record_outbound(
     # no Evolution o webhook "fromMe" dessa mesma mensagem pode chegar antes
     # deste commit; aí ela já está salva e só marcamos quem enviou
     lead = db.get(Lead, conversation.lead_id)
+    if lead is not None:
+        ownership.flush_pending(db, lead, conversation)  # troca de vendedor de antes da conversa vira nota
     if lead is not None and wa_id:  # enviada de verdade (não conta "⚠️ Não enviada")
         funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
         followup.on_outbound_text(db, lead, body)  # mandou preço: vai pra "Negociando"

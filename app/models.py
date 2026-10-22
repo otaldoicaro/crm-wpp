@@ -245,6 +245,8 @@ class Lead(Base):
     seen_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # o que a pessoa preencheu nos formulários (LP/site), um bloco por envio, mais recente primeiro
     form_details: Mapped[str] = mapped_column(Text, default="")
+    # ↪ trocas de vendedor ("P|" ainda sem nota na conversa, "N|" já com nota): ver services/ownership.py
+    owner_trail: Mapped[str] = mapped_column(Text, default="")
     # 🤖 quando a 1ª mensagem automática saiu (ou foi tentada): manda uma vez só por negócio
     auto_hello_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # foto de perfil do WhatsApp (URL temporária do WhatsApp; renovada a cada 24h em /leads/{id}/avatar)

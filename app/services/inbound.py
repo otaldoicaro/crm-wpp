@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import Conversation, Lead, Message, WhatsAppNumber
-from app.services import attribution, autostage, deals, followup, funnel, response_times, suggestions
+from app.services import attribution, autostage, deals, followup, funnel, ownership, response_times, suggestions
 from app.services.distribution import assign_lead
 from app.services.lead_match import find_lead_by_phone
 
@@ -34,6 +34,8 @@ def _get_or_create_conversation(db: Session, number: WhatsAppNumber, lead: Lead)
         db.add(conversation)
         db.commit()
         db.refresh(conversation)
+        ownership.flush_pending(db, lead, conversation)  # troca de vendedor de antes da conversa vira nota
+        db.commit()
     return conversation
 
 
@@ -96,7 +98,10 @@ def ingest_inbound(
             elif lead.attribution is None:
                 attribution.attribution_from_click_bridge(db, lead, body)
             if number.owner_user_id and number.owner and number.owner.is_active:
+                previous = lead.assigned_user_id
                 lead.assigned_user_id = number.owner_user_id  # quem atende é o dono do WhatsApp que recebeu
+                ownership.changed(db, lead, previous, f"o cliente chamou no WhatsApp de {number.owner.name} "
+                                                      "(a conversa fica com o dono do celular onde ela está)")
         if profile_name and not lead.name:
             lead.name = profile_name
         if lead.archived_at:
