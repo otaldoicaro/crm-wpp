@@ -395,6 +395,9 @@ class Message(Base):
     media_stored_key: Mapped[str] = mapped_column(String(160), default="")
     # messageSecret do WhatsApp (base64): necessário pra abrir uma edição futura desta mensagem
     secret: Mapped[str] = mapped_column(String(100), default="")
+    # edição cifrada que o CRM não conseguiu abrir na hora (JSON: payload, iv, jids): fica guardada
+    # pra tentar de novo (scripts/edicoes) quando aprendermos o LID/número que faltava
+    pending_edit: Mapped[str] = mapped_column(Text, default="")
     # em grupo: quem mandou (nome no WhatsApp)
     sender_name: Mapped[str] = mapped_column(String(120), default="")
     # nossas mensagens: 0 = sem informação (antigas), 1 = enviada ✓, 2 = entregue ✓✓, 3 = lida ✓✓ azul

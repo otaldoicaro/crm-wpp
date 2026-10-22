@@ -177,6 +177,7 @@ def _parse_content(message: dict) -> tuple:
     return UNSUPPORTED_TEXT, "", {}
 
 
+EDIT_MARK = "✏️ (editada no celular — veja o texto novo lá)"
 UNSUPPORTED_TEXT = "📎 Mensagem que o CRM ainda não mostra (ex: enquete, figurinha animada) — veja no celular"
 WRAPPERS = ("ephemeralMessage", "viewOnceMessage", "viewOnceMessageV2", "viewOnceMessageV2Extension",
             "associatedChildMessage", "deviceSentMessage", "futureProofMessage", "botInvokeMessage",
@@ -258,7 +259,62 @@ def _author_jids(number: WhatsAppNumber, item: dict) -> list:
     else:
         jids = [key.get(k, "") for k in ("remoteJid", "remoteJidAlt", "senderPn", "senderLid", "participant", "participantAlt")]
     jids.append(item.get("sender", "") if key.get("fromMe") else "")
+    if key.get("fromMe"):
+        jids += _own_jids(number)
     return [j for j in jids if j and j.endswith(("@s.whatsapp.net", "@lid"))]
+
+
+def _own_jids(number: WhatsAppNumber) -> list:
+    """Número e LID do próprio WhatsApp conectado (creds.json da instância no Evolution): quem
+    edita pelo celular do vendedor assina a edição com um deles."""
+    path = os.path.join(EVO_INSTANCES_DIR, number.evolution_instance or "-", "creds.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            me = (json.load(f) or {}).get("me") or {}
+    except (OSError, ValueError):
+        return []
+    out = []
+    for raw, server in ((me.get("id", ""), "s.whatsapp.net"), (me.get("lid", ""), "lid")):
+        digits = _digits(raw)
+        if digits:
+            out.append(f"{digits}@{server}")
+    return out
+
+
+def jid_variants(db: Session, jids: list) -> list:
+    """Cada JID nos dois formatos (número e LID), pelo que o CRM já aprendeu (lid_map) e pelos
+    arquivos do Evolution: o WhatsApp assina a edição com um ou outro."""
+    from app.models import LidMap
+
+    out = list(jids)
+    for jid in jids:
+        digits = _digits(jid)
+        if not digits:
+            continue
+        if jid.endswith("@lid"):
+            row = db.get(LidMap, digits)
+            phone = row.phone if row else _lid_from_files(digits)
+            if phone:
+                out.append(f"{phone}@s.whatsapp.net")
+        else:
+            row = db.query(LidMap).filter(LidMap.phone == digits).first()
+            lid = row.lid if row else _lid_from_phone_file(digits)
+            if lid:
+                out.append(f"{lid}@lid")
+    return list(dict.fromkeys(out))
+
+
+def _lid_from_phone_file(phone: str) -> str:
+    for path in glob.glob(os.path.join(EVO_INSTANCES_DIR, "*", f"lid-mapping-{phone}.json")):
+        try:
+            with open(path, encoding="utf-8") as f:
+                value = json.load(f)
+        except (OSError, ValueError):
+            continue
+        digits = _digits(str(value))
+        if digits:
+            return digits
+    return ""
 
 
 def _apply_edit_or_delete(db: Session, number: WhatsAppNumber, item: dict) -> bool:
@@ -288,19 +344,18 @@ def _apply_edit_or_delete(db: Session, number: WhatsAppNumber, item: dict) -> bo
             if new_text:
                 original.body, original.edited_at = new_text, datetime.datetime.utcnow()
         elif secret and kind in ("2", "MESSAGE_EDIT"):
-            plain = decrypt_edit(
-                original.secret,
-                target.get("id", ""),
-                _author_jids(number, item),
-                to_bytes(secret.get("encPayload")),
-                to_bytes(secret.get("encIv")),
-            )
+            jids = jid_variants(db, _author_jids(number, item))
+            payload, iv = to_bytes(secret.get("encPayload")), to_bytes(secret.get("encIv"))
+            plain = decrypt_edit(original.secret, target.get("id", ""), jids, payload, iv)
             new_text = text_from_message(plain) if plain else ""
             if new_text:
-                original.body, original.edited_at = new_text, datetime.datetime.utcnow()
-            elif "(editada no celular" not in original.body:
-                logger.info("evolution: não deu pra abrir a edição de %s (sem secret guardado?)", target.get("id"))
-                original.body = f"{original.body} ✏️ (editada no celular — veja o texto novo lá)"
+                original.body, original.edited_at, original.pending_edit = new_text, datetime.datetime.utcnow(), ""
+            else:
+                logger.info("evolution: não deu pra abrir a edição de %s (secret guardado: %s; %d JIDs tentados)",
+                            target.get("id"), bool(original.secret), len(jids))
+                original.pending_edit = json.dumps({"payload": secret.get("encPayload"), "iv": secret.get("encIv"), "jids": jids})
+                if EDIT_MARK not in original.body:
+                    original.body = f"{original.body} {EDIT_MARK}"
         db.add(original)
         db.commit()
     return True  # nunca vira mensagem nova, mesmo se a original não estiver no CRM
