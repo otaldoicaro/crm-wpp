@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 from app.models import Lead, UtmAttribution
 from app.services import deals, funnel
 from app.services.attribution import _phone_variants, normalize_br_phone
-from app.services.distribution import assign_lead
 from app.timeutil import to_local
 
 
@@ -93,7 +92,9 @@ def upsert_form_lead(db: Session, tenant_id: str, data: dict, source: str = "sit
         db.commit()
 
     if created or not lead.assigned_user_id:
-        assign_lead(db, lead)
+        from app.services import first_contact
+
+        first_contact.assign_form_lead(db, lead)  # vendedor com WhatsApp conectado: é ele quem manda a 1ª mensagem
     return lead, created
 
 

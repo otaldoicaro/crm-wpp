@@ -144,6 +144,24 @@ def seller_numbers(db, tenant_id: str) -> list:
     return sorted(numbers, key=lambda n: n.last_routed_at or oldest)
 
 
+def assign_form_lead(db, lead: Lead) -> None:
+    """Lead novo do formulário já nasce com um vendedor que pode mandar a mensagem: no rodízio, com
+    WhatsApp conectado, nunca admin (o mesmo rodízio do link /go). Assim quem aparece como responsável
+    no Pipeline é quem manda a mensagem automática, pelo número dele. Ninguém assim: rodízio normal."""
+    from app.services.distribution import _open_leads_by_user, assign_lead
+
+    load = _open_leads_by_user(db, lead.tenant_id)
+    numbers = [n for n in seller_numbers(db, lead.tenant_id)
+               if not (n.owner.max_open_leads and load.get(n.owner_user_id, 0) >= n.owner.max_open_leads)]
+    if not numbers:
+        assign_lead(db, lead)
+        return
+    number = numbers[0]
+    number.last_routed_at = datetime.datetime.utcnow()
+    lead.assigned_user_id = number.owner_user_id
+    db.commit()
+
+
 def number_for(db, lead: Lead) -> WhatsAppNumber | None:
     """WhatsApp do vendedor do lead; lead de admin, sem vendedor, ou com o WhatsApp do vendedor
     desconectado: o próximo vendedor do rodízio (e o lead passa pra ele)."""
@@ -201,6 +219,13 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
     if number is None:
         db.commit()  # pode ter passado o lead pro próximo do rodízio
         return "sem número"
+    if number.owner_user_id and number.owner_user_id != lead.assigned_user_id:
+        # regra: quem manda é sempre o responsável pelo lead (nunca sai do número de outra pessoa)
+        from app.services import ownership
+
+        previous = lead.assigned_user_id
+        lead.assigned_user_id = number.owner_user_id
+        ownership.changed(db, lead, previous, "mensagem automática sai sempre pelo WhatsApp do responsável")
     seller = db.get(User, number.owner_user_id) if number.owner_user_id else lead.assigned_user
     text = message_for(tenant, lead, seller)
     sender = seller or SimpleNamespace(id=None)  # número compartilhado sem dono
