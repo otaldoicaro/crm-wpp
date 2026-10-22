@@ -38,6 +38,7 @@ MEDIA_TYPES = {
     "imageMessage": ("image", "📷 Imagem"),
     "videoMessage": ("video", "🎥 Vídeo"),
     "audioMessage": ("audio", "🎤 Mensagem de áudio"),
+    "ptvMessage": ("video", "🎥 Vídeo (bolinha)"),
     "documentMessage": ("document", "📄 Documento"),
     "documentWithCaptionMessage": ("document", "📄 Documento"),
     "stickerMessage": ("sticker", "🖼️ Figurinha"),
@@ -133,10 +134,12 @@ def _parse_content(message: dict) -> tuple:
     """Devolve (texto, media_type, context_info) a partir do objeto `message` do Baileys."""
     if not message:
         return "", "", {}
-    if "ephemeralMessage" in message:
-        message = message["ephemeralMessage"].get("message", {})
-    if "viewOnceMessageV2" in message:
-        message = message["viewOnceMessageV2"].get("message", {})
+    # embrulhos (mensagem temporária, "ver uma vez", foto de álbum, enviada de outro aparelho...)
+    for _ in range(4):
+        wrapper = next((w for w in WRAPPERS if w in message and isinstance(message[w], dict)), None)
+        if wrapper is None:
+            break
+        message = message[wrapper].get("message") or {}
 
     if "conversation" in message:
         return message["conversation"], "", {}
@@ -163,16 +166,75 @@ def _parse_content(message: dict) -> tuple:
     if "contactsArrayMessage" in message:
         names = [c.get("displayName", "") for c in message["contactsArrayMessage"].get("contacts", [])]
         return f"👤 Contatos: {', '.join(n for n in names if n)}", "", {}
+    text = _other_text(message)
+    if text:
+        return text, "", {}
 
     kinds = [k for k in message.keys() if k not in IGNORED_TYPES]
     if not kinds:
         return "", "", {}  # só metadados (reação, chave de grupo, etc.): não vira mensagem
     logger.info("evolution: tipo de mensagem não exibido no CRM: %s", kinds)
-    return "📎 Mensagem que o CRM ainda não mostra (ex: enquete, figurinha animada) — veja no celular", "", {}
+    return UNSUPPORTED_TEXT, "", {}
+
+
+UNSUPPORTED_TEXT = "📎 Mensagem que o CRM ainda não mostra (ex: enquete, figurinha animada) — veja no celular"
+WRAPPERS = ("ephemeralMessage", "viewOnceMessage", "viewOnceMessageV2", "viewOnceMessageV2Extension",
+            "associatedChildMessage", "deviceSentMessage", "futureProofMessage", "botInvokeMessage",
+            "groupMentionedMessage")
+
+
+def _other_text(message: dict) -> str:
+    """Texto pra tipos sem mídia que o CRM mostra resumidos (enquete, botão, convite, ligação...)."""
+    for key in ("pollCreationMessage", "pollCreationMessageV2", "pollCreationMessageV3", "pollCreationMessageV4"):
+        if key in message:
+            poll = message[key] or {}
+            options = [o.get("optionName", "") for o in poll.get("options") or []]
+            return f"📊 Enquete: {poll.get('name', '')}" + (f" — opções: {' / '.join(o for o in options if o)}" if options else "")
+    if "eventMessage" in message:
+        ev = message["eventMessage"] or {}
+        return f"📅 Evento: {ev.get('name', '')}" + (f" — {ev['description']}" if ev.get("description") else "")
+    if "buttonsResponseMessage" in message:
+        return f"🔘 {message['buttonsResponseMessage'].get('selectedDisplayText', '') or 'Respondeu um botão'}"
+    if "templateButtonReplyMessage" in message:
+        return f"🔘 {message['templateButtonReplyMessage'].get('selectedDisplayText', '') or 'Respondeu um botão'}"
+    if "listResponseMessage" in message:
+        item = message["listResponseMessage"] or {}
+        return f"🔘 {item.get('title', '') or (item.get('singleSelectReply') or {}).get('selectedRowId', '') or 'Escolheu uma opção da lista'}"
+    if "interactiveResponseMessage" in message:
+        return f"🔘 {((message['interactiveResponseMessage'] or {}).get('body') or {}).get('text', '') or 'Respondeu um botão'}"
+    if "buttonsMessage" in message:
+        return message["buttonsMessage"].get("contentText", "") or "🔘 Mensagem com botões"
+    if "templateMessage" in message:
+        tpl = message["templateMessage"] or {}
+        hyd = tpl.get("hydratedTemplate") or tpl.get("hydratedFourRowTemplate") or {}
+        return hyd.get("hydratedContentText", "") or "🔘 Mensagem com botões"
+    if "interactiveMessage" in message:
+        return ((message["interactiveMessage"] or {}).get("body") or {}).get("text", "") or "🔘 Mensagem com botões"
+    if "listMessage" in message:
+        lst = message["listMessage"] or {}
+        return " — ".join(x for x in (lst.get("title", ""), lst.get("description", "")) if x) or "🔘 Lista de opções"
+    if "groupInviteMessage" in message:
+        return f"👥 Convite pro grupo: {message['groupInviteMessage'].get('groupName', '')}"
+    if "productMessage" in message:
+        prod = (message["productMessage"] or {}).get("product") or {}
+        return f"🛍️ Produto: {prod.get('title', '')}"
+    if "orderMessage" in message:
+        return f"🛒 Pedido{': ' + message['orderMessage'].get('message', '') if message['orderMessage'].get('message') else ''}"
+    if "lottieStickerMessage" in message:
+        return "🖼️ Figurinha animada (abre só no celular)"
+    if "stickerPackMessage" in message:
+        return "🖼️ Pacote de figurinhas"
+    if "call" in message or "callLogMesssage" in message or "scheduledCallCreationMessage" in message:
+        return "📞 Ligação pelo WhatsApp"
+    if "requestPhoneNumberMessage" in message:
+        return "📱 Pediu seu número de telefone"
+    return ""
 
 
 # tipos que não são conteúdo pra mostrar na conversa
 IGNORED_TYPES = {
+    "albumMessage",  # só avisa "vem um álbum"; as fotos chegam uma a uma
+    "messageHistoryBundle",
     "messageContextInfo",
     "senderKeyDistributionMessage",
     "reactionMessage",
@@ -480,7 +542,7 @@ def clean_legacy_placeholders() -> int:
             if kind in IGNORED_TYPES:
                 db.delete(msg)
             else:
-                msg.body = "📎 Mensagem que o CRM ainda não mostra (ex: enquete, figurinha animada) — veja no celular"
+                msg.body = UNSUPPORTED_TEXT
                 db.add(msg)
             fixed += 1
         db.commit()

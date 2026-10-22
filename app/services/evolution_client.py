@@ -241,11 +241,16 @@ def resolve_lid(instance: str, lid_jid: str) -> str:
     return ""
 
 
-def find_message_key(instance: str, wa_id: str) -> dict:
-    """Chave ({remoteJid, fromMe, id}) de uma mensagem guardada no Evolution."""
+def find_message(instance: str, wa_id: str) -> dict:
+    """Registro inteiro ({key, message, ...}) de uma mensagem guardada no Evolution; {} se não achar."""
     body = _request("POST", f"/chat/findMessages/{instance}", json={"where": {"key": {"id": wa_id}}, "page": 1, "offset": 1})
     records = ((body or {}).get("messages") or {}).get("records") or []
-    return (records[0] or {}).get("key") or {} if records else {}
+    return (records[0] or {}) if records else {}
+
+
+def find_message_key(instance: str, wa_id: str) -> dict:
+    """Chave ({remoteJid, fromMe, id}) de uma mensagem guardada no Evolution."""
+    return find_message(instance, wa_id).get("key") or {}
 
 
 def edit_text(instance: str, wa_id: str, text: str) -> None:
