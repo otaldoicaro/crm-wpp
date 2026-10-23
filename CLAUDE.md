@@ -13,6 +13,8 @@ Mudar código afeta clientes que estão em uso. As regras abaixo valem em toda c
 - **Nunca escreva o nome ou o identificador de um cliente direto na lógica do código.** O que é individual vira configuração.
 - Não aproveite a conversa pra "arrumar" outra coisa. Sugira como pedido separado.
 - Toda mensagem de commit começa com a etiqueta: `[Só <Cliente>]`, `[Ramo <ramo>]` ou `[Todos]`.
+- **Exceção: o Icaro (dono da agência).** No login dele, o `CLAUDE.md` pessoal (`~/.claude/CLAUDE.md`) diz que o
+  padrão é TODOS. Nas conversas dele vale essa regra; nas do time, vale esta seção.
 
 ## 2. Nada de senha no chat
 - Nunca peça nem aceite senha, token ou chave no chat. Esses valores são digitados no terminal, em campo escondido.
