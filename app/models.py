@@ -229,7 +229,7 @@ class Lead(Base):
     receipt_message_id: Mapped[str] = mapped_column(String(32), default="")
     receipt_amount: Mapped[Optional[float]] = mapped_column(nullable=True)
     receipt_info: Mapped[str] = mapped_column(String(255), default="")  # "PIX · 07/10 14:32 · de Fulano"
-    receipt_status: Mapped[str] = mapped_column(String(12), default="")  # pending | confirmed | dismissed
+    receipt_status: Mapped[str] = mapped_column(String(12), default="")  # pending | auto (Ganho pelo comprovante, valor a conferir) | confirmed | dismissed
     receipt_candidates: Mapped[str] = mapped_column(String(120), default="")  # outros valores lidos ("400.0,40.0")
     # comprovantes já contados no valor da venda, um por linha "valor|PIX · 07/10 14:32 · de Fulano":
     # cliente que compra mais de um item e paga separado tem os comprovantes somados (sem contar 2x o mesmo)

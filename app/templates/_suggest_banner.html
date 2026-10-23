@@ -4,7 +4,7 @@
 {% if not kind and fu and fu.followup and fu.followup.attempts >= 3 and fu.followup.for.days >= 2 and "perdido" not in (lead.suggest_dismissed or "") %}
   {% set kind = "perdido" %}{% set no_reply = True %}
 {% endif %}
-{% if kind and not lead.is_group and lead.receipt_status != "pending" %}
+{% if kind and not lead.is_group and lead.receipt_status not in ("pending", "auto") %}
 <form method="post" action="/leads/{{ lead.id }}/sugestao" class="suggest-banner suggest-{{ kind }}" data-suggest>
   <input type="hidden" name="voltar" value="{{ voltar_url }}">
   <input type="hidden" name="tipo" value="{{ kind }}">

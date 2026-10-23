@@ -1,10 +1,10 @@
 """💸 Confirma de uma vez os comprovantes antigos que ficaram "a confirmar" (o CRM leu o valor, mas
 ninguém clicou em confirmar). Daqui pra frente, os novos aparecem como notificação pro vendedor.
 
-Pra cada comprovante pendente de UM cliente (--cliente):
-- negócio em aberto -> Ganho com o valor lido do comprovante;
-- já em Ganho sem valor -> põe o valor do comprovante; já com o mesmo valor -> só confirma;
-- já em Ganho com outro valor, ou em Perdido -> não mexe: lista pra você conferir na conversa.
+Mandou comprovante = venda. Pra cada comprovante pendente de UM cliente (--cliente):
+- negócio em aberto ou em Perdido (ex: foi pra Perdido por ficar parado) -> Ganho com o valor do comprovante;
+- já em Ganho -> o valor da venda fica o do comprovante (mostra quando muda); se a venda já tinha
+  outro comprovante, este é de mais um item: soma.
 Não manda evento de venda pro Meta (venda antiga ensinaria o algoritmo errado).
 Sem --aplicar só mostra.
 
@@ -53,26 +53,37 @@ def main() -> None:
             if amount <= 0:
                 review.append(f"{name}: comprovante sem valor lido")
                 continue
-            if stage is not None and stage.is_lost:
-                review.append(f"{name}: está em Perdido, mas mandou comprovante de R$ {receipts._brl(amount)}")
-                continue
-            if stage is not None and stage.is_won:
-                if lead.deal_value and abs(lead.deal_value - amount) > 0.01:
-                    review.append(f"{name}: Ganho de R$ {receipts._brl(lead.deal_value)}, comprovante de R$ {receipts._brl(amount)}")
-                    continue
-                action = "confirma o Ganho" if lead.deal_value else f"Ganho fica com R$ {receipts._brl(amount)}"
+            extra = bool(stage is not None and stage.is_won and receipts.logged(lead)
+                         and not receipts.already_counted(lead, amount, lead.receipt_info))
+            if extra:  # a venda já tinha outro comprovante: este é de mais um item, soma
+                old = lead.deal_value or 0
+                action = f"mais um comprovante: Ganho R$ {receipts._brl(old)} + R$ {receipts._brl(amount)}"
+                total += amount
+            elif stage is not None and stage.is_won:
+                old = lead.deal_value or 0
+                action = "confirma o Ganho" if abs(old - amount) < 0.01 else (
+                    f"Ganho: R$ {receipts._brl(old)} -> R$ {receipts._brl(amount)}" if old else f"Ganho fica com R$ {receipts._brl(amount)}")
+                total += amount - old
             else:
-                action = f"{stage.name if stage else '—'} -> Ganho · R$ {receipts._brl(amount)}"
+                was = f"{stage.name if stage else '—'}" + (f" ({lead.loss_reason or 'sem motivo'}, {lead.loss_detail or 'marcado à mão'})" if stage and stage.is_lost else "")
+                action = f"{was} -> Ganho · R$ {receipts._brl(amount)}"
+                total += amount
             print(f"• {name}: {action} ({lead.receipt_info})")
-            total += amount if not lead.deal_value else 0
             if apply_changes:
-                if won is not None and not (stage and stage.is_won):
-                    funnel.set_stage(lead, won)
-                if not lead.deal_value:
+                if extra:
+                    lead.deal_value = round((lead.deal_value or 0) + amount, 2)
+                    lead.receipt_status = "confirmed"
+                    receipts.log_receipt(lead, amount, lead.receipt_info)
+                    _note(db, lead, f"💸 Mais um comprovante de R$ {receipts._brl(amount)} somado à venda: agora R$ {receipts._brl(lead.deal_value)}")
+                elif stage is not None and stage.is_won:
+                    if abs((lead.deal_value or 0) - amount) > 0.01:
+                        _note(db, lead, f"💸 Valor da venda ajustado pro do comprovante: R$ {receipts._brl(lead.deal_value or 0)} -> R$ {receipts._brl(amount)}")
                     lead.deal_value = amount
-                lead.receipt_status = "confirmed"
-                receipts.log_receipt(lead, amount, lead.receipt_info)
-                _note(db, lead, f"💸 Venda confirmada pelo comprovante (R$ {receipts._brl(amount)}) — confirmação em massa dos comprovantes antigos")
+                    lead.receipt_status = "confirmed"
+                    receipts.log_receipt(lead, amount, lead.receipt_info)
+                elif won is not None:
+                    receipts.close_as_sale(db, lead, amount, lead.receipt_info, True,
+                                           "comprovante antigo (confirmação em massa: mandou comprovante = venda)")
                 db.commit()
         if review:
             print("\nPra conferir na conversa (não mexi):")

@@ -1094,11 +1094,11 @@ def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
         "ganho": and_(Lead.suggest_kind == "ganho", is_open),
         "perdido": and_(Lead.suggest_kind == "perdido", is_open),
         "outro": and_(Lead.suggest_kind == "outro", Lead.tag.notin_(NOT_SALES_TAGS)),
-        "comprovante": and_(Lead.receipt_status == "pending", Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
+        "comprovante": and_(Lead.receipt_status.in_(("pending", "auto")), Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
         "sem_motivo": and_(Lead.stage_id.in_([st.id for st in stages if st.is_lost]), or_(Lead.loss_reason.is_(None), Lead.loss_reason == "")),
         "interesse": and_(Lead.interest_at.isnot(None), is_open),
         # 💰 venda a confirmar: comprovante que o CRM não confirmou sozinho, ou "vou buscar / pago na entrega / pode separar"
-        "venda": or_(and_(Lead.receipt_status == "pending", Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
+        "venda": or_(and_(Lead.receipt_status.in_(("pending", "auto")), Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
                      and_(Lead.suggest_kind == "ganho", is_open)),
         "comentario": Lead.id.in_(db.query(LeadComment.lead_id).filter(
             LeadComment.tenant_id == tenant.id, LeadComment.parent_id.is_(None), LeadComment.resolved_at.is_(None))),
@@ -1549,6 +1549,31 @@ def confirm_receipt(
 ):
     """💸 Comprovante lido pela IA: confirmar = marca Ganho com o valor; descartar = não era venda."""
     lead = _lead_for_action(db, tenant, user, lead_id)
+    if lead.receipt_status == "auto":
+        # 💸 venda já marcada pelo comprovante: o vendedor confere o valor (ou diz que não foi venda)
+        if acao == "confirmar":
+            try:
+                amount = _parse_brl(valor) or (lead.receipt_amount or 0)
+            except ValueError:
+                amount = lead.receipt_amount or 0
+            if amount <= 0:
+                raise HTTPException(status_code=400, detail="Valor inválido")
+            if abs((lead.deal_value or 0) - amount) > 0.01:
+                _add_note(db, lead, f"💸 Valor da venda corrigido por {user.name}: R$ {receipts._brl(lead.deal_value or 0)} → R$ {receipts._brl(amount)}")
+            lead.deal_value = amount
+            lead.receipt_status = "confirmed"
+        else:
+            stages = funnel._stages(db, tenant.id)
+            back = funnel.in_service_stage(stages) or next((st for st in stages if not st.is_won and not st.is_lost), None)
+            if back is not None:
+                funnel.set_stage(lead, back)
+            lead.deal_value = None
+            lead.receipt_log = "\n".join((lead.receipt_log or "").splitlines()[:-1])
+            lead.receipt_status = "dismissed"
+            _add_note(db, lead, f"💸 {user.name} disse que o comprovante não era venda: o lead voltou pra {back.name if back else 'o atendimento'}")
+        db.commit()
+        return JSONResponse({"ok": True}) if ajax else RedirectResponse(
+            url=voltar if voltar.startswith("/") else f"/inbox/{lead_id}", status_code=302)
     if lead.receipt_status != "pending":
         return JSONResponse({"ok": True}) if ajax else RedirectResponse(url=voltar or f"/inbox/{lead_id}", status_code=302)
     if lead.stage and lead.stage.is_won and acao in ("somar", "incluido"):

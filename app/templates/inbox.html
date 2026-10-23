@@ -318,8 +318,8 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
     })();
     </script>
     {% endif %}
-    {% if not selected_lead.is_group and selected_lead.receipt_status == "pending" and selected_lead.stage and not selected_lead.stage.is_lost %}
-    {# 💸 comprovante que o CRM não confirmou sozinho: no meio da tela, pra não passar batido #}
+    {% if not selected_lead.is_group and selected_lead.receipt_status in ("pending", "auto") and selected_lead.stage and not selected_lead.stage.is_lost %}
+    {# 💸 comprovante com valor a conferir: no meio da tela, pra não passar batido #}
     <div class="receipt-overlay" id="receiptOverlay">
       <div class="receipt-modal">
         {% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_receipt_banner.html" %}{% endwith %}

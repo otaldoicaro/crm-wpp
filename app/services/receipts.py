@@ -127,14 +127,14 @@ ADD_ON_DAYS = 7  # venda fechada há até 7 dias: comprovante novo pode ser de m
 
 
 def worth_checking(lead) -> bool:
-    """Qualquer negócio em aberto (até em "Novo"): cliente que manda comprovante já comprou,
-    mesmo que o CRM não tenha visto a conversa antes (ex: vendedor respondeu pelo celular e a
-    mensagem se perdeu). E venda (Ganho) recente: o cliente que leva mais de um item às vezes paga
-    cada um separado. A leitura grátis é leve."""
+    """Qualquer negócio em aberto (até em "Novo") ou em Perdido: cliente que manda comprovante já
+    comprou, mesmo que o CRM não tenha visto a conversa antes (ex: vendedor respondeu pelo celular e
+    a mensagem se perdeu) ou que o lead tenha ido pra Perdido por ficar parado. E venda (Ganho)
+    recente: o cliente que leva mais de um item às vezes paga cada um separado. A leitura grátis é leve."""
     import datetime
 
     stage = lead.stage
-    if lead.is_group or stage is None or stage.is_lost:
+    if lead.is_group or stage is None:
         return False
     if stage.is_won:
         return bool(lead.closed_at and datetime.datetime.utcnow() - lead.closed_at <= datetime.timedelta(days=ADD_ON_DAYS))
@@ -164,6 +164,41 @@ def already_counted(lead, amount: float, info: str) -> bool:
 
 def _brl(value: float) -> str:
     return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def close_as_sale(db, lead, amount: float, info: str, sure: bool, why: str = "comprovante de pagamento") -> bool:
+    """💸 Mandou comprovante = venda: Ganho com o valor lido (de qualquer etapa, até de Perdido).
+    Valor conferido -> fica confirmado; sem certeza do valor -> receipt_status "auto" (venda já
+    marcada, o vendedor só confere o valor) e notificação na tela."""
+    from app.services import autostage, funnel
+
+    won = next((st for st in funnel._stages(db, lead.tenant_id) if st.is_won), None)
+    if won is None or amount <= 0:
+        return False
+    before = lead.stage.name if lead.stage else "—"
+    funnel.set_stage(lead, won)
+    lead.deal_value = amount
+    lead.loss_reason, lead.loss_detail = "", ""
+    lead.receipt_status = "confirmed" if sure else "auto"
+    log_receipt(lead, amount, info)
+    autostage._note(db, lead, f"💸 Etapa automática: {won.name} (R$ {_brl(amount)}, valor lido do comprovante; estava em {before}) — {why}."
+                              + ("" if sure else " Confira o valor no topo da conversa."))
+    if not sure:
+        _notify_check(db, lead, amount)
+    if won.conversion_event_name and not autostage.QUIET:
+        from app.services.conversions.dispatcher import dispatch_stage_conversion
+
+        dispatch_stage_conversion(db, lead, won.conversion_event_name)
+    return True
+
+
+def _notify_check(db, lead, amount: float) -> None:
+    """🔔 Venda marcada pelo comprovante, mas o valor lido pode não ser o certo: avisa o vendedor."""
+    from app.services import notify
+
+    notify.push(db, lead.tenant_id, lead.assigned_user_id, "comprovante", "💸 Venda pelo comprovante: confira o valor",
+                f"{lead.name or lead.phone} mandou um comprovante: marquei Ganho com R$ {_brl(amount)}. Confira se o valor está certo.",
+                f"/inbox/{lead.id}", lead.id)
 
 
 def _notify_pending(db, lead, amount: float) -> None:
@@ -285,25 +320,10 @@ def check_message(message_id: str) -> None:
         lead.receipt_amount = amount
         lead.receipt_info = describe(result)
         lead.receipt_candidates = ",".join(str(v) for v in (result.get("candidates") or [])[:4])[:120]
-        shown = f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        sure = result.get("confidence") == "alta"
-        if sure:
-            # 🤖 valor conferido (bate com o preço enviado, ou claro e igual nas leituras): fecha sozinho
-            from app.services import autostage
-
-            why = "comprovante de pagamento" + (" (valor bate com o preço enviado)" if result.get("matches_quote") else "")
-            if autostage.apply(db, lead, "ganho", amount=amount, why=why):
-                log_receipt(lead, amount, describe(result))
-                db.commit()
-                logger.info("receipts: venda de R$ %s marcada sozinha no lead %s", amount, lead_id)
-                return
-        lead.receipt_status = "pending"
-        _notify_pending(db, lead, amount)
-        db.add(Message(
-            conversation_id=conversation.id, direction="note",
-            body=f"💸 Parece um comprovante de pagamento de R$ {shown}. Confira o valor e confirme a venda no topo da conversa.",
-        ))
+        # mandou comprovante = venda: fecha sempre; sem certeza do valor, o vendedor só confere
+        why = "comprovante de pagamento" + (" (valor bate com o preço enviado)" if result.get("matches_quote") else "")
+        close_as_sale(db, lead, amount, describe(result), result.get("confidence") == "alta", why)
         db.commit()
-        logger.info("receipts: comprovante de R$ %s detectado no lead %s", amount, lead_id)
+        logger.info("receipts: venda de R$ %s pelo comprovante no lead %s", amount, lead_id)
     finally:
         db.close()

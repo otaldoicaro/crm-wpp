@@ -1,5 +1,19 @@
 {# 💸 comprovante lido pela IA: o vendedor confirma a venda (ou diz que não é) #}
-{% if lead.receipt_status == "pending" and lead.stage and lead.stage.is_won %}
+{% if lead.receipt_status == "auto" and lead.stage and lead.stage.is_won %}
+{# mandou comprovante = venda: já está em Ganho, o vendedor só confere o valor #}
+<form method="post" action="/leads/{{ lead.id }}/comprovante" class="receipt-banner" data-receipt>
+  <input type="hidden" name="voltar" value="{{ voltar_url }}">
+  <a class="receipt-thumb" href="/media/{{ lead.receipt_message_id }}" target="_blank" rel="noopener" title="Abrir o comprovante"><img src="/media/{{ lead.receipt_message_id }}" alt="" loading="lazy" onerror="this.parentNode.hidden = true"></a>
+  <div class="receipt-text">💸 <b>Venda marcada pelo comprovante.</b> Confira se o valor está certo.
+    {% if lead.receipt_info %}<span class="muted">{{ lead.receipt_info }}</span>{% endif %}
+    <a href="/media/{{ lead.receipt_message_id }}" target="_blank" rel="noopener">ver comprovante ↗</a></div>
+  <label>Valor da venda R$ <input name="valor" inputmode="decimal" value="{{ ('%.2f'|format(lead.deal_value or lead.receipt_amount or 0)).replace('.', ',') }}"></label>
+  {% set others = (lead.receipt_candidates or "").split(",")|reject("equalto", "")|map("float")|list %}
+  {% if others|length > 1 %}<span class="receipt-candidates muted">Valores lidos: {% for v in others %}<button type="button" class="pill" onclick="this.form.valor.value = this.dataset.v" data-v="{{ ('%.2f'|format(v)).replace('.', ',') }}">R$ {{ "{:,.2f}".format(v).replace(",", "X").replace(".", ",").replace("X", ".") }}</button>{% endfor %}</span>{% endif %}
+  <button class="btn small" type="submit" name="acao" value="confirmar">✓ Valor certo</button>
+  <button class="btn ghost small" type="submit" name="acao" value="descartar">Não foi venda</button>
+</form>
+{% elif lead.receipt_status == "pending" and lead.stage and lead.stage.is_won %}
 {# venda já fechada e chegou outro comprovante: outro item da mesma compra? #}
 <form method="post" action="/leads/{{ lead.id }}/comprovante" class="receipt-banner" data-receipt>
   <input type="hidden" name="voltar" value="{{ voltar_url }}">
