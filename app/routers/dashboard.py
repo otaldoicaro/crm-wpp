@@ -21,7 +21,7 @@ from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app import features
-from app.services import autostage, car_deal, comments, deals, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
+from app.services import autostage, car_deal, channels, comments, deals, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -714,6 +714,8 @@ async def save_deadlines(
                 st.sla_hours = hours(f"sla_{st.id}")
         tenant.followup_hours = hours("followup_hours", 24) or 24
         tenant.require_next_step = form.get("require_next_step") == "1"
+        if "business_hours" in form:
+            tenant.business_hours = str(form.get("business_hours", "")).strip()[:200] or response_times.DEFAULT_HOURS
         tenant.auto_hello_enabled = form.get("auto_hello_enabled") == "1"
         tenant.auto_hello_minutes = max(1, min(60, hours("auto_hello_minutes", 3) or 3))
         text = str(form.get("auto_hello_text", "")).replace("\r\n", "\n").strip()
@@ -1040,6 +1042,7 @@ INBOX_AVISOS = [
     ("comprovante", "💸 Comprovante pra confirmar"),
     ("sem_motivo", "⚠️ Perdido sem motivo"),
     ("comentario", "💬 Comentário em aberto"),
+    ("interesse", "🔥 Quis comprar depois do preço"),
 ]
 
 
@@ -1056,6 +1059,7 @@ def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
         "outro": and_(Lead.suggest_kind == "outro", Lead.tag != "outro"),
         "comprovante": and_(Lead.receipt_status == "pending", Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
         "sem_motivo": and_(Lead.stage_id.in_([st.id for st in stages if st.is_lost]), or_(Lead.loss_reason.is_(None), Lead.loss_reason == "")),
+        "interesse": and_(Lead.interest_at.isnot(None), is_open),
         "comentario": Lead.id.in_(db.query(LeadComment.lead_id).filter(
             LeadComment.tenant_id == tenant.id, LeadComment.parent_id.is_(None), LeadComment.resolved_at.is_(None))),
     }
@@ -2527,6 +2531,7 @@ def dashboard_view(
     seller: str = "",
     n: int = 20,
     aba: str = "comercial",
+    canal: str = "",
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -2563,6 +2568,10 @@ def dashboard_view(
     needs_leads = aba in ("comercial", "trafego")
     all_period_leads = leads_query.options(
         selectinload(Lead.attribution), joinedload(Lead.assigned_user), joinedload(Lead.stage)).all() if needs_leads else []
+    canal = canal if canal in channels.CHANNEL_KEYS else ""
+    if canal:  # 📝 conv-form / 💬 conv-wpp / Meta / Google / sem anúncio (etiqueta no nome da campanha)
+        by_ad = channels.campaign_by_ad(db, tenant.id)
+        all_period_leads = [lead for lead in all_period_leads if channels.lead_matches(lead, canal, by_ad)]
     leads = [lead for lead in all_period_leads if lead.assigned_user_id == seller] if seller else all_period_leads
     with_chat = {lead_id for (lead_id,) in db.query(Conversation.lead_id).filter(Conversation.tenant_id == tenant.id).distinct()} \
         if aba == "comercial" else set()
@@ -2614,10 +2623,14 @@ def dashboard_view(
     # aparece: abrir Tráfego/Clientes/Integrações não recalcula isso pra milhares de leads
     heavy = aba == "comercial"
     open_leads = [lead for lead in leads if lead.stage_id not in won_stage_ids and lead.stage_id not in lost_stage_ids] if heavy else []
-    rt_all, rt_open = response_times.summary(leads if heavy else []), response_times.summary(open_leads)
+    hours = response_times.parse_hours(tenant.business_hours)  # 1º atendimento só em horário comercial
+    rt_all, rt_open = response_times.summary(leads if heavy else [], hours), response_times.summary(open_leads)
     rt_box = {
         "median_first": rt_all["median_first"],
         "within_15": rt_all["within_15"],
+        "median_first_biz": rt_all["median_first_biz"],
+        "within_15_biz": rt_all["within_15_biz"],
+        "hours_label": tenant.business_hours or response_times.DEFAULT_HOURS,
         "answered": rt_all["answered"],
         "waiting": rt_open["never_answered"],
         "idle": rt_open["idle"],
@@ -2626,7 +2639,7 @@ def dashboard_view(
     def seller_row(person, mine: list) -> dict:
         won = [lead for lead in mine if lead.stage_id in won_stage_ids]
         mine_open = [l for l in mine if l.stage_id not in won_stage_ids and l.stage_id not in lost_stage_ids]
-        mine_rt = response_times.summary(mine)
+        mine_rt = response_times.summary(mine, hours)
         mine_fu = [followup.state(l) for l in mine_open]  # uma vez por lead (antes eram duas)
         mine_open_rt = response_times.summary(mine_open)
         fsum = funnel.summary(mine, stages)  # Lead > Qualificado > Negociando > Venda (etapa mais longe alcançada)
@@ -2641,6 +2654,7 @@ def dashboard_view(
             "revenue": sum(lead.deal_value or 0 for lead in won),
             "median_first": mine_rt["median_first"],
             "within_15": mine_rt["within_15"],
+            "median_first_biz": mine_rt["median_first_biz"],
             "waiting": mine_open_rt["never_answered"],
             "idle": mine_open_rt["idle"],
             "followups": sum(1 for f in mine_fu if f["followup"]),
@@ -2731,7 +2745,7 @@ def dashboard_view(
     traffic_data = traffic.build(
         db, tenant.id, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
-        funnel.is_qualified(stages), set(won_stage_ids), funnel.is_opportunity(stages),
+        funnel.is_qualified(stages), set(won_stage_ids), funnel.is_opportunity(stages), channel=canal,
     ) if aba == "trafego" else None  # cada aba calcula só o que mostra
 
     return templates.TemplateResponse(
@@ -2788,6 +2802,9 @@ def dashboard_view(
             .order_by(ConversionEvent.created_at.desc()).limit(12).all() if aba == "integracoes" and is_admin else [],
             "capi_msg": request.query_params.get("capi", ""),
             "with_chat": with_chat,
+            "top_sold": products.top_sold(db, won_leads) if heavy else None,
+            "canal": canal,
+            "channel_options": channels.CHANNELS,
             "wa_numbers": db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
             .order_by(WhatsAppNumber.label).all() if aba == "integracoes" and is_admin else [],
         },

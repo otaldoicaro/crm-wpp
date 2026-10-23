@@ -73,13 +73,59 @@ def waiting_since(lead: Lead) -> Optional[datetime.datetime]:
     return None
 
 
-def summary(leads: list) -> dict:
-    """Números do Dashboard pra uma lista de leads."""
-    times = [first_response(l).total_seconds() for l in leads if l.first_response_at is not None]
+DAYS = {"seg": 0, "ter": 1, "qua": 2, "qui": 3, "sex": 4, "sab": 5, "sáb": 5, "dom": 6}
+DEFAULT_HOURS = "seg-sex 07:30-17:30; sab 09:00-16:00"
+
+
+def parse_hours(text: str) -> dict:
+    """"seg-sex 07:30-17:30; sab 09:00-16:00" -> {0: (450, 1050), ..., 5: (540, 960)} em minutos do dia."""
+    import re
+
+    out: dict = {}
+    for part in (text or DEFAULT_HOURS).lower().split(";"):
+        m = re.match(r"\s*(\w+)(?:\s*-\s*(\w+))?\s+(\d{1,2})[:h]?(\d{2})?\s*-\s*(\d{1,2})[:h]?(\d{2})?", part)
+        if not m or m.group(1) not in DAYS or (m.group(2) and m.group(2) not in DAYS):
+            continue
+        first, last = DAYS[m.group(1)], DAYS[m.group(2) or m.group(1)]
+        start = int(m.group(3)) * 60 + int(m.group(4) or 0)
+        end = int(m.group(5)) * 60 + int(m.group(6) or 0)
+        for day in range(first, last + 1):
+            out[day] = (start, end)
+    return out or parse_hours(DEFAULT_HOURS)
+
+
+def business_seconds(start: datetime.datetime, end: datetime.datetime, hours: dict) -> float:
+    """Segundos entre start e end (UTC) contando só o horário comercial (horário de Brasília)."""
+    from app.timeutil import to_local
+
+    a, b = to_local(start), to_local(end)
+    if b <= a:
+        return 0.0
+    total, day = 0.0, a.date()
+    while day <= b.date():
+        window = hours.get(day.weekday())
+        if window:
+            open_at = datetime.datetime.combine(day, datetime.time()) + datetime.timedelta(minutes=window[0])
+            close_at = datetime.datetime.combine(day, datetime.time()) + datetime.timedelta(minutes=window[1])
+            lo, hi = max(a.replace(tzinfo=None), open_at), min(b.replace(tzinfo=None), close_at)
+            if hi > lo:
+                total += (hi - lo).total_seconds()
+        day += datetime.timedelta(days=1)
+    return total
+
+
+def summary(leads: list, hours: Optional[dict] = None) -> dict:
+    """Números do Dashboard pra uma lista de leads. hours (parse_hours): também o 1º atendimento
+    contando só o horário comercial (lead que chega às 22h e é respondido às 8h = poucos minutos)."""
+    answered = [l for l in leads if l.first_response_at is not None]
+    times = [first_response(l).total_seconds() for l in answered]
+    biz = [business_seconds(l.created_at, l.first_response_at, hours) for l in answered] if hours else []
     now = datetime.datetime.utcnow()
     return {
         "median_first": datetime.timedelta(seconds=statistics.median(times)) if times else None,
         "within_15": round(100 * sum(1 for t in times if t <= 15 * 60) / len(times)) if times else None,
+        "median_first_biz": datetime.timedelta(seconds=statistics.median(biz)) if biz else None,
+        "within_15_biz": round(100 * sum(1 for t in biz if t <= 15 * 60) / len(biz)) if biz else None,
         "answered": len(times),
         "never_answered": sum(1 for l in leads if l.first_response_at is None and not is_settled(l)),
         "idle": sum(1 for l in leads if l.last_outbound_at and now - l.last_outbound_at > IDLE_ALERT),

@@ -66,6 +66,9 @@ class Tenant(Base):
     # aparece como "📞 follow-up". E se o time precisa agendar o próximo contato dos leads em
     # Qualificado/Negociando (bom pra venda mais longa, ex: serviços). Configurável em /prazos.
     followup_hours: Mapped[int] = mapped_column(Integer, default=24)
+    # horário comercial (tempo de atendimento "só em horário comercial"), ex:
+    # "seg-sex 07:30-17:30; sab 09:00-16:00" (dia sem horário = fechado). Configurável em /prazos
+    business_hours: Mapped[str] = mapped_column(String(200), default="seg-sex 07:30-17:30; sab 09:00-16:00")
     require_next_step: Mapped[bool] = mapped_column(Boolean, default=False)
     # 🤖 1ª mensagem automática pro lead do formulário que não chamou no WhatsApp: sai do WhatsApp
     # do vendedor do rodízio depois de X minutos, e o lead vai pra Qualificado (services/first_contact.py).
@@ -247,6 +250,9 @@ class Lead(Base):
     seen_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # o que a pessoa preencheu nos formulários (LP/site), um bloco por envio, mais recente primeiro
     form_details: Mapped[str] = mapped_column(Text, default="")
+    # 🔥 o cliente quis comprar depois de receber o preço ("como faço?", "qual o pix?"): services/buying.py
+    interest_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    interest_text: Mapped[str] = mapped_column(String(255), default="")
     # ↪ trocas de vendedor ("P|" ainda sem nota na conversa, "N|" já com nota): ver services/ownership.py
     owner_trail: Mapped[str] = mapped_column(Text, default="")
     # 🤖 quando a 1ª mensagem automática saiu (ou foi tentada): manda uma vez só por negócio

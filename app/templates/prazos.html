@@ -28,6 +28,12 @@
     <input type="number" min="1" step="1" name="followup_hours" value="{{ tenant.followup_hours }}" style="width:90px"> horas
   </label>
 
+  <h3>🕗 Horário comercial</h3>
+  <label>Pro “1º atendimento em horário comercial” do Dashboard
+    <input name="business_hours" value="{{ tenant.business_hours or 'seg-sex 07:30-17:30; sab 09:00-16:00' }}" style="width:340px">
+  </label>
+  <p class="muted">Formato: <code>seg-sex 07:30-17:30; sab 09:00-16:00</code> (dia que não aparece = fechado).</p>
+
   <h3>📅 Próximo contato obrigatório</h3>
   <label class="check"><input type="checkbox" name="require_next_step" value="1" {{ "checked" if tenant.require_next_step }}>
     Leads em Qualificado em diante precisam ter o próximo contato agendado (data + nota). Sem agendamento, ou com a data vencida, aparecem como atrasados.

@@ -67,7 +67,8 @@ def _finish(node: dict) -> dict:
     return node
 
 
-def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won_ids: set, is_opportunity=None) -> dict:
+def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won_ids: set, is_opportunity=None,
+          channel: str = "") -> dict:
     """{"campaigns": [...], "total": {...}, "has_spend": bool}. Cada campanha tem
     "children" (conjuntos) e cada conjunto tem "children" (anúncios)."""
     # nomes e ids conhecidos (todo o histórico, pra casar leads de qualquer data)
@@ -144,6 +145,11 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
     ):
         if aid and aid in by_ad:  # nome mais recente (a campanha pode ter sido renomeada)
             cid, sid, cname, sname, aname = by_ad[aid]
+        if channel:
+            from app.services.channels import spend_matches
+
+            if not spend_matches(cname, platform, channel):
+                continue  # filtro de canal: gasto de campanha de outro tipo fica de fora
         has_spend = has_spend or bool(spend)
         for node in path(platform, cid, cname, sid, sname, aid, aname):
             node["spend"] += spend or 0

@@ -75,8 +75,10 @@
 {% set receipt = lead.receipt_status == "pending" and lead.stage and not (lead.stage.is_won or lead.stage.is_lost) %}
 {% set sug = sug_current(lead) %}
 {% set no_reason = lead.stage and lead.stage.is_lost and not lead.loss_reason %}
-{% if f.stale or f.followup or f.next or receipt or sug or no_reason %}
+{% set hot = buy_pending(lead) %}
+{% if f.stale or f.followup or f.next or receipt or sug or no_reason or hot %}
 <div class="rt-row fu-row">
+  {% if hot %}<span class="rt-tag hot-tag" title="Depois do preço o cliente escreveu: “{{ lead.interest_text }}” ({{ lead.interest_at|hora('%d/%m %H:%M') }}). Vale um follow-up!">🔥 quis comprar depois do preço</span>{% endif %}
   {% if no_reason %}<span class="rt-tag late" title="Perdido sem motivo: abra a conversa e escolha o motivo da perda no topo">⚠️ motivo da perda a preencher</span>{% endif %}
   {% if sug and not receipt %}<span class="rt-tag suggest-tag" title="Confirme na conversa">💡 {{ SUG_LABEL[sug].lower() }}</span>{% endif %}
   {% if receipt %}<span class="rt-tag receipt-tag" title="A IA leu um comprovante de pagamento: confirme a venda na conversa">💸 comprovante R$ {{ "{:,.0f}".format(lead.receipt_amount or 0).replace(",", ".") }} a confirmar</span>{% endif %}

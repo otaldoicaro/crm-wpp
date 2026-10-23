@@ -17,7 +17,7 @@ from fastapi.templating import Jinja2Templates
 
 from app import features, segments
 from app.themes import theme_css, theme_for
-from app.services import car_deal, followup, funnel, response_times, suggestions
+from app.services import buying, car_deal, followup, funnel, response_times, suggestions
 from app.timeutil import fmt_local
 
 templates = Jinja2Templates(directory="app/templates")
@@ -52,6 +52,7 @@ templates.env.globals["pay_terms"] = car_deal.describe  # "Entrada R$ ... + 60x 
 templates.env.filters["brl"] = lambda v: f"{float(v or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 templates.env.globals["sug_current"] = suggestions.current  # 💡 sugestão de etapa pendente
 templates.env.globals["SUG_LABEL"] = suggestions.KIND_LABEL
+templates.env.globals["buy_pending"] = buying.pending  # 🔥 quis comprar depois do preço
 templates.env.globals["fu_state"] = followup.state  # selos ⏰ parado / 📞 follow-up / 📅 próximo contato
 templates.env.globals["agora"] = datetime.datetime.utcnow
 _URL = re.compile(r"(?<![\w@/])((?:https?://|www\.)[^\s<]+[^\s<.,;:!?)\]'\"])", re.IGNORECASE)
