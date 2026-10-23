@@ -21,7 +21,7 @@ from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app import features
-from app.services import autostage, car_deal, channels, comments, deals, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
+from app.services import autostage, car_deal, channels, comments, deals, handover, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -1301,6 +1301,7 @@ def _inbox_context(
             "can_settle": bool(selected_lead and not selected_lead.is_group and response_times.waiting_since(selected_lead)),
             "platform_label": PLATFORM_LABEL[resolve_platform(selected_lead.attribution)] if selected_lead else None,
             "comments": comments.thread(db, selected_lead) if selected_lead and not selected_lead.is_group else [],
+            "next_number": handover.next_number(db, selected_lead) if selected_lead and selected_lead.conversations else None,
     }
 
 
@@ -2161,7 +2162,7 @@ def reply_lead(
     if not lead or not lead.conversations:
         return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
-    conversation = lead.active_conversation
+    conversation = handover.ensure_sendable(db, lead)  # 📱 presa num WhatsApp removido: passa pro do responsável
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
     # ↩️ responder uma mensagem específica (só mensagem que já está no WhatsApp e é deste lead)
     quoted = db.get(Message, quote_id) if quote_id else None
@@ -2435,7 +2436,7 @@ def reply_lead_media(
     if len(content) > max_bytes:
         return JSONResponse({"ok": False, "error": "arquivo maior que 16MB"}, status_code=400)
 
-    conversation = lead.active_conversation
+    conversation = handover.ensure_sendable(db, lead)  # 📱 presa num WhatsApp removido: passa pro do responsável
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
     mime_type = file.content_type or "application/octet-stream"
     media_kind = media_kind_for_mime(mime_type)

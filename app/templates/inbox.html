@@ -122,7 +122,8 @@
         {% endif %}
         {% if active_conversation %}
         {% set active_number = active_conversation.whatsapp_number %}
-        <div class="via-number muted">📱 Enviando por <b>{{ active_number.label }}</b>{% if active_number.provider == "evolution" and active_number.connection_state != "open" %} <span class="via-down">desconectado</span>{% endif %}</div>
+        <div class="via-number muted">📱 Enviando por <b>{{ active_number.label }}</b>{% if not active_number.is_active %} <span class="via-down">removido</span>{% elif active_number.provider == "evolution" and active_number.connection_state != "open" %} <span class="via-down">desconectado</span>{% endif %}
+          {% if next_number %}<div class="via-next" title="O WhatsApp de antes não manda mais: a próxima mensagem já sai pelo do vendedor responsável (no celular do cliente vira uma conversa nova)">→ a próxima mensagem sai pelo <b>{{ next_number.label }}</b></div>{% endif %}</div>
         {% endif %}
         <div class="thread-actions">
           {% if can_settle %}

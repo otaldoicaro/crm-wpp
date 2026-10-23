@@ -986,3 +986,4 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .msg-transcript { margin-top: 6px; font-size: .82rem; font-style: italic; opacity: .85; white-space: normal; max-width: 320px; }
 .msg-transcript.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .msg-transcript-more { background: none; border: 0; padding: 2px 0 0; font-size: .74rem; font-weight: 700; text-decoration: underline; color: inherit; opacity: .8; cursor: pointer; }
+.via-next { color: var(--text); font-size: .74rem; margin-top: 2px; }

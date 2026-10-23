@@ -23,7 +23,7 @@ from app.config import SESSION_COOKIE_NAME
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app.services import ownership
+from app.services import handover, ownership
 from app.services import evolution_client
 from app.services.distribution import assign_lead
 from app.tenancy import DEBUG, public_url
@@ -227,12 +227,28 @@ def _remove_member(db: Session, tenant: Tenant, member: User, reassign: bool, dr
     db.commit()
 
     if reassign:
+        from app.services import first_contact
+        from app.services.distribution import _open_leads_by_user
+
+        load = _open_leads_by_user(db, tenant.id)
+        sellers = sorted((n for n in first_contact.seller_numbers(db, tenant.id) if n.owner_user_id != member.id),
+                         key=lambda n: load.get(n.owner_user_id, 0))
         terminal = {s.id for s in db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id) if s.is_won or s.is_lost}
         for lead in db.query(Lead).filter(
             Lead.tenant_id == tenant.id, Lead.assigned_user_id == member.id, Lead.deleted_at.is_(None)
         ):
             if lead.stage_id not in terminal:
-                assign_lead(db, lead)  # rodízio entre quem continua ativo
+                # rodízio entre os vendedores com WhatsApp conectado (o de menos leads da vez), e a conversa
+                # passa pro WhatsApp de quem recebeu: o número de quem saiu não manda mais
+                number = next(iter(sellers), None)
+                if number is None:
+                    assign_lead(db, lead)
+                else:
+                    lead.assigned_user_id = number.owner_user_id
+                    load[number.owner_user_id] = load.get(number.owner_user_id, 0) + 1
+                    sellers.sort(key=lambda n: load.get(n.owner_user_id, 0))
+                    if lead.conversations:
+                        handover.move_to(db, lead, number, f"{member.name} saiu da equipe")
                 ownership.changed(db, lead, member.id, f"{member.name} saiu da equipe (rodízio)")
                 db.commit()
 
