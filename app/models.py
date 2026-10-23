@@ -416,6 +416,8 @@ class Message(Base):
     # resposta a uma mensagem específica: id (WhatsApp) e trecho da mensagem citada
     quote_wa_id: Mapped[str] = mapped_column(String(120), default="")
     quote_text: Mapped[str] = mapped_column(String(300), default="")
+    # 🎙️ texto do áudio (services/transcribe.py, recurso "transcrever_audios" do cliente)
+    transcript: Mapped[str] = mapped_column(Text, default="")
     # "não enviada"/"sem confirmação": quantas vezes o CRM já conferiu no Evolution se saiu mesmo
     delivery_checks: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)

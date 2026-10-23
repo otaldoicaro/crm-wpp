@@ -983,3 +983,4 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .seller-filter { display: flex; flex-wrap: wrap; gap: 10px 18px; }
 .top-sold { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 14px; }
 .rt-tag.hot-tag { background: #ffe3d6; color: #b33a00; font-weight: 800; }
+.msg-transcript { margin-top: 6px; font-size: .82rem; font-style: italic; opacity: .85; white-space: normal; max-width: 320px; }

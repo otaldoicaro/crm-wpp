@@ -627,7 +627,8 @@ def campaign_leads(
         by_text = set()
         if len(q) >= 3 and chosen:
             by_text = {lid for (lid,) in db.query(Conversation.lead_id).join(Message, Message.conversation_id == Conversation.id)
-                       .filter(Conversation.lead_id.in_([l.id for l in chosen]), Message.body.ilike(f"%{q}%")).distinct()}
+                       .filter(Conversation.lead_id.in_([l.id for l in chosen]),
+                               or_(Message.body.ilike(f"%{q}%"), Message.transcript.ilike(f"%{q}%"))).distinct()}
         needle = q.lower()
         chosen = [l for l in chosen if needle in (l.name or "").lower() or (len(digits) >= 4 and digits in (l.phone or "")) or l.id in by_text]
     stage_by_id = {st.id: st for st in stages}
@@ -925,7 +926,7 @@ def _text_search(db: Session, tenant: Tenant, user: User, q: str, vendedor: str 
         .join(Lead, Lead.id == Conversation.lead_id)
         .filter(
             Conversation.tenant_id == tenant.id, Lead.deleted_at.is_(None),
-            Message.direction != "note", Message.body.ilike(f"%{q}%"),
+            Message.direction != "note", or_(Message.body.ilike(f"%{q}%"), Message.transcript.ilike(f"%{q}%")),
         )
     )
     if user.role != "admin":

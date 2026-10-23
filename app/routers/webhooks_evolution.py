@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from app.config import EVOLUTION_WEBHOOK_TOKEN
 from app.db import SessionLocal
 from app.models import Conversation, Lead, Message, WhatsAppNumber
-from app.services import evolution_client, inbox_state, receipts, response_times
+from app.services import evolution_client, inbox_state, receipts, response_times, transcribe
 from app.services.inbound import ingest_inbound, message_exists, record_outbound_from_phone
 from app.services.msgsecret import decrypt_edit, secret_b64, text_from_message, to_bytes
 from app.services.media_store import backup_message_media
@@ -464,6 +464,7 @@ def _after_media(message_id: str) -> None:
     """Em segundo plano: copia a mídia e, se for de um lead em negociação, vê se é comprovante."""
     backup_message_media(message_id)
     receipts.check_message(message_id)
+    transcribe.check_message(message_id)  # 🎙️ áudio vira texto (só cliente com o recurso ligado)
 
 
 def _process_event(payload: dict) -> list:

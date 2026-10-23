@@ -21,6 +21,8 @@ META_WEBHOOK_VERIFY_TOKEN = os.getenv("META_WEBHOOK_VERIFY_TOKEN", "dev-verify-t
 META_ADS_ACCESS_TOKEN = os.getenv("META_ADS_ACCESS_TOKEN", "")
 # leitura de comprovantes de pagamento (IA do Claude). Sem a chave, a função fica desligada.
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+# 🎙️ transcrição dos áudios (Groq/Whisper): deploy/vps/configurar_groq.sh; liga por cliente em ⚙ Prazos
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 # Google Ads
 GOOGLE_ADS_DEVELOPER_TOKEN = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN", "")
