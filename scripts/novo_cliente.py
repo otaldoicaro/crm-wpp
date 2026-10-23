@@ -1,18 +1,24 @@
 """Cria (ou atualiza) um cliente no CRM em produção, via /admin/bootstrap-tenant.
 
-Rodar no Terminal do Mac, dentro da pasta crm:
+Jeito mais simples (Web console da Hostinger; o token é lido do próprio servidor, ninguém vê):
+    docker exec -it crm-app python scripts/novo_cliente.py
+
+Ou no Terminal do Mac, dentro da pasta crm (aí pede o token, digitado escondido):
     python3 scripts/novo_cliente.py
 
-Pergunta tudo na tela; senha e token são digitados escondidos (não aparecem
-na tela nem ficam salvos em lugar nenhum). Só usa bibliotecas padrão do Python.
+Pergunta tudo na tela; senha e token não aparecem nem ficam salvos em lugar nenhum.
+Só usa bibliotecas padrão do Python.
 """
 
 import getpass
 import json
+import os
 import urllib.error
 import urllib.request
 
-CRM_URL = "https://crm.novaviseu.com.br"  # qualquer endereço do nosso VPS serve (o cliente vem do "identificador")
+# dentro do servidor (container crm-app): fala direto com o CRM e usa o token de lá
+IN_SERVER = bool(os.environ.get("ADMIN_SETUP_TOKEN"))
+CRM_URL = f"http://localhost:{os.environ.get('PORT', '8000')}" if IN_SERVER else "https://crm.novaviseu.com.br"  # qualquer endereço do VPS serve
 THEMES = ["junta", "novaviseu", "conexao"]
 SEGMENTS = ["autopecas", "seminovos"]  # ramo: motivos de perda e sugestões de etapa (app/segments.py)
 
@@ -31,7 +37,8 @@ def main() -> None:
     domain = ask("Domínio próprio (ex: crm.cliente.com.br; Enter = sem domínio por enquanto)").lower()
     email = ask("E-mail do gestor (login de admin)")
     password = getpass.getpass("Senha pra esse gestor (não aparece ao digitar): ")
-    token = getpass.getpass("ADMIN_SETUP_TOKEN (no VPS: grep ADMIN_SETUP_TOKEN /opt/crm-config/crm.env; não aparece ao colar): ")
+    token = os.environ.get("ADMIN_SETUP_TOKEN") or getpass.getpass(
+        "ADMIN_SETUP_TOKEN (no VPS: grep ADMIN_SETUP_TOKEN /opt/crm-config/crm.env; não aparece ao colar): ")
 
     payload = json.dumps(
         {"subdomain": subdomain, "tenant_name": name, "theme": theme, "segment": segment, "custom_domain": domain,
