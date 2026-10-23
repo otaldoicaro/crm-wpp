@@ -22,7 +22,7 @@ from app.config import EVOLUTION_API_KEY, EVOLUTION_API_URL, EVOLUTION_WEBHOOK_T
 logger = logging.getLogger("evolution_client")
 
 # MESSAGES_UPDATE: só pra saber quando o vendedor leu a mensagem do cliente no celular
-WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"]
+WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE", "CONTACTS_UPSERT"]
 
 
 class EvolutionError(Exception):
@@ -211,6 +211,18 @@ def profile_picture_url(instance: str, phone_digits: str) -> str:
     A URL é do servidor do WhatsApp e expira em alguns dias."""
     body = _request("POST", f"/chat/fetchProfilePictureUrl/{instance}", json={"number": phone_digits})
     return body.get("profilePictureUrl") or ""
+
+
+def whatsapp_numbers(instance: str, phones: list) -> dict:
+    """Quais desses telefones têm WhatsApp, SEM mandar mensagem. {telefone: True/False}."""
+    body = _request("POST", f"/chat/whatsappNumbers/{instance}", json={"numbers": list(phones)}, timeout=30)
+    items = body if isinstance(body, list) else body.get("numbers", []) if isinstance(body, dict) else []
+    out = {}
+    for item in items:
+        number = "".join(ch for ch in str(item.get("number") or item.get("jid", "").split("@")[0]) if ch.isdigit())
+        if number:
+            out[number] = bool(item.get("exists"))
+    return out
 
 
 def delete_instance(instance: str) -> None:

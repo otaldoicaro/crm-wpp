@@ -166,6 +166,15 @@ def _brl(value: float) -> str:
     return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _notify_pending(db, lead, amount: float) -> None:
+    """🔔 Comprovante que o CRM não conseguiu confirmar sozinho: avisa o vendedor na tela."""
+    from app.services import notify
+
+    notify.push(db, lead.tenant_id, lead.assigned_user_id, "comprovante", "💸 Comprovante a confirmar",
+                f"{lead.name or lead.phone} mandou um comprovante de R$ {_brl(amount)}, mas não deu pra confirmar o valor. "
+                "Foi venda?", f"/inbox/{lead.id}", lead.id)
+
+
 def add_on(db, lead, conversation_id: str, message_id: str, amount: float, result: dict) -> None:
     """Comprovante numa venda já fechada: soma no valor da venda (ou pergunta, se não tiver certeza)."""
     from app.models import Message
@@ -187,6 +196,7 @@ def add_on(db, lead, conversation_id: str, message_id: str, amount: float, resul
         lead.receipt_message_id, lead.receipt_amount, lead.receipt_info = message_id, amount, info
         lead.receipt_candidates = ",".join(str(v) for v in (result.get("candidates") or [])[:4])[:120]
         lead.receipt_status = "pending"
+        _notify_pending(db, lead, amount)
         note = (f"💸 Mais um comprovante de R$ {_brl(amount)}. Se for de outro item da mesma compra, clique em "
                 "“Somar à venda” no topo da conversa.")
     if note:
@@ -288,6 +298,7 @@ def check_message(message_id: str) -> None:
                 logger.info("receipts: venda de R$ %s marcada sozinha no lead %s", amount, lead_id)
                 return
         lead.receipt_status = "pending"
+        _notify_pending(db, lead, amount)
         db.add(Message(
             conversation_id=conversation.id, direction="note",
             body=f"💸 Parece um comprovante de pagamento de R$ {shown}. Confira o valor e confirme a venda no topo da conversa.",

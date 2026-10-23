@@ -101,3 +101,20 @@ def _fone(phone: str) -> str:
 
 
 templates.env.filters["fone"] = _fone
+
+
+def _recados_pending(user) -> int:
+    """💬 Recados esperando resposta desta pessoa (número vermelho na barra de cima)."""
+    from app.db import SessionLocal
+    from app.services import comments
+
+    db = SessionLocal()
+    try:
+        return comments.pending_count(db, user)
+    except Exception:
+        return 0
+    finally:
+        db.close()
+
+
+templates.env.globals["recados_pending"] = _recados_pending

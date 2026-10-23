@@ -62,12 +62,47 @@ def move_to(db, lead: Lead, number: WhatsAppNumber, why: str) -> Conversation:
     return conversation
 
 
-def ensure_sendable(db, lead: Lead) -> Optional[Conversation]:
-    """Antes de responder: se a conversa está presa num WhatsApp que não manda mais, passa pro do
-    responsável. Devolve a conversa por onde a mensagem vai sair."""
+def ensure_sendable(db, lead: Lead, user=None) -> Optional[Conversation]:
+    """Antes de responder: vendedor que tem conversa com esse cliente no WhatsApp DELE responde por
+    ela (cliente que fala com 2 vendedores). Senão: se a conversa está presa num WhatsApp que não
+    manda mais, passa pro do responsável. Devolve a conversa por onde a mensagem vai sair."""
+    if user is not None and getattr(user, "role", "") == "agent":
+        own = next((c for c in lead.conversations if c.whatsapp_number and c.whatsapp_number.owner_user_id == user.id
+                    and usable(c.whatsapp_number)), None)
+        if own is not None:
+            return own
     target = next_number(db, lead)
     if target is None:
         return lead.active_conversation
     current = lead.active_conversation.whatsapp_number
     why = "o WhatsApp anterior foi removido do CRM" if current is None or not current.is_active else "o WhatsApp anterior está desconectado"
     return move_to(db, lead, target, why)
+
+
+def other_sellers(db, lead: Lead, user) -> list:
+    """👥 Outros vendedores (fora quem está olhando) que têm conversa com esse cliente no WhatsApp deles,
+    e o responsável, se não for quem está olhando. [{"name", "since", "is_owner"}]"""
+    from app.models import User
+
+    out = {}
+    for conv in lead.conversations:
+        owner_id = conv.whatsapp_number.owner_user_id if conv.whatsapp_number else None
+        if owner_id and owner_id != getattr(user, "id", None) and owner_id not in out:
+            owner = db.get(User, owner_id)
+            if owner is not None and owner.is_active:
+                out[owner_id] = {"name": owner.name, "since": conv.created_at, "is_owner": owner_id == lead.assigned_user_id}
+    if len({conv.whatsapp_number.owner_user_id for conv in lead.conversations if conv.whatsapp_number and conv.whatsapp_number.owner_user_id}) < 2:
+        return []  # só um vendedor fala com esse cliente: nada a avisar
+    return list(out.values())
+
+
+def shared_lead_ids(db, lead_ids: list) -> set:
+    """Leads da lista que falam com 2+ vendedores (ícone 👥 na lista)."""
+    from sqlalchemy import func
+
+    if not lead_ids:
+        return set()
+    rows = (db.query(Conversation.lead_id).join(WhatsAppNumber, WhatsAppNumber.id == Conversation.whatsapp_number_id)
+            .filter(Conversation.lead_id.in_(lead_ids), WhatsAppNumber.owner_user_id.isnot(None))
+            .group_by(Conversation.lead_id).having(func.count(func.distinct(WhatsAppNumber.owner_user_id)) > 1).all())
+    return {lid for (lid,) in rows}

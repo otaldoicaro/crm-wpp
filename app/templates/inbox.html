@@ -4,55 +4,78 @@
 {% block content %}
 <div class="inbox-layout {{ 'with-detail' if selected_lead else '' }}">
   <div class="inbox-side">
-  {# 🔎 busca no texto das conversas: resultados ficam na lista enquanto abre cada conversa #}
-  <form class="text-search" method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}" data-reset-scroll>
-    <input type="search" name="texto" value="{{ texto }}" placeholder="🔎 Buscar no texto das conversas" title="Ex: comprovante, farol, pix… (mín. 3 letras)" autocomplete="off" minlength="3"
-      onsearch="if (!this.value) this.form.submit()" oninput="if (!this.value && {{ 'true' if texto else 'false' }}) this.form.submit()">
+  {# 🔎 uma busca só: nome, telefone ou o que foi escrito/falado na conversa #}
+  {% set path = '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' %}
+  <form class="inbox-search inbox-search-1" method="get" data-reset-scroll action="{{ path }}">
+    <input type="search" name="busca" value="{{ busca }}" placeholder="🔎 Buscar nome, telefone ou texto" autocomplete="off"
+      onsearch="if (!this.value) this.form.submit()">
   </form>
-  {% if user.role == "admin" %}
-  <form class="inbox-filters" data-reset-scroll method="get" action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
-    <select name="vendedor" onchange="this.form.submit()" title="Filtrar por vendedor">
-      <option value="">Toda a equipe</option>
-      {{ m.seller_options(filter_sellers, vendedor) }}
-      <optgroup label="Outros">
-        <option value="sem" {{ "selected" if vendedor == "sem" }}>Sem vendedor</option>
-        {% if has_removed %}<option value="removidos" {{ "selected" if vendedor == "removidos" }}>De usuários removidos</option>{% endif %}
-      </optgroup>
-    </select>
-    <a class="btn ghost small team-view-btn" href="/inbox-equipe">👥 Visão da equipe</a>
-    {% if vendedor %}<a class="inbox-filters-clear" data-reset-scroll href="{{ request.url.path }}?numero=&vendedor=">Limpar filtros</a>{% endif %}
-  </form>
-  {% endif %}
-  {# filtros: quais contatos + etapa (selects) e "precisa de atenção" (um de cada vez) #}
-  <form class="inbox-filters inbox-filters-2" data-reset-scroll method="get" action="{{ request.url.path }}">
-    <select name="tipo" onchange="this.form.submit()" title="Quais contatos mostrar">
-      {% for key, label in contact_types %}<option value="{{ key }}" {{ "selected" if tipo == key }}>{{ label }}</option>{% endfor %}
-    </select>
-    <select name="etapa" onchange="this.form.submit()" title="Etapa do funil">
-      <option value="">Todas as etapas</option>
-      {% for st in filter_stages %}<option value="{{ st.id }}" {{ "selected" if etapa == st.id }}>{{ st.name }}</option>{% endfor %}
-    </select>
-    <select name="quando" onchange="this.form.submit()" title="Conversas com mensagem nesse período" class="{{ 'filter-on' if quando }}">
-      {% for key, label in inbox_dates %}<option value="{{ key }}" {{ "selected" if quando == key }}>{{ label }}</option>{% endfor %}
-    </select>
-    <button type="submit" name="fav" value="{{ '' if fav else '1' }}" class="pill fav-toggle {{ 'pill-on' if fav }}" title="Só as conversas que você marcou com ⭐ (clique com o botão direito numa conversa pra favoritar)">{{ "✕ " if fav }}⭐ Favoritas</button>
-    <select name="aviso" onchange="this.form.submit()" title="Conversas com aviso do CRM no topo (💡 sugestão de etapa ou 💸 comprovante)" class="{{ 'filter-on' if aviso }}">
-      {% for key, label in avisos %}<option value="{{ key }}" {{ "selected" if aviso == key }}>{{ label }}</option>{% endfor %}
-    </select>
-    <input type="hidden" name="lidas" value="{{ lidas }}">
-  </form>
-  <div class="tipo-chips status-chips">
-    {% for key, label in statuses %}
-    {% set n = status_counts[key] %}
-    <a data-reset-scroll class="pill {{ 'pill-on' if lidas == key }} {{ 'status-' ~ key }}" href="{{ request.url.path }}?lidas={{ '' if lidas == key else key }}" title="{{ 'Mostrar todas' if lidas == key else '' }}">{{ "✕ " if lidas == key }}{{ label }} <span class="unread-total {{ 'zero' if not n }}" data-status="{{ key }}"{% if key == "naorespondidas" %} id="unreadTotal"{% endif %}>{{ n }}</span></a>
-    {% endfor %}
+  {# abas: o que o vendedor mais precisa ver #}
+  {% set tab = "naolidas" if (lidas == "naolidas" and not aviso) else ("interesse" if (aviso == "interesse" and not lidas) else ("venda" if (aviso == "venda" and not lidas) else ("todas" if not lidas and not aviso else ""))) %}
+  <nav class="inbox-tabs status-chips">
+    <a data-reset-scroll class="{{ 'on' if tab == 'todas' }}" href="{{ path }}?lidas=&aviso=">Todas</a>
+    <a data-reset-scroll class="{{ 'on' if tab == 'naolidas' }}" href="{{ path }}?lidas=naolidas&aviso=">Não lidas <span class="unread-total {{ 'zero' if not status_counts.naolidas }}" data-status="naolidas">{{ status_counts.naolidas }}</span></a>
+    <a data-reset-scroll class="tab-hot {{ 'on' if tab == 'interesse' }}" href="{{ path }}?lidas=&aviso=interesse" title="Viram o preço e responderam com interesse (“como faço?”, “qual o pix?”): follow-up já!">🔥 Interessados <span class="unread-total {{ 'zero' if not status_counts.interesse }}" data-status="interesse">{{ status_counts.interesse }}</span></a>
+    <a data-reset-scroll class="tab-sale {{ 'on' if tab == 'venda' }}" href="{{ path }}?lidas=&aviso=venda" title="Comprovante que o CRM não confirmou sozinho, ou cliente que disse que vem buscar / paga na entrega: marque Ganho ou Perdido">💰 Venda a confirmar <span class="unread-total {{ 'zero' if not status_counts.venda }}" data-status="venda">{{ status_counts.venda }}</span></a>
+  </nav>
+  {# filtros extras: numa gaveta; quando tem algum ligado, o botão fica amarelo e aparecem as etiquetas #}
+  {% set f = [] %}
+  {% if user.role == "admin" and vendedor %}{% set _ = f.append(("Vendedor: " ~ ((filter_sellers|selectattr("id", "equalto", vendedor)|map(attribute="name")|first) or ("sem vendedor" if vendedor == "sem" else "removidos")), "vendedor")) %}{% endif %}
+  {% if tipo and tipo != "semgrupos" %}{% set _ = f.append((contact_types|selectattr(0, "equalto", tipo)|map(attribute=1)|first or tipo, "tipo")) %}{% endif %}
+  {% if etapa %}{% set _ = f.append(("Etapa: " ~ ((filter_stages|selectattr("id", "equalto", etapa)|map(attribute="name")|first) or ""), "etapa")) %}{% endif %}
+  {% if quando %}{% set _ = f.append((inbox_dates|selectattr(0, "equalto", quando)|map(attribute=1)|first, "quando")) %}{% endif %}
+  {% if fav %}{% set _ = f.append(("⭐ Favoritas", "fav")) %}{% endif %}
+  {% if lidas and tab != "naolidas" %}{% set _ = f.append((statuses|selectattr(0, "equalto", lidas)|map(attribute=1)|first or lidas, "lidas")) %}{% endif %}
+  {% if aviso and tab not in ("interesse", "venda") %}{% set _ = f.append((avisos|selectattr(0, "equalto", aviso)|map(attribute=1)|first or aviso, "aviso")) %}{% endif %}
+  {% if ordem and ordem != "recentes" %}{% set _ = f.append(("Esperando há mais tempo primeiro", "ordem")) %}{% endif %}
+  <div class="inbox-filter-row">
+    <button type="button" class="btn ghost small filter-btn {{ 'act' if f }}" id="filterBtn" aria-expanded="false">⚙ {{ ("Filtros ligados (" ~ f|length ~ ")") if f else "Filtros" }}</button>
+    {% if user.role == "admin" %}<a class="btn ghost small" href="/inbox-equipe" title="Ver as conversas de vários vendedores lado a lado">👥 Equipe</a>{% endif %}
   </div>
-  <form class="inbox-search" method="get" data-reset-scroll action="{{ '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' }}">
-    <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone..." autocomplete="off">
-    <select name="ordem" onchange="this.form.submit()" aria-label="Ordem das conversas" class="inbox-order">
-      {% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if ordem == key }}>↕ {{ label }}</option>{% endfor %}
-    </select>
+  {% if f %}
+  <div class="filter-chips">
+    {% for label, key in f %}<a data-reset-scroll class="filter-chip" href="{{ path }}?{{ key }}={{ 'semgrupos' if key == 'tipo' else ('recentes' if key == 'ordem' else '') }}" title="Tirar este filtro">{{ label }} ✕</a>{% endfor %}
+    <a data-reset-scroll class="filter-clear" href="{{ path }}?lidas=&aviso=&etapa=&tipo=semgrupos&quando=&fav=&vendedor=&numero=&ordem=recentes">Limpar tudo</a>
+  </div>
+  {% endif %}
+  <form class="filter-panel" id="filterPanel" method="get" action="{{ path }}" data-reset-scroll hidden>
+    <div class="fp-group"><b>Situação</b>
+      <label><input type="radio" name="lidas" value="" {{ "checked" if not lidas or lidas == "naolidas" }}> Todas</label>
+      <label><input type="radio" name="lidas" value="naorespondidas" {{ "checked" if lidas == "naorespondidas" }}> Não respondidas <span class="muted" data-status="naorespondidas">{{ status_counts.naorespondidas }}</span></label>
+      <label><input type="radio" name="lidas" value="followup" {{ "checked" if lidas == "followup" }}> Sem resposta do cliente <span class="muted" data-status="followup">{{ status_counts.followup }}</span></label>
+    </div>
+    <div class="fp-group"><b>Avisos</b>
+      <label><input type="radio" name="aviso" value="" {{ "checked" if not aviso }}> Nenhum</label>
+      <label class="fp-hot"><input type="radio" name="aviso" value="interesse" {{ "checked" if aviso == "interesse" }}> 🔥 Follow-up interessado</label>
+      <label><input type="radio" name="aviso" value="venda" {{ "checked" if aviso == "venda" }}> 💰 Venda a confirmar</label>
+      <label><input type="radio" name="aviso" value="comentario" {{ "checked" if aviso == "comentario" }}> 💬 Com recado em aberto</label>
+      <label><input type="radio" name="aviso" value="sem_motivo" {{ "checked" if aviso == "sem_motivo" }}> ⚠️ Perdido sem motivo</label>
+    </div>
+    <div class="fp-grid">
+      <label>Etapa<select name="etapa"><option value="">Todas</option>{% for st in filter_stages %}<option value="{{ st.id }}" {{ "selected" if etapa == st.id }}>{{ st.name }}</option>{% endfor %}</select></label>
+      <label>Contatos<select name="tipo">{% for key, label in contact_types %}<option value="{{ key }}" {{ "selected" if tipo == key }}>{{ label }}</option>{% endfor %}</select></label>
+      <label>Período<select name="quando">{% for key, label in inbox_dates %}<option value="{{ key }}" {{ "selected" if quando == key }}>{{ label }}</option>{% endfor %}</select></label>
+      <label>Ordem<select name="ordem">{% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if ordem == key }}>{{ label }}</option>{% endfor %}</select></label>
+      {% if user.role == "admin" %}
+      <label>Vendedor<select name="vendedor"><option value="">Toda a equipe</option>{{ m.seller_options(filter_sellers, vendedor) }}<optgroup label="Outros"><option value="sem" {{ "selected" if vendedor == "sem" }}>Sem vendedor</option>{% if has_removed %}<option value="removidos" {{ "selected" if vendedor == "removidos" }}>De usuários removidos</option>{% endif %}</optgroup></select></label>
+      {% endif %}
+    </div>
+    <label class="fp-fav"><input type="checkbox" name="fav" value="1" {{ "checked" if fav }}> ⭐ Só as favoritas</label>
+    <input type="hidden" name="numero" value="">
+    <div class="fp-actions"><a class="btn ghost small" href="{{ path }}?lidas=&aviso=&etapa=&tipo=semgrupos&quando=&fav=&vendedor=&numero=&ordem=recentes" data-reset-scroll>Limpar tudo</a><button class="btn small" type="submit">Ver resultados</button></div>
   </form>
+  <script>
+  (function () {
+    var btn = document.getElementById("filterBtn"), panel = document.getElementById("filterPanel");
+    btn.addEventListener("click", function () { panel.hidden = !panel.hidden; btn.setAttribute("aria-expanded", String(!panel.hidden)); });
+    // "Todas" na situação mantém a aba Não lidas se ela estiver ligada
+    panel.addEventListener("submit", function () {
+      var on = panel.querySelector('input[name="lidas"]:checked');
+      if (on && !on.value && {{ 'true' if lidas == 'naolidas' else 'false' }}) on.value = "naolidas";
+      if (!panel.querySelector('input[name="fav"]').checked) { var h = document.createElement("input"); h.type = "hidden"; h.name = "fav"; h.value = ""; panel.appendChild(h); }
+    });
+  })();
+  </script>
   {% if text_hits is not none %}
   <div class="text-search-head">
     <span><b>{{ text_hits|length }}{{ "+" if text_hits|length >= 100 }}</b> conversa(s) com “{{ texto }}”</span>
@@ -97,7 +120,7 @@
           <span class="stage-status muted"></span>
         </form>
         {% endif %}
-        {% if not selected_lead.is_group %}{% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_receipt_banner.html" %}{% include "_suggest_banner.html" %}{% include "_next_step.html" %}{% endwith %}{% endif %}
+        {% if not selected_lead.is_group %}{% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_suggest_banner.html" %}{% include "_next_step.html" %}{% endwith %}{% endif %}
       </div>
 
       {# direita: resumo do lead em etiquetas + ações (o que é usado menos fica no "⋯ Mais") #}
@@ -105,11 +128,7 @@
         <div class="head-chips">
           {{ m.platform_badge(platform, platform_label) }}
           {% if not selected_lead.is_group %}
-          <form method="post" action="/leads/{{ selected_lead.id }}/tag" class="tag-form">
-            <select name="tag" onchange="this.form.submit()" title="Tipo de contato">
-              {% for key, label in tags %}<option value="{{ key }}" {{ "selected" if selected_lead.tag == key }}>{{ label }}</option>{% endfor %}
-            </select>
-          </form>
+          {% if selected_lead.tag %}<span class="tag-pill">{{ tag_label[selected_lead.tag] }}</span>{% endif %}
           {% if deal_info and deal_info.recurring %}
           <a class="recurring-badge" href="/leads/{{ selected_lead.id }}#negocios" title="Ver todos os negócios desse cliente">🔁 {{ selected_lead.deal_number }}º negócio{% if deal_info.purchases %} · já comprou R$ {{ "{:,.0f}".format(deal_info.total).replace(",", ".") }}{% endif %}</a>
           {% endif %}
@@ -134,10 +153,19 @@
             <button class="btn ghost small" type="submit" title="O cliente quer comprar de novo">+ Novo negócio</button>
           </form>
           {% endif %}
-          {% if not selected_lead.is_group %}<a class="btn ghost small" href="/leads/{{ selected_lead.id }}?voltar=inbox" title="Ficha completa: dados, origem, histórico de negócios, pagamento">📋 Ver status do lead</a>{% endif %}
+          {% if not selected_lead.is_group %}<a class="btn ghost small" href="/leads/{{ selected_lead.id }}?voltar=inbox" title="Ficha completa: dados, origem, histórico de negócios, pagamento">📋 Ver status do lead</a>
+          <a class="btn ghost small recado-btn {{ 'has' if lead_recado_open }}" href="/recados?lead={{ selected_lead.id }}" title="Recados entre admin e vendedor sobre este lead (não vão pro WhatsApp)">💬 Recado{% if lead_recado_open %}<span class="nav-badge">!</span>{% endif %}</a>{% endif %}
           <details class="more-menu">
             <summary class="btn ghost small">⋯ Mais</summary>
             <div class="more-pop">
+              {% if not selected_lead.is_group %}
+              <form method="post" action="/leads/{{ selected_lead.id }}/tag" class="tag-form">
+                <label class="muted" style="font-size:.74rem">Tipo de contato
+                <select name="tag" onchange="this.form.submit()">
+                  {% for key, label in tags %}<option value="{{ key }}" {{ "selected" if selected_lead.tag == key }}>{{ label }}</option>{% endfor %}
+                </select></label>
+              </form>
+              {% endif %}
               {% if transfer_people %}
               <form method="post" action="/leads/{{ selected_lead.id }}/transferir" class="transfer-form">
                 <select name="para" aria-label="Passar a conversa pra outro vendedor no CRM">
@@ -193,10 +221,6 @@
         </script>
         {% endif %}
       </div>
-
-      {% if not selected_lead.is_group %}
-      <div class="head-comments">{% with lead=selected_lead, voltar="/inbox/" ~ selected_lead.id %}{% include "_lead_comments.html" %}{% endwith %}</div>
-      {% endif %}
     </div>
     {% if selected_lead.form_details %}
     <details class="inbox-form-details">
@@ -275,6 +299,34 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   form.querySelector("[data-cancel]").addEventListener("click", function () { sel.value = ""; box.hidden = true; });
 });
 </script>
+    {% if other_sellers %}
+    {# 👥 cliente que fala com mais de um vendedor: faixa fina sempre; aviso grande só na 1ª vez que abre #}
+    {% set names = other_sellers|map(attribute="name")|join(" e ") %}
+    <div class="shared-band">👥 Esse cliente também fala com <b>{{ names }}</b>{% if other_sellers|selectattr("is_owner")|list %} (responsável pelo lead){% endif %}. Combinem quem fica com o atendimento.</div>
+    <div class="receipt-overlay shared-overlay" id="sharedOverlay" hidden>
+      <div class="receipt-modal" style="border-top:4px solid #d9a400">
+        <b style="font-size:1.05rem">👥 Esse cliente também fala com {{ names }}</b>
+        <div class="muted">{% for o in other_sellers %}{{ o.name }} conversa com ele desde {{ o.since|hora("%d/%m") }}{{ " (responsável pelo lead)" if o.is_owner }}. {% endfor %}Combinem entre vocês quem fica com o atendimento, pra o cliente não receber mensagem dos dois.</div>
+        <button type="button" class="btn small" style="align-self:flex-end" onclick="document.getElementById('sharedOverlay').hidden = true">Entendi</button>
+      </div>
+    </div>
+    <script>
+    (function () {
+      var key = "dup-seen-{{ selected_lead.id }}-{{ user.id }}";
+      try { if (localStorage.getItem(key)) return; localStorage.setItem(key, "1"); } catch (e) {}
+      document.getElementById("sharedOverlay").hidden = false;
+    })();
+    </script>
+    {% endif %}
+    {% if not selected_lead.is_group and selected_lead.receipt_status == "pending" and selected_lead.stage and not selected_lead.stage.is_lost %}
+    {# 💸 comprovante que o CRM não confirmou sozinho: no meio da tela, pra não passar batido #}
+    <div class="receipt-overlay" id="receiptOverlay">
+      <div class="receipt-modal">
+        {% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_receipt_banner.html" %}{% endwith %}
+        <button type="button" class="btn ghost small receipt-later" onclick="document.getElementById('receiptOverlay').remove()">Ver a conversa antes</button>
+      </div>
+    </div>
+    {% endif %}
     <div class="inbox-messages" id="inboxMessages">
       {% include "_inbox_messages.html" %}
     </div>
@@ -691,6 +743,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   <hr class="tag-sep">
   <button type="button" data-tag="cliente">🏷️ É cliente</button>
   <button type="button" data-tag="outro">🏷️ É outro (não é venda)</button>
+  <button type="button" data-tag="time">🏷️ É do time</button>
   <button type="button" data-tag="">🏷️ Voltar pra lead</button>
 </div>
 <script>

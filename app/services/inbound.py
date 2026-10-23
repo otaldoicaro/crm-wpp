@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import Conversation, Lead, Message, WhatsAppNumber
-from app.services import attribution, autostage, buying, deals, followup, funnel, ownership, response_times, suggestions
+from app.services import attribution, autofollow, autostage, buying, deals, followup, funnel, ownership, response_times, suggestions
 from app.services.distribution import assign_lead
 from app.services.lead_match import find_lead_by_phone
 
@@ -110,12 +110,22 @@ def ingest_inbound(
             lead.deleted_at = None  # idem pra quem estava na Lixeira (fica registrado em deleted_by)
         db.add(lead)
 
+    had_this_number = any(c.whatsapp_number_id == number.id for c in lead.conversations)
     conversation = _get_or_create_conversation(db, number, lead)
+    if (not had_this_number and lead.conversations and number.owner_user_id and lead.assigned_user_id
+            and number.owner_user_id != lead.assigned_user_id and not lead.is_group):
+        # 👥 o cliente já fala com outro vendedor e agora chamou neste WhatsApp: avisa quem chegou depois
+        from app.services import notify
+
+        notify.push(db, lead.tenant_id, number.owner_user_id, "duplicado", "👥 Cliente com outro vendedor",
+                    f"{lead.name or lead.phone} também fala com {lead.assigned_user.name if lead.assigned_user else 'outro vendedor'}.",
+                    f"/inbox/{lead.id}", lead.id)
     if when is None or lead.last_inbound_at is None or when > lead.last_inbound_at:
         response_times.mark_inbound(lead, when)
     funnel.on_message(db, lead, outbound=False)  # cliente falou: "Lead sem conversa" -> "Novo"
     followup.on_inbound_text(db, lead, body)  # perguntou o preço: vai pra "Qualificado"
     buying.on_inbound(lead, body, when)  # 🔥 depois do preço: "como faço?", "qual o pix?"
+    autofollow.on_inbound(lead)  # 🤖 respondeu: o follow-up automático recomeça do zero
     suggestions.on_message(lead, body, outbound=False)  # 💡 dados do carro, "já comprei", "pago na hora"...
     db.add(lead)
     message = Message(

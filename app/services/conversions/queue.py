@@ -73,7 +73,7 @@ def on_stage(lead: Lead, stage) -> None:
     if autostage.QUIET:  # revisão em massa: são etapas antigas
         return
     db = object_session(lead)
-    if db is None or lead.is_group or lead.deleted_at or lead.tag == "outro":
+    if db is None or lead.is_group or lead.deleted_at or lead.tag in ("outro", "time"):
         return
     tenant = db.get(Tenant, lead.tenant_id)
     if tenant is None or not (tenant.meta_capi_enabled and tenant.meta_capi_token):
@@ -151,6 +151,9 @@ def schedule(delay_seconds: int = 60) -> None:
             from app.services import first_contact
 
             hello = first_contact.run()  # 🤖 1ª mensagem pro lead do formulário que não chamou
+            from app.services import autofollow
+
+            autofollow.run()  # 🤖 follow-up automático (24h / 48h / Perdido)
             if hello:
                 logger.info("mensagens automáticas de formulário: %s", hello)
         except Exception:

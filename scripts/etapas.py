@@ -32,6 +32,7 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # pasta do CRM
 
 from app.db import SessionLocal
+from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import Conversation, Lead, Message, WhatsAppNumber
 from app.services import autostage, followup, funnel, receipt_text, receipts, suggestions
 from app.services import media_store, messaging
@@ -133,7 +134,7 @@ def main() -> None:
     moves = Counter()
     try:
         ids = [lid for (lid,) in db.query(Lead.id).join(Conversation, Conversation.lead_id == Lead.id).filter(
-            Lead.is_group.is_(False), Lead.deleted_at.is_(None), Lead.archived_at.is_(None), Lead.tag != "outro",
+            Lead.is_group.is_(False), Lead.deleted_at.is_(None), Lead.archived_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS),
             Conversation.last_message_at >= since,
         ).distinct()]
         print(f"\nRevisando {len(ids)} lead(s) com conversa nos últimos {days} dia(s)"

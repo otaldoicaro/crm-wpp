@@ -36,6 +36,7 @@ with SessionLocal() as _fdb:
     funnel.move_answered_to_service(_fdb)
     followup.setup(_fdb)  # prazos por etapa (padrão) + dados de follow-up dos leads antigos  # quem o time já respondeu sai de "Novo"
     people.admins_out_of_rotation(_fdb)  # admin só no rodízio se alguém ligar e confirmar
+    funnel.won_are_customers(_fdb)  # quem já comprou (Ganho) vira Cliente
 archiver.schedule()
 meta_spend.schedule()
 history_sync.schedule()

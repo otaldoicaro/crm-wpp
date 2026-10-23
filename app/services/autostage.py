@@ -23,6 +23,7 @@ from typing import Optional
 
 from sqlalchemy.orm import object_session
 
+from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import Conversation, Lead, Message
 
 AUTO_KINDS = ("qualificado", "ganho", "perdido")
@@ -221,7 +222,7 @@ def lose_silent_leads(db, days: int = LOST_AFTER_DAYS, now: Optional[datetime.da
         reasons = segments.SEGMENTS[segments.key_for(tenant)]["loss_reasons"]
         for lead in db.query(Lead).filter(
             Lead.tenant_id == tenant.id, Lead.stage_id.in_(active), Lead.is_group.is_(False),
-            Lead.deleted_at.is_(None), Lead.archived_at.is_(None), Lead.tag != "outro",
+            Lead.deleted_at.is_(None), Lead.archived_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS),
         ):
             last = last_msg.get(lead.id)
             if last is None or last >= cutoff:

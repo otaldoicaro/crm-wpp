@@ -15,6 +15,7 @@ from typing import Optional
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import Conversation, Lead, Message
 from app.services import funnel
 
@@ -121,7 +122,7 @@ def customer_stats(db: Session, tenant_id: str, won_ids: set, date_from=None, da
     import statistics
 
     query = db.query(Lead).filter(
-        Lead.tenant_id == tenant_id, Lead.deleted_at.is_(None), Lead.is_group.is_(False), Lead.tag != "outro",
+        Lead.tenant_id == tenant_id, Lead.deleted_at.is_(None), Lead.is_group.is_(False), Lead.tag.notin_(NOT_SALES_TAGS),
         Lead.stage_id.in_(won_ids),
     )
     if seller:

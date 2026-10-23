@@ -66,6 +66,10 @@ class Tenant(Base):
     # aparece como "📞 follow-up". E se o time precisa agendar o próximo contato dos leads em
     # Qualificado/Negociando (bom pra venda mais longa, ex: serviços). Configurável em /prazos.
     followup_hours: Mapped[int] = mapped_column(Integer, default=24)
+    # 🤖 follow-up automático (services/autofollow.py): desde quando vale e os 2 textos (vazio = padrão)
+    autofu_since: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    autofu_text1: Mapped[str] = mapped_column(Text, default="")
+    autofu_text2: Mapped[str] = mapped_column(Text, default="")
     # horário comercial (tempo de atendimento "só em horário comercial"), ex:
     # "seg-sex 07:30-17:30; sab 09:00-16:00" (dia sem horário = fechado). Configurável em /prazos
     business_hours: Mapped[str] = mapped_column(String(200), default="seg-sex 07:30-17:30; sab 09:00-16:00")
@@ -250,6 +254,9 @@ class Lead(Base):
     seen_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # o que a pessoa preencheu nos formulários (LP/site), um bloco por envio, mais recente primeiro
     form_details: Mapped[str] = mapped_column(Text, default="")
+    # 🤖 follow-up automático: 0 = nada, 1/2 = mensagens enviadas, 3 = foi pra Perdido, -1 = parou (erro)
+    autofu_step: Mapped[int] = mapped_column(Integer, default=0)
+    autofu_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # 🔥 o cliente quis comprar depois de receber o preço ("como faço?", "qual o pix?"): services/buying.py
     interest_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
     interest_text: Mapped[str] = mapped_column(String(255), default="")
@@ -551,3 +558,21 @@ class LeadComment(Base):
 
     author: Mapped[Optional["User"]] = relationship(foreign_keys=[author_user_id])
     resolved_by: Mapped[Optional["User"]] = relationship(foreign_keys=[resolved_by_user_id])
+
+
+class Notification(Base):
+    """🔔 Aviso que aparece no canto da tela (estilo Facebook) pra uma pessoa: comprovante pra
+    confirmar, recado do admin, cliente que também fala com outro vendedor. Some depois de mostrado."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20), default="")  # comprovante | recado | duplicado
+    lead_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    title: Mapped[str] = mapped_column(String(120), default="")
+    body: Mapped[str] = mapped_column(String(300), default="")
+    url: Mapped[str] = mapped_column(String(300), default="")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now, index=True)
+    seen_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)

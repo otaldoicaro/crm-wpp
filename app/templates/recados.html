@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Recados{% endblock %}
+{% block content %}
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">💬 Recados</h2>
+    <span class="muted">Conversa interna entre admin e vendedor sobre cada lead. Não vai pro WhatsApp do cliente.</span>
+  </div>
+</div>
+<div class="recados-layout">
+  <div class="card recados-list">
+    <nav class="dash-tabs" style="margin:0 0 6px">
+      <a class="dash-tab {{ 'on' if not arquivados }}" href="/recados">Abertos ({{ open_count }})</a>
+      <a class="dash-tab {{ 'on' if arquivados }}" href="/recados?arquivados=1">Arquivados</a>
+    </nav>
+    {% for t in threads %}
+    <a class="recado-item {{ 'active' if selected and t.lead.id == selected.id }} {{ 'waiting' if t.waiting and not arquivados }}" href="/recados?lead={{ t.lead.id }}{{ '&arquivados=1' if arquivados }}">
+      <div class="recado-row1"><b>{{ t.lead.name or t.lead.phone }}</b><span class="muted">{{ t.last.created_at|hora("%d/%m %H:%M") }}</span></div>
+      <div class="muted recado-preview">{{ (t.last.author.name.split(" ")[0]|title) if t.last.author else "—" }}: {{ t.last.body[:80] }}</div>
+      {% if t.waiting and not arquivados %}<span class="recado-dot" title="Esperando sua resposta"></span>{% endif %}
+    </a>
+    {% else %}
+    <p class="muted" style="padding:12px">{{ "Nenhum recado arquivado." if arquivados else "Nenhum recado em aberto. 🎉" }}</p>
+    {% endfor %}
+  </div>
+  <div class="card recados-thread">
+    {% if selected %}
+    <div class="recado-head">
+      <div><b style="font-size:1.05rem">{{ selected.name or selected.phone }}</b>
+        <div class="muted">{{ selected.phone }} · {{ selected.assigned_user.name if selected.assigned_user else "sem vendedor" }}{% if selected.stage %} · {{ selected.stage.name }}{% endif %}</div></div>
+      <a class="btn small" href="/inbox/{{ selected.id }}">Abrir conversa do lead →</a>
+    </div>
+    {% with lead=selected, comments=thread, voltar="/recados?lead=" ~ selected.id %}{% include "_lead_comments.html" %}{% endwith %}
+    {% else %}
+    <div class="inbox-empty">Escolha um recado à esquerda.{% if user.role == "admin" %} Pra mandar um recado novo, abra a conversa do lead no Inbox e clique em 💬 Recado.{% endif %}</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -30,6 +30,15 @@
       {% if user.role == "admin" and not user.read_only %}<a href="/configuracoes" class="nav-config {{ 'active' if active_nav == 'config' else '' }}" title="Prazos, mensagem automática, recursos e integrações">⚙ Configurações</a>{% endif %}
     </nav>
     <div class="user">
+      {% if not user.read_only %}
+      {% set rec = recados_pending(user) %}
+      <a href="/recados" class="nav-recados {{ 'active' if active_nav == 'recados' else '' }}" title="Recados entre admin e vendedor sobre os leads">💬 Recados{% if rec %}<span class="nav-badge">{{ rec }}</span>{% endif %}</a>
+      {% if user.role == "agent" %}
+      <form method="post" action="/me/rodizio" class="rodizio-form" onsubmit="return {{ 'confirm(\'Sair do rodízio? Você para de receber leads novos até voltar.\')' if user.accepting_leads else 'true' }}">
+        <button type="submit" class="rodizio {{ 'on' if user.accepting_leads else 'off' }}" title="{{ 'Você está recebendo leads novos. Clique pra sair do rodízio.' if user.accepting_leads else 'Você NÃO está recebendo leads novos. Clique pra voltar ao rodízio.' }}">{{ "No rodízio" if user.accepting_leads else "Fora do rodízio" }}</button>
+      </form>
+      {% endif %}
+      {% endif %}
       <span>{{ tenant.name }} · {{ user.name }}</span>
       {% if user.read_only %}<span class="role-badge agent">👀 Só visualização</span>{% else %}
       <span class="role-badge {{ 'admin' if user.role == 'admin' else 'agent' }}">{{ "Admin" if user.role == "admin" else "Vendedor" }}</span>{% endif %}
@@ -97,6 +106,31 @@
   </script>
   {% endif %}
 <script src="/static/lightbox.js?v={{ asset_version }}" defer></script>
+{% if user and not user.read_only %}
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script>
+// 🔔 notificações passageiras (comprovante, recado, cliente com outro vendedor): aparecem uma vez, somem em ~12 s
+(function () {
+  if (window.self !== window.top) return;  // dentro de outra tela (conversa embutida): a tela de fora já mostra
+  var box = document.getElementById("toasts");
+  function show(n) {
+    var el = document.createElement("a");
+    el.className = "toast-card toast-" + n.kind; el.href = n.url || "#";
+    el.innerHTML = "<b></b><span></span><i aria-label='Fechar'>×</i>";
+    el.querySelector("b").textContent = n.title; el.querySelector("span").textContent = n.body;
+    el.querySelector("i").onclick = function (e) { e.preventDefault(); el.remove(); };
+    box.appendChild(el);
+    setTimeout(function () { el.classList.add("out"); setTimeout(function () { el.remove(); }, 400); }, 12000);
+  }
+  function poll() {
+    if (document.hidden) return;
+    fetch("/notificacoes", { headers: { accept: "application/json" } }).then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (list) { (list || []).forEach(show); }).catch(function () {});
+  }
+  setTimeout(poll, 1500); setInterval(poll, 20000);
+})();
+</script>
+{% endif %}
 <script src="/static/keep-scroll.js?v={{ asset_version }}"></script>
 <script src="/static/audio-player.js?v={{ asset_version }}"></script>
 <script>

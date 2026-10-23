@@ -42,12 +42,25 @@ def set_stage(lead: Lead, stage: PipelineStage) -> None:
         lead.stage_entered_at = datetime.datetime.utcnow()  # conta o "há X tempo nesta etapa"
     changed = lead.stage_id != stage.id
     lead.stage_id = stage.id
+    if stage.is_won and not lead.tag:
+        lead.tag = "cliente"  # comprou: vira Cliente (a próxima compra fica com o mesmo vendedor, sem rodízio)
     if not stage.is_lost and stage.order > (lead.reached_order or 0):
         lead.reached_order = stage.order
     if changed:
         from app.services.conversions import queue
 
         queue.on_stage(lead, stage)  # 📤 oportunidade/venda pro Meta (só se o cliente ligou e conferiu o pixel)
+
+
+def won_are_customers(db) -> int:
+    """Leads em Ganho ainda marcados como "Lead" viram "Cliente" (uma vez, no start)."""
+    won = [s.id for s in db.query(PipelineStage).filter(PipelineStage.is_won.is_(True))]
+    if not won:
+        return 0
+    n = db.query(Lead).filter(Lead.stage_id.in_(won), Lead.tag == "", Lead.is_group.is_(False)).update(
+        {Lead.tag: "cliente", Lead.updated_at: Lead.updated_at}, synchronize_session=False)
+    db.commit()
+    return n
 
 
 def _stages(db, tenant_id: str) -> list:

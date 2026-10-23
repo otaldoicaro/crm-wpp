@@ -44,6 +44,14 @@
   <textarea name="auto_hello_generic_text" rows="4" style="width:100%;max-width:560px;margin-top:6px">{{ tenant.auto_hello_generic_text or hello_generic_default }}</textarea>
   <p class="muted">Dá pra usar {nome}, {vendedor} e {empresa}.</p>
 
+  <h3 id="followup-automatico">🤖 Follow-up automático {% if "followup_automatico" in features_on %}<span class="goal-ok" style="font-size:.8rem">ligado</span>{% else %}<span class="muted" style="font-size:.8rem">(desligado — ligue em Recursos, abaixo)</span>{% endif %}</h3>
+  <p class="muted">O vendedor mandou preço, pagamento, procedência ou entrega e o cliente sumiu. Sai pelo WhatsApp do vendedor do lead, só no horário de atendimento acima, e só pras conversas depois de ligar.</p>
+  <label style="display:block;margin-top:6px"><b>1ª mensagem</b> — 24h sem resposta:</label>
+  <textarea name="autofu_text1" rows="4" style="width:100%;max-width:560px">{{ tenant.autofu_text1 or autofu_default1 }}</textarea>
+  <label style="display:block;margin-top:6px"><b>2ª mensagem</b> — mais 24h sem resposta (depois de mais 6h, vai pra Perdido · Não responde mais):</label>
+  <textarea name="autofu_text2" rows="3" style="width:100%;max-width:560px">{{ tenant.autofu_text2 or autofu_default2 }}</textarea>
+  <p class="muted">{nome} = 1º nome do cliente (ex: Renato). Sem nome, a 2ª começa com “Opa, tudo bem? Como parece…”.</p>
+
   <h3 id="recursos">⚙️ Recursos deste CRM</h3>
   <input type="hidden" name="features_form" value="1">
   {% for key, label in feature_list.items() %}

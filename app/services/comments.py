@@ -1,4 +1,6 @@
-"""💬 Comentários da equipe num lead (estilo Google Docs): só no CRM, nunca no WhatsApp.
+"""💬 Recados: conversa interna entre admin e vendedor sobre um lead (só no CRM, nunca no WhatsApp).
+Um recado por lead: mensagem nova sobre o mesmo lead entra no mesmo recado (e reabre, se estava
+resolvido). Ficam na tela 💬 Recados (barra de cima), com notificação no canto da tela.
 
 Admin deixa uma instrução ("oferece o kit completo"), o vendedor responde e alguém marca como
 feito. O rastro fica no lead (Inbox e "Status do lead"). Quem precisa ver recebe a conversa como
@@ -41,13 +43,44 @@ def open_count(db: Session, lead: Lead) -> int:
         LeadComment.lead_id == lead.id, LeadComment.parent_id.is_(None), LeadComment.resolved_at.is_(None)).count()
 
 
-def _notify(db: Session, lead: Lead, root_id: str, author: User) -> None:
+def _notify(db: Session, lead: Lead, root_id: str, author: User, text: str = "") -> None:
+    from app.services import notify
+
     people = {lead.assigned_user_id} if lead.assigned_user_id else set()
     people |= {uid for (uid,) in db.query(LeadComment.author_user_id).filter(
         (LeadComment.id == root_id) | (LeadComment.parent_id == root_id)).distinct() if uid}
     people.discard(author.id)
     for uid in people:
-        inbox_state.mark_unread(db, uid, lead.id)
+        notify.push(db, lead.tenant_id, uid, "recado", f"💬 Recado de {author.name.split(' ')[0].title()}",
+                    f"Sobre {lead.name or lead.phone}: {text[:140]}", f"/recados?lead={lead.id}")
+    db.commit()
+
+
+def pending_count(db: Session, user: User) -> int:
+    """Recados em aberto esperando resposta desta pessoa (a última mensagem não é dela)."""
+    return sum(1 for t in threads_for(db, user) if t["waiting"])
+
+
+def threads_for(db: Session, user: User, archived: bool = False) -> list:
+    """Recados que esta pessoa vê (admin: todos; vendedor: dos leads dele), o mais recente primeiro.
+    [{"lead", "root", "last", "count", "waiting"}]"""
+    q = db.query(LeadComment).join(Lead, Lead.id == LeadComment.lead_id).filter(
+        LeadComment.tenant_id == user.tenant_id, LeadComment.parent_id.is_(None), Lead.deleted_at.is_(None),
+        LeadComment.resolved_at.isnot(None) if archived else LeadComment.resolved_at.is_(None))
+    if user.role != "admin":
+        q = q.filter(Lead.assigned_user_id == user.id)
+    roots = q.all()
+    if not roots:
+        return []
+    replies: dict = {}
+    for r in db.query(LeadComment).filter(LeadComment.parent_id.in_([r.id for r in roots])).order_by(LeadComment.created_at):
+        replies.setdefault(r.parent_id, []).append(r)
+    out = []
+    for root in roots:
+        last = (replies.get(root.id) or [root])[-1]
+        out.append({"lead": db.get(Lead, root.lead_id), "root": root, "last": last,
+                    "count": 1 + len(replies.get(root.id, [])), "waiting": last.author_user_id != user.id})
+    return sorted(out, key=lambda t: t["last"].created_at, reverse=True)
 
 
 def add(db: Session, lead: Lead, author: User, body: str, parent_id: str = "") -> Optional[LeadComment]:
@@ -56,6 +89,10 @@ def add(db: Session, lead: Lead, author: User, body: str, parent_id: str = "") -
     if not text:
         return None
     parent = None
+    if not parent_id:  # um recado por lead: a mensagem nova entra no recado que já existe (o mais recente)
+        latest = db.query(LeadComment).filter(LeadComment.lead_id == lead.id, LeadComment.parent_id.is_(None)) \
+            .order_by(LeadComment.created_at.desc()).first()
+        parent_id = latest.id if latest else ""
     if parent_id:
         parent = db.query(LeadComment).filter(LeadComment.id == parent_id, LeadComment.lead_id == lead.id,
                                               LeadComment.parent_id.is_(None)).first()
@@ -66,7 +103,7 @@ def add(db: Session, lead: Lead, author: User, body: str, parent_id: str = "") -
                           author_user_id=author.id, body=text)
     db.add(comment)
     db.flush()
-    _notify(db, lead, parent.id if parent else comment.id, author)
+    _notify(db, lead, parent.id if parent else comment.id, author, text)
     db.commit()
     return comment
 

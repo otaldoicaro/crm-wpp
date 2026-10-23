@@ -467,6 +467,33 @@ def _after_media(message_id: str) -> None:
     transcribe.check_message(message_id)  # 🎙️ áudio vira texto (só cliente com o recurso ligado)
 
 
+def _apply_saved_names(db: Session, number: WhatsAppNumber, data) -> None:
+    """📇 Contato salvo na agenda do celular do vendedor: o WhatsApp sincroniza a agenda com o
+    aparelho conectado (contacts.upsert) e o CRM passa a usar esse nome no lead, igual no WhatsApp.
+    Nome que é só o número, ou igual ao que já está, não muda nada. Sem contato salvo: fica como está."""
+    from app.services.lead_match import find_lead_by_phone
+
+    items = data if isinstance(data, list) else [data]
+    changed = False
+    for item in items:
+        jid = str(item.get("remoteJid") or item.get("id") or "")
+        name = " ".join(str(item.get("name") or item.get("pushName") or "").split())[:160]
+        if not jid.endswith("@s.whatsapp.net") or not name:
+            continue
+        phone = _digits(jid)
+        if not phone or _digits(name) == phone or name.replace("+", "").replace(" ", "").isdigit():
+            continue  # o WhatsApp manda o próprio número quando não tem nome salvo
+        lead = find_lead_by_phone(db, number.tenant_id, phone)
+        if lead is None or lead.is_group or lead.name == name:
+            continue
+        if number.owner_user_id and lead.assigned_user_id and lead.assigned_user_id != number.owner_user_id:
+            continue  # agenda de outro vendedor: não renomeia o lead de quem atende
+        lead.name = name
+        changed = True
+    if changed:
+        db.commit()
+
+
 def _process_event(payload: dict) -> list:
     """Processa o evento e devolve os ids das mensagens com mídia (pra copiar depois)."""
     db = SessionLocal()
@@ -501,6 +528,10 @@ def _process_event_db(db: Session, payload: dict) -> list:
     if event == "messages.update":
         _apply_self_reads(db, number, data)
         _apply_acks(db, data)
+        return []
+
+    if event == "contacts.upsert":
+        _apply_saved_names(db, number, data)
         return []
 
     if event != "messages.upsert":

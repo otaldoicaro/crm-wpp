@@ -19,9 +19,10 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
+from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app import features
-from app.services import autostage, car_deal, channels, comments, deals, handover, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
+from app.services import autofollow, autostage, car_deal, channels, comments, deals, handover, invalid_contact, notify, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -46,11 +47,17 @@ LEAD_CARD_LOAD = (selectinload(Lead.attribution), selectinload(Lead.conversation
 PIPELINE_COL_LIMIT = 30  # cartões por coluna; "ver mais" soma de 30 em 30
 
 
+def _own_number_ids(db: Session, user: User) -> list:
+    return [nid for (nid,) in db.query(WhatsAppNumber.id).filter(WhatsAppNumber.owner_user_id == user.id)]
+
+
 def _visible_lead(db: Session, tenant: Tenant, user: User, lead_id: str) -> Optional[Lead]:
-    """Lead pelo id, se esta pessoa pode ver: admin vê todos; vendedor só os dele."""
+    """Lead pelo id, se esta pessoa pode ver: admin vê todos; vendedor os dele e os que têm conversa
+    no WhatsApp dele (cliente que fala com 2 vendedores)."""
     query = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id)
     if user.role != "admin":
-        query = query.filter(Lead.assigned_user_id == user.id)
+        query = query.filter(or_(Lead.assigned_user_id == user.id, Lead.conversations.any(
+            Conversation.whatsapp_number_id.in_(_own_number_ids(db, user)))))
     return query.first()
 
 
@@ -152,7 +159,7 @@ def pipeline_view(
     col_orders = _pipeline_col_orders(request, stages)
 
     base = db.query(Lead).filter(
-        Lead.tenant_id == tenant.id, Lead.archived_at.is_(None), Lead.deleted_at.is_(None), Lead.tag != "outro",
+        Lead.tenant_id == tenant.id, Lead.archived_at.is_(None), Lead.deleted_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS),
         Lead.is_group.is_(False),
     )
     if range_from:
@@ -599,7 +606,7 @@ def campaign_leads(
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
     range_from, range_to = _period_bounds(date_range, date_from, date_to)
     query = db.query(Lead).filter(
-        Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag != "outro", Lead.is_group.is_(False)
+        Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS), Lead.is_group.is_(False)
     )
     if range_from:
         query = query.filter(Lead.created_at >= range_from)
@@ -699,6 +706,7 @@ def settings_page(
             .replace("{empresa}", tenant.name),
             "hello_stage": first_contact.target_stage_name(tenant),
             "feature_list": features.FEATURES, "features_on": features.enabled(tenant),
+            "autofu_default1": autofollow.DEFAULT_TEXT1, "autofu_default2": autofollow.DEFAULT_TEXT2,
         })
     else:
         ctx.update({
@@ -746,8 +754,15 @@ async def save_deadlines(
         generic_default = first_contact.generic_text(SimpleNamespace(auto_hello_generic_text="", segment=tenant.segment)).replace(
             "{empresa}", tenant.name)
         tenant.auto_hello_generic_text = "" if generic == generic_default else generic[:1500]
+        for field, default in (("autofu_text1", autofollow.DEFAULT_TEXT1), ("autofu_text2", autofollow.DEFAULT_TEXT2)):
+            if field in form:
+                value = str(form.get(field, "")).replace("\r\n", "\n").strip()
+                setattr(tenant, field, "" if value == default else value[:1500])
         if form.get("features_form") == "1":
+            was_on = features.has(tenant, autofollow.FEATURE)
             tenant.features = features.store(form.getlist("feature"))
+            if features.has(tenant, autofollow.FEATURE) != was_on:
+                tenant.autofu_since = None  # ligou agora: vale só daqui pra frente (autofollow.run marca a hora)
         db.commit()
 
     await run_in_threadpool(apply)
@@ -1023,6 +1038,7 @@ INBOX_CONTACT_TYPES = [
     ("leadsclientes", "Leads e clientes"),
     ("cliente", "Só clientes"),
     ("outro", "Outros (não é venda)"),
+    ("time", "Time (equipe)"),
     ("grupos", "👥 Grupos"),
     ("", "Tudo (com grupos)"),
 ]
@@ -1046,8 +1062,7 @@ def _inbox_date_bounds(quando: str):
 INBOX_STATUSES = [  # "precisa de atenção": um de cada vez
     ("naolidas", "Não lidas"),
     ("naorespondidas", "Não respondidas"),
-    ("followup", "📞 Follow-up"),
-    ("parados", "⏰ Parados"),
+    ("followup", "Sem resposta do cliente"),
 ]
 LEGACY_STATUS_TIPOS = ("naolidas", "followup", "parados")  # antes ficavam junto com os tipos
 
@@ -1062,7 +1077,8 @@ INBOX_AVISOS = [
     ("outro", "💡 Parece que não é venda"),
     ("comprovante", "💸 Comprovante pra confirmar"),
     ("sem_motivo", "⚠️ Perdido sem motivo"),
-    ("comentario", "💬 Comentário em aberto"),
+    ("comentario", "💬 Com recado em aberto"),
+    ("venda", "💰 Venda a confirmar"),
     ("interesse", "🔥 Quis comprar depois do preço"),
 ]
 
@@ -1077,10 +1093,13 @@ def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
         "qualificado": and_(Lead.suggest_kind == "qualificado", Lead.stage_id.in_(before_qualified)),
         "ganho": and_(Lead.suggest_kind == "ganho", is_open),
         "perdido": and_(Lead.suggest_kind == "perdido", is_open),
-        "outro": and_(Lead.suggest_kind == "outro", Lead.tag != "outro"),
+        "outro": and_(Lead.suggest_kind == "outro", Lead.tag.notin_(NOT_SALES_TAGS)),
         "comprovante": and_(Lead.receipt_status == "pending", Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
         "sem_motivo": and_(Lead.stage_id.in_([st.id for st in stages if st.is_lost]), or_(Lead.loss_reason.is_(None), Lead.loss_reason == "")),
         "interesse": and_(Lead.interest_at.isnot(None), is_open),
+        # 💰 venda a confirmar: comprovante que o CRM não confirmou sozinho, ou "vou buscar / pago na entrega / pode separar"
+        "venda": or_(and_(Lead.receipt_status == "pending", Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
+                     and_(Lead.suggest_kind == "ganho", is_open)),
         "comentario": Lead.id.in_(db.query(LeadComment.lead_id).filter(
             LeadComment.tenant_id == tenant.id, LeadComment.parent_id.is_(None), LeadComment.resolved_at.is_(None))),
     }
@@ -1102,8 +1121,9 @@ def _inbox_query(
         .filter(Conversation.tenant_id == tenant.id, Lead.deleted_at.is_(None))
     )
     if user.role != "admin":
-        # no rodízio cada vendedor só enxerga os leads que caíram pra ele; admin vê tudo
-        query = query.filter(Lead.assigned_user_id == user.id)
+        # no rodízio cada vendedor só enxerga os leads que caíram pra ele; admin vê tudo. E a conversa
+        # que está no WhatsApp DELE (cliente que fala com 2 vendedores: cada um vê a sua)
+        query = query.filter(or_(Lead.assigned_user_id == user.id, Conversation.whatsapp_number_id.in_(_own_number_ids(db, user))))
     if numero:
         query = query.filter(Conversation.whatsapp_number_id == numero)
     removed_ids = removed_user_ids(db, tenant.id)
@@ -1145,7 +1165,7 @@ def _inbox_query(
         query = query.filter(Lead.tag == "", Lead.is_group.is_(False))
     elif tipo == "leadsclientes":
         query = query.filter(Lead.tag.in_(("", "cliente")), Lead.is_group.is_(False))
-    elif tipo in ("cliente", "outro"):
+    elif tipo in ("cliente", "outro", "time"):
         query = query.filter(Lead.tag == tipo)
     busca = busca.strip()
     if busca:
@@ -1153,6 +1173,11 @@ def _inbox_query(
         conditions = [Lead.name.ilike(f"%{busca}%")]
         if digits:
             conditions.append(Lead.phone.like(f"%{digits}%"))
+        if len(busca) >= 3:  # uma busca só: nome, telefone ou o que foi escrito/falado na conversa
+            conditions.append(Conversation.id.in_(
+                db.query(Message.conversation_id).join(Conversation, Conversation.id == Message.conversation_id)
+                .filter(Conversation.tenant_id == tenant.id, Message.direction != "note",
+                        or_(Message.body.ilike(f"%{busca}%"), Message.transcript.ilike(f"%{busca}%")))))
         query = query.filter(or_(*conditions))
     return query, removed_ids
 
@@ -1217,6 +1242,12 @@ def _inbox_context(
         return q.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
 
     status_counts = {key: count(key) for key, _ in INBOX_STATUSES}
+
+    def aviso_count(key: str) -> int:  # abas 🔥 Interessados / 💰 Venda a confirmar
+        q, _ = _inbox_query(db, tenant, user, "", numero, vendedor, tipo, "", etapa, key, fav, quando)
+        return q.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
+
+    status_counts["interesse"], status_counts["venda"] = aviso_count("interesse"), aviso_count("venda")
     unread_total, naolidas_total = status_counts["naorespondidas"], status_counts["naolidas"]
     conversations = _first_per_lead(
         query.options(joinedload(Conversation.lead).joinedload(Lead.assigned_user))  # sem 1 consulta por item
@@ -1302,6 +1333,9 @@ def _inbox_context(
             "platform_label": PLATFORM_LABEL[resolve_platform(selected_lead.attribution)] if selected_lead else None,
             "comments": comments.thread(db, selected_lead) if selected_lead and not selected_lead.is_group else [],
             "next_number": handover.next_number(db, selected_lead) if selected_lead and selected_lead.conversations else None,
+            "lead_recado_open": bool(selected_lead and comments.open_count(db, selected_lead)),
+            "other_sellers": handover.other_sellers(db, selected_lead, user) if selected_lead and not selected_lead.is_group else [],
+            "shared_leads": handover.shared_lead_ids(db, [c.lead_id for c in conversations]),
     }
 
 
@@ -1351,6 +1385,8 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
         lidas, tipo = tipo, "semgrupos"
     if lidas == "nao":
         lidas = "naorespondidas"
+    if lidas == "parados":  # "⏰ Parados" saiu do Inbox (o follow-up automático cuida de quem sumiu)
+        lidas = ""
     if etapa and not db.query(PipelineStage.id).filter(PipelineStage.id == etapa, PipelineStage.tenant_id == tenant.id).first():
         etapa = ""
     ordem = qp.get("ordem", saved[4]) if qp.get("ordem", saved[4]) in dict(ORDER_LABELS) else "recentes"
@@ -1739,7 +1775,7 @@ def set_lead_tag(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    """Etiqueta do contato: Lead / Cliente / Outro (qualquer pessoa da equipe pode mudar)."""
+    """Etiqueta do contato: Lead / Cliente / Outro / Time (qualquer pessoa da equipe pode mudar)."""
     lead = _visible_lead(db, tenant, user, lead_id)
     if not lead or tag not in inbox_state.TAG_LABEL:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
@@ -1828,7 +1864,7 @@ TEAM_MODES = {
 
 def _pending_only(query, mode: str = "pend"):
     """Mesma regra dos contadores do cabeçalho da coluna."""
-    return TEAM_MODES.get(mode, inbox_state.unanswered_filter)(query).filter(Lead.archived_at.is_(None), Lead.tag != "outro")
+    return TEAM_MODES.get(mode, inbox_state.unanswered_filter)(query).filter(Lead.archived_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS))
 
 
 def _team_columns(
@@ -1865,7 +1901,7 @@ def _team_columns(
         )
         open_leads = db.query(Lead).filter(
             Lead.tenant_id == tenant.id, Lead.assigned_user_id == seller_id, Lead.deleted_at.is_(None),
-            Lead.archived_at.is_(None), Lead.tag != "outro", Lead.is_group.is_(False),
+            Lead.archived_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS), Lead.is_group.is_(False),
         )
         waiting = open_leads.filter(response_times.awaiting_reply_sql()).count()
         unseen = inbox_state.unseen_filter(open_leads).count() if waiting else 0
@@ -2162,7 +2198,7 @@ def reply_lead(
     if not lead or not lead.conversations:
         return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
-    conversation = handover.ensure_sendable(db, lead)  # 📱 presa num WhatsApp removido: passa pro do responsável
+    conversation = handover.ensure_sendable(db, lead, user)  # 📱 a conversa do WhatsApp de quem responde
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
     # ↩️ responder uma mensagem específica (só mensagem que já está no WhatsApp e é deste lead)
     quoted = db.get(Message, quote_id) if quote_id else None
@@ -2171,7 +2207,9 @@ def reply_lead(
         if owner is None or owner.lead_id != lead.id or not quoted.wa_message_id:
             quoted = None
     quote = {"id": quoted.wa_message_id, "from_me": quoted.direction == "out", "text": quoted.body} if quoted else None
-    ok, wa_id, secret = messaging.send_text(number, lead.phone, body, quote)
+    ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, body, quote)  # tenta com e sem o 9º dígito
+    if ok is not False and used != lead.phone:
+        lead.phone = used
     if ok is None:
         # servidor lento: o WhatsApp pode ter mandado. Fica "⏳ confirmando envio" até o aviso do
         # WhatsApp chegar (aí vira enviada, sem duplicar) — nunca "não enviada" sem certeza
@@ -2186,6 +2224,8 @@ def reply_lead(
         response_times.mark_outbound(lead)
     reason = "" if ok else messaging.last_error()
     message = _record_outbound(db, conversation, user, wa_id, body if ok else f"⚠️ Não enviada ({reason}): {body}", secret=secret)
+    if ok is False and invalid_contact.after_failed_send(db, lead):  # 📵 número não existe: Perdido · Contato inválido
+        db.commit()
     if quoted is not None and not message.quote_wa_id:
         message.quote_wa_id, message.quote_text = quoted.wa_message_id, (quoted.body or "Mensagem")[:300]
         db.commit()
@@ -2222,6 +2262,53 @@ def internal_note(
     for uid in notify:
         inbox_state.mark_unread(db, uid, lead.id)
     return JSONResponse({"ok": True})
+
+
+@router.get("/notificacoes")
+def my_notifications(
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """🔔 As notificações novas desta pessoa (o navegador pergunta a cada ~20 s)."""
+    return JSONResponse(notify.pop(db, user.id))
+
+
+@router.post("/me/rodizio")
+def toggle_my_rotation(
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Vendedor entra/sai do rodízio sozinho (botão "No rodízio / Fora do rodízio" na barra de cima)."""
+    if user.role == "agent" and not user.read_only:
+        user.accepting_leads = not user.accepting_leads
+        db.commit()
+    back = request.headers.get("referer") or "/inbox"
+    return RedirectResponse(url=back, status_code=302)
+
+
+@router.get("/recados", response_class=HTMLResponse)
+def recados_page(
+    request: Request,
+    lead: str = "",
+    arquivados: str = "",
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """💬 Recados: conversa interna admin x vendedor, um recado por lead. Abertos (os que esperam
+    resposta ficam marcados) e Arquivados (resolvidos, com o histórico)."""
+    threads = comments.threads_for(db, user, archived=bool(arquivados))
+    selected = _visible_lead(db, tenant, user, lead) if lead else None
+    if selected is None and threads:
+        selected = threads[0]["lead"]
+    return templates.TemplateResponse(request, "recados.html", {
+        "tenant": tenant, "user": user, "active_nav": "recados", "threads": threads, "arquivados": bool(arquivados),
+        "selected": selected, "thread": comments.thread(db, selected) if selected else [],
+        "open_count": len(comments.threads_for(db, user)) if arquivados else len(threads),
+    })
 
 
 @router.post("/leads/{lead_id}/comentarios")
@@ -2338,6 +2425,7 @@ def resend_message(
         suggestions.on_message(lead, text, outbound=True)
     else:
         message.body = f"⚠️ Não enviada ({messaging.last_error()}): {text}"
+        invalid_contact.after_failed_send(db, lead)  # 📵 número não existe: Perdido · Contato inválido
     db.commit()
     return JSONResponse({"ok": ok is not False, "pending": ok is None, "error": "" if ok is not False else messaging.last_error()})
 
@@ -2436,7 +2524,7 @@ def reply_lead_media(
     if len(content) > max_bytes:
         return JSONResponse({"ok": False, "error": "arquivo maior que 16MB"}, status_code=400)
 
-    conversation = handover.ensure_sendable(db, lead)  # 📱 presa num WhatsApp removido: passa pro do responsável
+    conversation = handover.ensure_sendable(db, lead, user)  # 📱 a conversa do WhatsApp de quem responde
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
     mime_type = file.content_type or "application/octet-stream"
     media_kind = media_kind_for_mime(mime_type)
@@ -2581,7 +2669,7 @@ def dashboard_view(
         range_from = _range_from(now, date_range)
 
     leads_query = db.query(Lead).filter(
-        Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag != "outro", Lead.is_group.is_(False)
+        Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS), Lead.is_group.is_(False)
     )
     if range_from:
         leads_query = leads_query.filter(Lead.created_at >= range_from)

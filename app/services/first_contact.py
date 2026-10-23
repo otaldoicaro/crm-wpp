@@ -25,6 +25,7 @@ import re
 from types import SimpleNamespace
 
 from app.db import SessionLocal
+from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app.timeutil import to_local
 
@@ -215,7 +216,7 @@ def waiting_query(db, tenant: Tenant):
         return None
     return db.query(Lead).filter(
         Lead.tenant_id == tenant.id, Lead.stage_id == stage.id, Lead.auto_hello_at.is_(None),
-        Lead.deleted_at.is_(None), Lead.archived_at.is_(None), Lead.is_group.is_(False), Lead.tag != "outro",
+        Lead.deleted_at.is_(None), Lead.archived_at.is_(None), Lead.is_group.is_(False), Lead.tag.notin_(NOT_SALES_TAGS),
         Lead.phone != "", ~Lead.conversations.any(),
         *([] if generic_text(tenant) else [Lead.form_details.like("%Peças: %") | Lead.form_details.like("%Carros de interesse: %")]),
     )
@@ -263,6 +264,10 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
     if ok is False:
         _record_outbound(db, conversation, sender, "", f"⚠️ Não enviada ({messaging.last_error()}): {text}")
         no_whatsapp = messaging.last_error() == messaging.NO_WHATSAPP
+        if no_whatsapp:
+            from app.services import invalid_contact
+
+            invalid_contact.mark(db, lead)  # 📵 Perdido · Contato inválido
         db.add(Message(conversation_id=conversation.id, direction="note",
                        body="📵 A mensagem automática não saiu: esse número não tem WhatsApp (tentamos com e sem o 9º dígito). "
                             "Ligue pro cliente ou confira o número." if no_whatsapp else
@@ -316,6 +321,9 @@ def retry_failed(db, tenant: Tenant, lead: Lead) -> str:
     ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, text)
     if ok is False:
         message.body = f"⚠️ Não enviada ({messaging.last_error()}): {text}"
+        from app.services import invalid_contact
+
+        invalid_contact.after_failed_send(db, lead)
         db.commit()
         return "falhou"
     fixed_phone = used != lead.phone

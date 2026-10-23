@@ -127,6 +127,7 @@
         <option value="" {{ "selected" if not lead.tag }}>Lead</option>
         <option value="cliente" {{ "selected" if lead.tag == "cliente" }}>Cliente</option>
         <option value="outro" {{ "selected" if lead.tag == "outro" }}>Outro (não é venda — sai do Pipeline e das métricas)</option>
+        <option value="time" {{ "selected" if lead.tag == "time" }}>Time (alguém da equipe — fora do rodízio, do Pipeline e das métricas)</option>
       </select>
     </label>
   </form>

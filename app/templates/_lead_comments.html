@@ -4,7 +4,7 @@
 {% set done_items = comments|rejectattr("comment.resolved_at", "none")|list %}
 <div class="comments-box" id="comentarios" data-lead="{{ lead.id }}">
   <div class="comments-head">
-    <b>💬 Comentários da equipe</b>
+    <b>💬 Recado</b>
     {% if open_items %}<span class="cmt-count">{{ open_items|length }} em aberto</span>{% endif %}
   </div>
   {% macro one(item, voltar) %}
@@ -15,14 +15,14 @@
       <span class="muted">{{ c.created_at|hora("%d/%m %H:%M") }}</span>
       <form method="post" action="/leads/{{ lead.id }}/comentarios/{{ c.id }}/feito" class="cmt-done-form">
         <input type="hidden" name="feito" value="{{ '0' if c.resolved_at else '1' }}"><input type="hidden" name="voltar" value="{{ voltar }}">
-        <button type="submit" class="cmt-btn" title="{{ 'Reabrir o comentário' if c.resolved_at else 'Marcar como feito' }}">{{ "↺ Reabrir" if c.resolved_at else "✓ Feito" }}</button>
+        <button type="submit" class="cmt-btn" title="{{ 'Reabrir o recado' if c.resolved_at else 'Marcar como resolvido (vai pra Arquivados)' }}">{{ "↺ Reabrir" if c.resolved_at else "✓ Resolvido" }}</button>
       </form>
     </div>
     <div class="cmt-body">{{ c.body }}</div>
     {% for r in item.replies %}
     <div class="cmt-reply"><b>{{ r.author.name.split(" ")[0]|title if r.author else "—" }}</b> <span class="muted">{{ r.created_at|hora("%d/%m %H:%M") }}</span><div class="cmt-body">{{ r.body }}</div></div>
     {% endfor %}
-    {% if c.resolved_at %}<div class="cmt-resolved muted">✓ feito por {{ c.resolved_by.name.split(" ")[0]|title if c.resolved_by else "—" }} em {{ c.resolved_at|hora("%d/%m %H:%M") }}</div>
+    {% if c.resolved_at %}<div class="cmt-resolved muted">✓ resolvido por {{ c.resolved_by.name.split(" ")[0]|title if c.resolved_by else "—" }} em {{ c.resolved_at|hora("%d/%m %H:%M") }}</div>
     {% else %}
     <form method="post" action="/leads/{{ lead.id }}/comentarios" class="cmt-reply-form">
       <input type="hidden" name="parent_id" value="{{ c.id }}"><input type="hidden" name="voltar" value="{{ voltar }}">
@@ -34,15 +34,15 @@
   <div class="comments-list">
     {% for item in open_items %}{{ one(item, voltar) }}{% endfor %}
     {% if done_items %}
-    <details class="cmt-done-list"><summary class="muted">✓ {{ done_items|length }} feito{{ "s" if done_items|length > 1 }}</summary>
+    <details class="cmt-done-list"><summary class="muted">✓ {{ done_items|length }} resolvido{{ "s" if done_items|length > 1 }}</summary>
       {% for item in done_items %}{{ one(item, voltar) }}{% endfor %}
     </details>
     {% endif %}
   </div>
   <form method="post" action="/leads/{{ lead.id }}/comentarios" class="cmt-new">
     <input type="hidden" name="voltar" value="{{ voltar }}">
-    <textarea name="body" rows="3" placeholder="Instrução pra equipe (não vai pro WhatsApp)…" maxlength="2000" required></textarea>
-    <button class="btn small" type="submit">Comentar</button>
+    <textarea name="body" rows="3" placeholder="Escreva o recado (não vai pro WhatsApp)…" maxlength="2000" required></textarea>
+    <button class="btn small" type="submit">Enviar recado</button>
   </form>
 </div>
 <script>

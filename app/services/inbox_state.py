@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 from app.models import Conversation, InboxRead, Lead, Message, User
 from app.services import response_times
 
-TAGS = [("", "Lead"), ("cliente", "Cliente"), ("outro", "Outro")]
+TAGS = [("", "Lead"), ("cliente", "Cliente"), ("outro", "Outro"), ("time", "Time")]
+# não é venda: sai do Pipeline, do Dashboard e do rodízio ("time" = alguém da própria equipe/empresa)
+NOT_SALES_TAGS = ("outro", "time")
 TAG_LABEL = dict(TAGS)
 
 
