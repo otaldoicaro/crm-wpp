@@ -34,8 +34,14 @@ PHRASES = (
     "eu quero", "pode separar", "separa pra mim", "separa ai", "reserva pra mim", "fechado", "vou fechar",
     "pode mandar", "ainda tem", "ainda esta disponivel", "consegue fazer por", "faz por", "desconto",
     "melhor preco", "valor a vista", "a vista",
+    # vindas das conversas das vendas da Nova Viseu (scripts/sinais_compra, 23/10)
+    "to indo ai", "to indo", "tô indo", "estou indo", "ja to indo", "vou passar ai", "passo ai", "passo la",
+    "vou ai", "vou sim", "quero esse", "quero essa", "fala comigo", "fala cmg", "me liga", "pode ligar",
+    "liga pra mim", "consegue", "consegue fazer", "faz quanto", "ultimo preco", "menor preco",
 )
-NEGATIONS = ("nao quero", "nao vou querer", "nao precisa", "sem interesse", "ja comprei", "desisti")
+NEGATIONS = ("nao quero", "nao vou querer", "nao precisa", "sem interesse", "ja comprei", "desisti",
+             # pós-venda (problema, devolução) não é interesse em comprar
+             "devolver", "devolucao", "defeito", "estorno", "reembolso", "nao funcionou", "nao serviu", "veio errad")
 
 
 def _plain(text: str) -> str:
