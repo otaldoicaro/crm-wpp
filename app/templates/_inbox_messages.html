@@ -28,7 +28,11 @@
         <button type="button" class="ap-speed" title="Velocidade do áudio">1x</button>
         <audio preload="{{ 'none' if msg.media_seconds else 'metadata' }}" src="/media/{{ msg.id }}"></audio>
       </div>
-      {% if msg.transcript %}<div class="msg-transcript" title="Transcrição automática do áudio">📝 {{ msg.transcript|quebras }}</div>{% endif %}
+      {% if msg.transcript %}{# 2 linhas; o resto no "ver mais" (áudio longo não toma a conversa) #}
+      {% set long = msg.transcript|length > 110 %}
+      <div class="msg-transcript{{ ' clamp' if long }}" title="Transcrição automática do áudio">📝 {{ msg.transcript|quebras }}</div>
+      {% if long %}<button type="button" class="msg-transcript-more" onclick="var t=this.previousElementSibling;t.classList.toggle('clamp');this.textContent=t.classList.contains('clamp')?'ver mais':'ver menos'">ver mais</button>{% endif %}
+      {% endif %}
       {% if caption %}<div class="msg-caption">{{ caption|quebras }}</div>{% endif %}
     {% elif msg.media_type == "image" or msg.media_type == "sticker" %}
       <img src="/media/{{ msg.id }}" class="msg-img" loading="lazy" alt="Imagem (clique pra ampliar)" title="Clique pra ampliar">
