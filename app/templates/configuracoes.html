@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Configurações{% endblock %}
+{% block content %}
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">⚙ Configurações</h2>
+    <span class="muted">Vale só pra {{ tenant.name }}.</span>
+  </div>
+</div>
+<nav class="dash-tabs">
+  {% for key, label in (("prazos", "⏰ Prazos e automações"), ("integracoes", "🔌 Integrações")) %}
+  <a class="dash-tab {{ 'on' if aba == key }}" href="/configuracoes?aba={{ key }}">{{ label }}</a>
+  {% endfor %}
+</nav>
+{% if request.query_params.get("salvo") and aba == "prazos" %}<p class="capi-msg">✅ Salvo.</p>{% endif %}
+{% if aba == "integracoes" %}{% include "_config_integracoes.html" %}{% else %}{% include "_config_prazos.html" %}{% endif %}
+{% endblock %}

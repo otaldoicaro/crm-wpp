@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Instala a chave do Groq no CRM: liga a transcrição dos áudios do WhatsApp (o texto aparece embaixo
-# do áudio). Depois, em cada cliente que quiser: Pipeline → ⚙ Prazos → Recursos → "🎙️ Transcrever os áudios".
+# do áudio). Depois, em cada cliente que quiser: ⚙ Configurações → Prazos e automações → Recursos → "🎙️ Transcrever os áudios".
 #
 # Rodar no terminal do VPS (como root):
 #   bash <(curl -fsSL https://raw.githubusercontent.com/otaldoicaro/crm-wpp/main/deploy/vps/configurar_groq.sh)
@@ -45,4 +45,4 @@ if not r.ok:
     print('ERRO:', r.status_code, r.text[:200]); raise SystemExit(1)
 print('Chave OK.')
 " || fail "a chave não funcionou (confira se copiou inteira)"
-say "Pronto! Agora ligue nos clientes: Pipeline → ⚙ Prazos → Recursos → 🎙️ Transcrever os áudios → Salvar."
+say "Pronto! Agora ligue nos clientes: ⚙ Configurações → Prazos e automações → Recursos → 🎙️ Transcrever os áudios → Salvar."

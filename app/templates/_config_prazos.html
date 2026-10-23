@@ -1,13 +1,4 @@
-{% extends "base.html" %}
-{% block title %}Prazos e follow-up{% endblock %}
-{% block content %}
-<div class="kanban-toolbar">
-  <div>
-    <h2 style="margin:0">Prazos e follow-up</h2>
-    <span class="muted">Quanto tempo um lead pode ficar em cada etapa antes de aparecer como “⏰ parado”, e quando cobrar um follow-up. Vale só pra {{ tenant.name }}.</span>
-  </div>
-  <a class="btn ghost small" href="/">← Voltar pro Pipeline</a>
-</div>
+{# ⚙ Configurações → Prazos e automações #}
 <form method="post" action="/prazos" class="card prazos-form">
   <h3 style="margin-top:0">⏰ Prazo de cada etapa</h3>
   <p class="muted">Em horas (24 = 1 dia). 0 = sem prazo. O card fica amarelo perto do prazo e vermelho quando passa.</p>
@@ -61,4 +52,3 @@
 
   <button class="btn" type="submit">Salvar</button>
 </form>
-{% endblock %}

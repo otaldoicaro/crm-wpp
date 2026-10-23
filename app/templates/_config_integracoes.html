@@ -1,0 +1,60 @@
+{# ⚙ Configurações → Integrações (Meta: eventos, WhatsApps/WABA, contas de anúncio) #}
+<script>
+document.addEventListener("submit", function (e) {
+  var btn = e.submitter || e.target.querySelector("button[data-busy]");
+  if (btn && btn.dataset.busy) { setTimeout(function () { btn.disabled = true; btn.textContent = "⏳ " + btn.dataset.busy; }, 0); }
+});
+</script>
+<div class="card">
+  {% if user.role == "admin" %}
+  <details class="traffic-accounts capi-box" id="eventos-meta" open>
+    <summary><b>📤 Eventos do CRM pro Meta</b> <span class="muted">— {% if tenant.meta_capi_enabled %}<b class="goal-ok">ligado</b>{{ " (modo teste)" if tenant.meta_capi_test_code }}{% else %}desligado{% endif %} · Oportunidade (Negociando) e Venda (Ganho) voltam pro Gerenciador de Anúncios</span></summary>
+    {% if capi_msg %}<p class="capi-msg">{{ capi_msg }}</p>{% endif %}
+    <p class="muted">Cada cliente usa o <b>próprio</b> conjunto de dados (pixel). Ao salvar, o CRM confere no Meta se o pixel é de uma das contas de anúncio deste cliente ({{ meta_accounts or "nenhuma ainda" }}); se não for, não liga. Só vão leads que vieram de anúncio do Meta, uma vez por lead, a partir de agora. Telefone, e-mail e nome vão criptografados.</p>
+    <form method="post" action="/dashboard/meta-eventos" class="capi-form">
+      <label>ID do conjunto de dados (pixel) <input name="pixel" value="{{ tenant.meta_pixel_id }}" inputmode="numeric" placeholder="ex: 1134419885925968"></label>
+      <label>Token de acesso <input name="token" type="password" autocomplete="off" placeholder="{{ 'já salvo (deixe em branco pra manter)' if tenant.meta_capi_token else 'gerado nesse pixel no Gerenciador de Eventos' }}"></label>
+      <label>Código de teste (opcional) <input name="teste" value="{{ tenant.meta_capi_test_code }}" placeholder="ex: TEST12345 — apague pra valer de verdade"></label>
+      <label class="capi-on"><input type="checkbox" name="ligado" value="1" {{ "checked" if tenant.meta_capi_enabled }}> Enviar eventos</label>
+      <div><button class="btn small" type="submit" name="acao" value="salvar" data-busy="Salvando e conferindo no Meta…">Salvar e conferir o pixel</button>
+      {% if tenant.meta_capi_checked_at and tenant.meta_capi_test_code %}<button class="btn ghost small" type="submit" name="acao" value="testar">Mandar evento de teste</button>{% endif %}</div>
+    </form>
+    <div id="waba" class="waba-box">
+      <h4 style="margin:14px 0 4px">💬 Clique pro WhatsApp: conta do WhatsApp (WABA) de cada número</h4>
+      <p class="muted" style="margin:0 0 8px">Com o WABA do número, venda/oportunidade de quem veio do anúncio de clique pro WhatsApp vai como <b>conversa de WhatsApp</b> (com o código do clique) — o formato que deixa otimizar a campanha de mensagem pela venda. O CRM confere no Meta se a conta tem esse telefone. Onde achar: Configurações do negócio → Contas → Contas do WhatsApp → clique no número: o ID aparece no endereço da página (<code>selected_asset_id=…</code>) ou no menu <b>⋯</b>.</p>
+      <form method="post" action="/dashboard/whatsapp-waba">
+        <label class="wa-token-field">Token do WhatsApp {% if tenant.meta_wa_token %}<span class="goal-ok">✓ salvo</span>{% endif %} <span class="muted">(do app do cliente, com as permissões de WhatsApp; em branco = usa o token do pixel)</span>
+          <span class="wa-token-row">
+            <input name="wa_token" type="password" autocomplete="new-password" placeholder="{{ 'já salvo (deixe em branco pra manter)' if tenant.meta_wa_token else 'cole aqui o token gerado no app' }}">
+            <button class="btn small" type="submit" data-busy="Conferindo no Meta…">Salvar token e conferir os números</button>
+            <button class="btn small" type="submit" name="acao" value="descobrir" data-busy="Procurando no Meta…" title="O CRM pergunta ao Meta quais contas do WhatsApp esse token enxerga e preenche o ID de cada número sozinho">🔎 Achar os IDs sozinho</button>
+          </span></label>
+        <p class="muted" style="margin:0 0 8px">Este botão (ou o “Salvar e conferir” no fim da tabela) salva o token do WhatsApp e confere cada número. O botão “Salvar e conferir o pixel”, lá em cima, salva só o pixel.</p>
+        <table class="table-simple">
+          <thead><tr><th>Número</th><th>Conta do WhatsApp (WABA)</th><th>Situação</th></tr></thead>
+          <tbody>{% for n in wa_numbers %}<tr>
+            <td><b>{{ n.label }}</b><div class="muted">{{ n.phone_number or "não pareado" }}</div></td>
+            <td><input name="waba_{{ n.id }}" value="{{ n.meta_waba_id }}" inputmode="numeric" placeholder="ID da conta"></td>
+            <td class="{{ 'goal-ok' if n.meta_waba_checked_at else 'muted' }}">{% if n.meta_waba_checked_at %}✅ conferido · dados {{ n.meta_dataset_id }}{% elif n.meta_waba_error %}<span class="goal-bad">⚠️ não conferiu</span><div class="waba-error">{{ n.meta_waba_error }}</div>{% elif n.meta_waba_id %}⚠️ ainda não conferido{% else %}—{% endif %}</td>
+          </tr>{% endfor %}</tbody>
+        </table>
+        <button class="btn small" type="submit" data-busy="Conferindo no Meta…">Salvar e conferir</button>
+      </form>
+    </div>
+    {% if capi_events %}
+    <table class="table-simple capi-log">
+      <thead><tr><th>Quando</th><th>Evento</th><th>Lead</th><th>Status</th></tr></thead>
+      <tbody>{% for ev in capi_events %}<tr><td>{{ ev.created_at|hora("%d/%m %H:%M") }}</td><td>{{ {"InitiateCheckout": "Oportunidade", "Purchase": "Venda"}.get(ev.event_name, ev.event_name) }}</td><td><a href="/inbox/{{ ev.lead_id }}">abrir</a></td><td class="{{ 'goal-ok' if ev.status == 'sent' else ('goal-bad' if ev.status == 'failed' else 'muted') }}" title="{{ ev.error }}">{{ {"sent": "enviado", "pending": "na fila", "failed": "falhou", "skipped": "não enviado"}.get(ev.status, ev.status) }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% endif %}
+  </details>
+  <details class="traffic-accounts">
+    <summary class="muted">⚙ Contas de anúncio do Meta deste cliente: {{ meta_accounts or "detectando pelos anúncios dos leads…" }}</summary>
+    <form method="post" action="/dashboard/meta-contas">
+      <input name="contas" value="{{ meta_accounts }}" placeholder="ex: 1234567890 (vários separados por vírgula)">
+      <button class="btn small" type="submit">Salvar e buscar o investimento agora</button>
+      <div class="muted">Normalmente é detectado sozinho. Só mexa se faltar alguma conta (o número fica no Gerenciador de Anúncios, ao lado do nome da conta).</div>
+    </form>
+  </details>
+  {% endif %}
+</div>

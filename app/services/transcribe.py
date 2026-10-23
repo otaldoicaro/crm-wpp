@@ -2,7 +2,7 @@
 na conversa (Message.transcript), entra na busca do Inbox e nas regras automáticas como se fosse
 uma mensagem escrita (🔥 quis comprar, Qualificado, preço enviado -> Negociando, Perdido...).
 
-Liga por cliente: recurso "transcrever_audios" (⚙ Prazos → Recursos) + a chave GROQ_API_KEY no
+Liga por cliente: recurso "transcrever_audios" (⚙ Configurações → Recursos) + a chave GROQ_API_KEY no
 servidor (deploy/vps/configurar_groq.sh). Sem os dois, nada é enviado pra fora.
 Custo (tabela do Groq): ~US$ 0,04 por hora de áudio. Áudio de mais de MAX_SECONDS fica de fora."""
 

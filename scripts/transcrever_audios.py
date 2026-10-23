@@ -5,6 +5,7 @@ texto. O texto aparece embaixo do áudio e o 🔥 "quis comprar depois do preço
 (as etapas NÃO mudam por áudio antigo). Sem --aplicar só mostra quantos são e o custo estimado.
 
     docker exec -it crm-app python -m scripts.transcrever_audios --cliente novaviseu
+    (--so-negociacao-e-ganhos: só os áudios dos leads que estão hoje em Negociando ou Ganho)
     docker exec -d crm-app sh -c 'python -m scripts.transcrever_audios --cliente novaviseu --aplicar > /tmp/audios.log 2>&1'
     docker exec crm-app tail -n 5 /tmp/audios.log
 """
@@ -17,8 +18,8 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # pasta do CRM
 
 from app.db import SessionLocal
-from app.models import Conversation, Lead, Message, Tenant
-from app.services import buying, transcribe
+from app.models import Conversation, Lead, Message, PipelineStage, Tenant
+from app.services import buying, funnel, transcribe
 
 PRICE_PER_HOUR = 0.04  # US$ (tabela do Groq, whisper-large-v3-turbo)
 
@@ -40,16 +41,23 @@ def main() -> None:
             return
         if not transcribe.is_enabled(tenant):
             print("⚠️ Transcrição desligada pra esse cliente: falta a chave do Groq no servidor (configurar_groq.sh) "
-                  "ou ligar “🎙️ Transcrever os áudios” em Pipeline → ⚙ Prazos → Recursos.")
+                  "ou ligar “🎙️ Transcrever os áudios” em ⚙ Configurações → Prazos e automações → Recursos.")
             return
         since = datetime.datetime.utcnow() - datetime.timedelta(days=days)
-        rows = (db.query(Message.id, Message.media_seconds)
-                .join(Conversation, Conversation.id == Message.conversation_id)
-                .filter(Conversation.tenant_id == tenant.id, Message.media_type == "audio", Message.transcript == "",
-                        Message.media_stored_key != "", Message.created_at >= since)
-                .order_by(Message.created_at).all())
+        query = (db.query(Message.id, Message.media_seconds)
+                 .join(Conversation, Conversation.id == Message.conversation_id)
+                 .filter(Conversation.tenant_id == tenant.id, Message.media_type == "audio", Message.transcript == "",
+                         Message.media_stored_key != "", Message.created_at >= since))
+        only_hot = "--so-negociacao-e-ganhos" in sys.argv
+        if only_hot:  # só quem está em Negociando ou Ganho (onde o texto mais ajuda: 🔥 e o que vendeu)
+            stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).all()
+            negotiation = funnel.stage_named(stages, funnel.NEGOTIATION_NAME, "Negociação", "Negociacao")
+            ids = [s.id for s in stages if s.is_won] + ([negotiation.id] if negotiation else [])
+            query = query.join(Lead, Lead.id == Conversation.lead_id).filter(Lead.stage_id.in_(ids))
+        rows = query.order_by(Message.created_at).all()
         seconds = sum((s or 30) for _, s in rows)  # sem a duração guardada: conta 30 s
-        print(f"\n{tenant.name}: {len(rows)} áudio(s) sem texto nos últimos {days} dias "
+        print(f"\n{tenant.name}: {len(rows)} áudio(s) sem texto nos últimos {days} dias"
+              + (" (só Negociando e Ganho)" if only_hot else "") + " "
               f"(~{seconds / 3600:.1f} h · custo estimado ~US$ {seconds / 3600 * PRICE_PER_HOUR:.2f}).")
         if not apply_changes:
             print("Nada foi transcrito. Pra transcrever, rode de novo com --aplicar no final (à noite).")

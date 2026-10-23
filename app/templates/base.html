@@ -27,6 +27,7 @@
       <a href="/equipe" class="{{ 'active' if active_nav == 'equipe' else '' }}" {% if pending_access %}title="Pedidos de acesso esperando aprovação"{% endif %}>Equipe{% if pending_access %}<span class="nav-dot"></span>{% endif %}</a>
       {% endif %}
       {% if not user.read_only %}<a href="/whatsapp" class="{{ 'active' if active_nav == 'whatsapp' else '' }}" {% if wa_down %}title="WhatsApp desconectado"{% endif %}>{{ "WhatsApp" if user.role == "admin" else "Meu WhatsApp" }}{% if wa_down or (user.role != "admin" and not (my_numbers|selectattr("is_active")|list)) %}<span class="nav-dot"></span>{% endif %}</a>{% endif %}
+      {% if user.role == "admin" and not user.read_only %}<a href="/configuracoes" class="nav-config {{ 'active' if active_nav == 'config' else '' }}" title="Prazos, mensagem automática, recursos e integrações">⚙ Configurações</a>{% endif %}
     </nav>
     <div class="user">
       <span>{{ tenant.name }} · {{ user.name }}</span>

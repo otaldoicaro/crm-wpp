@@ -1,6 +1,6 @@
 """🤖 Chama, uma vez, os leads antigos que preencheram o formulário e nunca falaram no WhatsApp.
 
-Mesma mensagem da automação (⚙ Prazos → 🤖 Mensagem automática): confirma a peça e o ano e diz
+Mesma mensagem da automação (⚙ Configurações → 🤖 Mensagem automática): confirma a peça e o ano e diz
 que vai verificar. Sai do WhatsApp do vendedor já atribuído; sem vendedor ou com o WhatsApp dele
 desconectado, vai pro próximo do rodízio (e o lead passa pra ele). O lead vai pra Qualificado.
 Lead que está com admin (ou com quem saiu/pausou) é redistribuído entre os vendedores ANTES de

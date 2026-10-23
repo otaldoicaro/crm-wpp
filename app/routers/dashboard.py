@@ -671,25 +671,45 @@ def campaign_leads(
     )
 
 
-@router.get("/prazos", response_class=HTMLResponse)
-def deadlines_page(
+@router.get("/prazos")
+def deadlines_page():
+    """Endereço antigo: os prazos agora ficam em ⚙ Configurações."""
+    return RedirectResponse(url="/configuracoes?aba=prazos", status_code=302)
+
+
+@router.get("/configuracoes", response_class=HTMLResponse)
+def settings_page(
     request: Request,
+    aba: str = "prazos",
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    """Prazos do follow-up (por cliente): horas em cada etapa, horas pro follow-up e se o
-    próximo contato é obrigatório."""
+    """⚙ Configurações (admin): ⏰ Prazos e automações (prazos das etapas, follow-up, horário comercial,
+    mensagem automática, recursos) e 🔌 Integrações (eventos pro Meta, WhatsApps/WABA, contas de anúncio)."""
     if user.role != "admin":
         raise HTTPException(status_code=403)
-    return templates.TemplateResponse(request, "prazos.html", {
-        "tenant": tenant, "user": user, "active_nav": "pipeline", "stages": funnel._stages(db, tenant.id),
-        "hello_default": first_contact.default_text(tenant).replace("{empresa}", tenant.name),
-        "hello_generic_default": first_contact.generic_text(SimpleNamespace(auto_hello_generic_text="", segment=tenant.segment))
-        .replace("{empresa}", tenant.name),
-        "hello_stage": first_contact.target_stage_name(tenant),
-        "feature_list": features.FEATURES, "features_on": features.enabled(tenant),
-    })
+    aba = aba if aba in ("prazos", "integracoes") else "prazos"
+    ctx = {"tenant": tenant, "user": user, "active_nav": "config", "aba": aba, "is_admin": True}
+    if aba == "prazos":
+        ctx.update({
+            "stages": funnel._stages(db, tenant.id),
+            "hello_default": first_contact.default_text(tenant).replace("{empresa}", tenant.name),
+            "hello_generic_default": first_contact.generic_text(SimpleNamespace(auto_hello_generic_text="", segment=tenant.segment))
+            .replace("{empresa}", tenant.name),
+            "hello_stage": first_contact.target_stage_name(tenant),
+            "feature_list": features.FEATURES, "features_on": features.enabled(tenant),
+        })
+    else:
+        ctx.update({
+            "meta_accounts": tenant.meta_ad_accounts,
+            "capi_events": db.query(ConversionEvent).filter(ConversionEvent.tenant_id == tenant.id, ConversionEvent.platform == "meta")
+            .order_by(ConversionEvent.created_at.desc()).limit(12).all(),
+            "capi_msg": request.query_params.get("capi", ""),
+            "wa_numbers": db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
+            .order_by(WhatsAppNumber.label).all(),
+        })
+    return templates.TemplateResponse(request, "configuracoes.html", ctx)
 
 
 @router.post("/prazos")
@@ -731,7 +751,7 @@ async def save_deadlines(
         db.commit()
 
     await run_in_threadpool(apply)
-    return RedirectResponse(url="/prazos?salvo=1", status_code=302)
+    return RedirectResponse(url="/configuracoes?aba=prazos&salvo=1", status_code=302)
 
 
 @router.post("/leads/{lead_id}/proximo-contato")
@@ -769,7 +789,7 @@ def set_meta_accounts(
     tenant.meta_ad_accounts = ",".join(dict.fromkeys(ids))
     db.commit()
     threading.Thread(target=meta_spend.sync_all, kwargs={"days": meta_spend.FIRST_SYNC_DAYS}, daemon=True).start()
-    return RedirectResponse(url="/dashboard?aba=integracoes&salvo=1#integracoes", status_code=302)
+    return RedirectResponse(url="/configuracoes?aba=integracoes&salvo=1", status_code=302)
 
 
 @router.post("/dashboard/meta-eventos")
@@ -790,7 +810,7 @@ def save_meta_events(
 
     if user.role != "admin":
         raise HTTPException(status_code=403)
-    back = "/dashboard?aba=integracoes"
+    back = "/configuracoes?aba=integracoes"
     if acao == "testar":
         result = meta_capi.send_test(tenant)
         msg = "✅ Evento de teste enviado: confira em Gerenciador de Eventos > Eventos de teste." if result["ok"] else \
@@ -874,7 +894,7 @@ async def save_whatsapp_waba(
 
     msgs = await run_in_threadpool(apply)
     text_msg = " · ".join(msgs) or "Nada mudou."
-    return RedirectResponse(url="/dashboard?aba=integracoes&capi=" + quote(text_msg[:1500]) + "#waba", status_code=302)
+    return RedirectResponse(url="/configuracoes?aba=integracoes&capi=" + quote(text_msg[:1500]) + "#waba", status_code=302)
 
 
 @router.post("/dashboard/metas")
@@ -2537,6 +2557,9 @@ def dashboard_view(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
+    if aba == "integracoes":  # as integrações agora ficam em ⚙ Configurações
+        extra = "&capi=" + quote(request.query_params.get("capi", "")) if request.query_params.get("capi") else ""
+        return RedirectResponse(url="/configuracoes?aba=integracoes" + extra, status_code=302)
     sellers = team_members(db, tenant.id)
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
     is_admin = user.role == "admin"

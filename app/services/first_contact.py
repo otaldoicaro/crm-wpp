@@ -51,7 +51,7 @@ def default_text(tenant: Tenant) -> str:
 
 
 def generic_text(tenant: Tenant) -> str:
-    """Mensagem pra quem não disse a peça/carro: a do cliente (⚙ Prazos) ou a 1ª mensagem do ramo."""
+    """Mensagem pra quem não disse a peça/carro: a do cliente (⚙ Configurações) ou a 1ª mensagem do ramo."""
     from app import segments
 
     if (tenant.auto_hello_generic_text or "").strip():
