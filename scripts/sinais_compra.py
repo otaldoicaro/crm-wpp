@@ -1,6 +1,9 @@
 """🔥 Vasculha as conversas atrás de sinal de compra DEPOIS do preço ("como faço?", "como funciona?",
 "qual o pix?", "faz entrega?"...).
 
+Lê também o texto dos áudios (🎙️ transcrição), dos dois lados: o cliente que falou "como faço pra
+pagar?" num áudio e o vendedor que falou o preço num áudio contam igual a mensagem escrita.
+
 1) Nas vendas (Ganho) do período: quantas tiveram esse sinal e quais frases mais aparecem, e as
    mensagens curtas mais comuns que o cliente mandou depois do preço e que a lista ainda não pega
    (pra aumentar a lista em app/services/buying.py).
@@ -32,12 +35,13 @@ def _arg(name: str, default: str = "") -> str:
 def after_price(db, lead_ids: list) -> dict:
     """{lead_id: [(quando, texto do cliente)] depois do 1º preço que o time mandou}."""
     msgs = defaultdict(list)
-    rows = (db.query(Conversation.lead_id, Message.direction, Message.body, Message.created_at)
+    rows = (db.query(Conversation.lead_id, Message.direction, Message.body, Message.created_at, Message.transcript)
             .join(Message, Message.conversation_id == Conversation.id)
             .filter(Conversation.lead_id.in_(lead_ids), Message.direction.in_(["in", "out"]))
             .order_by(Message.created_at).all())
     priced = set()
-    for lead_id, direction, body, when in rows:
+    for lead_id, direction, body, when, transcript in rows:
+        body = transcript or body  # áudio: o que foi falado
         if direction == "out" and lead_id not in priced and followup.find_prices(body or ""):
             priced.add(lead_id)
         elif direction == "in" and lead_id in priced and body:

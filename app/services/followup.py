@@ -36,7 +36,8 @@ _PRICE = re.compile(
     r"|R\$\s*(?P<rs>\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)"  # R$ 1.250,00 / R$350
     r"|(?<![\d.,])(?P<dol>\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)\s?\$"  # 250$ / 1.250,00 $
     r"|(?P<cents>\d{1,3}(?:\.\d{3})*,\d{2})(?!\d)"  # 600,00 / 1.250,00
-    r"|(?P<reais>\d+(?:,\d{1,2})?)\s*reais",  # 350 reais
+    # 350 reais / 1.250 reais / 350 conto (como sai na transcrição de áudio)
+    r"|(?<![\d.,])(?P<reais>\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)\s*(?:reais|real|contos?|pila)\b",
     re.IGNORECASE,
 )
 
