@@ -306,3 +306,55 @@ def fmt(key: str, value) -> str:
     if kind == "dec":
         return br(value, 2)
     return br(value, 0)
+
+
+DAILY_MAX_DAYS = 180
+
+
+def daily(db, tenant_id: str, data: dict, leads: list, date_from, date_to, is_qualified, is_opportunity=None,
+          channel: str = "") -> dict:
+    """📈 Dia a dia do tráfego pago: investimento (Meta/Google) e os leads, MQL e OPT das campanhas
+    (os mesmos da tabela, pelo dia em que o lead chegou). {"days": ["dd/mm"...], "spend": [...], ...}"""
+    import datetime
+
+    from app.timeutil import to_local
+
+    ids = {lid for camp in data["campaigns"] for lid in camp["lead_ids"]}
+    spend_rows = db.query(CampaignSpend.date, CampaignSpend.platform, CampaignSpend.campaign, func.sum(CampaignSpend.spend)) \
+        .filter(CampaignSpend.tenant_id == tenant_id)
+    if date_from:
+        spend_rows = spend_rows.filter(CampaignSpend.date >= date_from)
+    if date_to:
+        spend_rows = spend_rows.filter(CampaignSpend.date <= date_to)
+    spend: dict = {}
+    for day, platform, cname, value in spend_rows.group_by(CampaignSpend.date, CampaignSpend.platform, CampaignSpend.campaign):
+        if channel:
+            from app.services.channels import spend_matches
+
+            if not spend_matches(cname, platform, channel):
+                continue
+        spend[day] = spend.get(day, 0.0) + (value or 0)
+    counts: dict = {}
+    for lead in leads:
+        if lead.id not in ids:
+            continue
+        c = counts.setdefault(to_local(lead.created_at).date(), [0, 0, 0])
+        c[0] += 1
+        c[1] += 1 if is_qualified(lead) else 0
+        c[2] += 1 if is_opportunity is not None and is_opportunity(lead) else 0
+    known = sorted(set(spend) | set(counts))
+    if not known:
+        return {}
+    first = max(date_from or known[0], known[-1] - datetime.timedelta(days=DAILY_MAX_DAYS - 1))
+    last = min(date_to or known[-1], datetime.date.today())
+    out = {"days": [], "spend": [], "leads": [], "mql": [], "opt": []}
+    day = first
+    while day <= last:
+        c = counts.get(day, (0, 0, 0))
+        out["days"].append(day.strftime("%d/%m"))
+        out["spend"].append(round(spend.get(day, 0.0), 2))
+        out["leads"].append(c[0])
+        out["mql"].append(c[1])
+        out["opt"].append(c[2])
+        day += datetime.timedelta(days=1)
+    return out

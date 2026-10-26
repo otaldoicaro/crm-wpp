@@ -321,6 +321,69 @@
     </div>
   </div>
   {% endfor %}
+  {# ---- 📈 dia a dia: barras = investimento, linha = a métrica escolhida (uma por vez, cada uma com a sua régua) ---- #}
+  {% if traffic_daily and traffic_daily.days|length > 1 %}
+  <div class="kpi-group daily-chart">
+    <div class="kpi-group-title">📈 Dia a dia</div>
+    <div class="daily-chips" id="dailyChips">
+      {% for key, label in (("leads", "Leads"), ("mql", "MQL"), ("opt", "OPT"), ("cpl", "CPL"), ("cmql", "Custo por MQL"), ("copt", "Custo por OPT")) %}
+      <button type="button" class="pill {{ 'on' if loop.first }}" data-k="{{ key }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <div class="daily-legend muted">
+      <span><i class="daily-sw bar"></i>Investimento (R$, à esquerda)</span>
+      <span><i class="daily-sw line"></i><b id="dailyLbl">Leads</b> (à direita)</span>
+    </div>
+    <div class="daily-box"><canvas id="dailyChart" role="img" aria-label="Investimento por dia e a métrica escolhida"></canvas></div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script>
+  (function () {
+    var d = {{ traffic_daily|tojson }};
+    if (!window.Chart) return;
+    var cost = function (i, n) { return n ? +(d.spend[i] / n).toFixed(2) : null; };
+    var M = {
+      leads: ["Leads", d.leads, false], mql: ["MQL", d.mql, false], opt: ["OPT", d.opt, false],
+      cpl: ["CPL", d.leads.map(function (n, i) { return cost(i, n); }), true],
+      cmql: ["Custo por MQL", d.mql.map(function (n, i) { return cost(i, n); }), true],
+      copt: ["Custo por OPT", d.opt.map(function (n, i) { return cost(i, n); }), true]
+    };
+    var brl = function (v) { return v == null ? "—" : "R$ " + (v < 100 ? v.toFixed(2) : Math.round(v).toLocaleString("pt-BR")).replace(/\.(\d\d)$/, ",$1"); };
+    var ink = getComputedStyle(document.body).color, LINE = "#eb6834";
+    var chart = new Chart(document.getElementById("dailyChart"), {
+      data: { labels: d.days, datasets: [
+        { type: "bar", label: "Investimento", data: d.spend, backgroundColor: "rgba(120,140,170,.35)", borderRadius: 4, maxBarThickness: 18, yAxisID: "y", order: 2 },
+        { type: "line", label: "Leads", data: d.leads, borderColor: LINE, backgroundColor: LINE, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: .3, spanGaps: true, yAxisID: "y2", order: 1 }
+      ] },
+      options: {
+        responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (c) {
+          var money = c.datasetIndex === 0 || chart.$money;
+          return " " + c.dataset.label + ": " + (money ? brl(c.raw) : c.raw);
+        } } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: ink, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
+          y: { position: "left", beginAtZero: true, grid: { color: "rgba(128,128,128,.15)" }, border: { display: false }, ticks: { color: ink, callback: brl } },
+          y2: { position: "right", beginAtZero: true, grid: { display: false }, border: { display: false }, ticks: { color: LINE } }
+        }
+      }
+    });
+    var chips = document.getElementById("dailyChips");
+    function pick(k) {
+      var m = M[k];
+      chart.data.datasets[1].data = m[1];
+      chart.data.datasets[1].label = m[0];
+      chart.$money = m[2];
+      chart.options.scales.y2.ticks.callback = m[2] ? brl : function (v) { return Number.isInteger(v) ? v : ""; };
+      chart.update();
+      document.getElementById("dailyLbl").textContent = m[0];
+      chips.querySelectorAll("button").forEach(function (b) { b.classList.toggle("on", b.dataset.k === k); });
+    }
+    chips.addEventListener("click", function (e) { var b = e.target.closest("button"); if (b) pick(b.dataset.k); });
+    pick("leads");
+  })();
+  </script>
+  {% endif %}
   <p class="muted traffic-note">Passe o mouse num número pra ver a conta. Mídia e página vêm do Meta (atualizado a cada 3h); leads, MQL, OPT e vendas vêm do CRM. Taxa MQL = MQL ÷ leads · Taxa OPT = OPT ÷ MQL · Taxa de ganho = vendas ÷ OPT. Conversão da página = leads que chegaram no CRM ÷ visualizações da página (campanha de clique pro WhatsApp não tem página: aparece “—”). Frequência = média por dia.{% if seller %} <b>Atenção:</b> com vendedor filtrado, leads e vendas são só dele, mas o investimento é o da campanha inteira.{% endif %}</p>
 
   {# ---- 🎯 metas ---- #}

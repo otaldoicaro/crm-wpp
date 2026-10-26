@@ -1068,3 +1068,16 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 }
 .shared-band { background: #fff4c2; color: #4a3b00; border-bottom: 1px solid #f0d77a; padding: 5px 16px; font-size: .78rem; }
 .shared-icon { font-size: .8rem; }
+
+/* 📈 Dashboard > Tráfego: dia a dia (investimento em barras + uma métrica em linha) */
+.daily-chart { margin-top: 14px; }
+.daily-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
+.daily-chips .pill { cursor: pointer; border: 1px solid var(--line); background: transparent; color: inherit; font: inherit; font-size: .85rem; padding: 4px 12px; border-radius: 999px; }
+.daily-chips .pill.on { background: var(--y); color: var(--ink); border-color: var(--y); font-weight: 700; }
+.daily-legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: .8rem; margin-bottom: 4px; }
+.daily-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.daily-sw { display: inline-block; width: 12px; height: 10px; border-radius: 2px; }
+.daily-sw.bar { background: rgba(120, 140, 170, .45); }
+.daily-sw.line { height: 2px; width: 16px; background: #eb6834; }
+.daily-box { position: relative; width: 100%; height: 280px; }
+@media (max-width: 640px) { .daily-box { height: 220px; } }

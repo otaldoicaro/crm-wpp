@@ -2885,6 +2885,11 @@ def dashboard_view(
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
         funnel.is_qualified(stages), set(won_stage_ids), funnel.is_opportunity(stages), channel=canal,
     ) if aba == "trafego" else None  # cada aba calcula só o que mostra
+    traffic_daily = traffic.daily(
+        db, tenant.id, traffic_data, leads,
+        to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
+        funnel.is_qualified(stages), funnel.is_opportunity(stages), channel=canal,
+    ) if traffic_data else {}
 
     return templates.TemplateResponse(
         request,
@@ -2902,6 +2907,7 @@ def dashboard_view(
             "stage_counts": stage_counts,
             "platform_counts": sorted(platform_counts.items(), key=lambda kv: kv[1]["count"], reverse=True),
             "top_campaigns": top_campaigns,
+            "traffic_daily": traffic_daily,
             "stages": stages,
             "stage_by_id": stage_by_id,
             "table_leads": table_leads,
