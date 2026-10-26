@@ -314,7 +314,8 @@ DAILY_MAX_DAYS = 180
 def daily(db, tenant_id: str, data: dict, leads: list, date_from, date_to, is_qualified, is_opportunity=None,
           channel: str = "") -> dict:
     """📈 Dia a dia do tráfego pago: investimento (Meta/Google) e os leads, MQL e OPT das campanhas
-    (os mesmos da tabela, pelo dia em que o lead chegou). {"days": ["dd/mm"...], "spend": [...], ...}"""
+    (os mesmos da tabela, pelo dia em que o lead chegou), a partir do 1º dia com investimento.
+    {"days": ["dd/mm"...], "spend": [...], ...}"""
     import datetime
 
     from app.timeutil import to_local
@@ -345,7 +346,9 @@ def daily(db, tenant_id: str, data: dict, leads: list, date_from, date_to, is_qu
     known = sorted(set(spend) | set(counts))
     if not known:
         return {}
-    first = max(date_from or known[0], known[-1] - datetime.timedelta(days=DAILY_MAX_DAYS - 1))
+    # começa no 1º dia com investimento (antes disso o gráfico seria só leads, sem como comparar)
+    start = min(spend) if spend else known[0]
+    first = max(date_from or start, start, known[-1] - datetime.timedelta(days=DAILY_MAX_DAYS - 1))
     last = min(date_to or known[-1], datetime.date.today())
     out = {"days": [], "spend": [], "leads": [], "mql": [], "opt": []}
     day = first

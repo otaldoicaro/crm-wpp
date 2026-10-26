@@ -268,22 +268,6 @@
 {% endif %}
 
 {% if aba == "trafego" %}
-<div class="section-title"><h3 style="margin:0">Origem do tráfego</h3></div>
-<div class="card">
-  <table class="table-simple">
-    <thead><tr><th>Plataforma</th><th>Leads</th></tr></thead>
-    <tbody>
-      {% for key, data in platform_counts %}
-      <tr>
-        <td>{{ m.platform_badge(key, data.label) }}</td>
-        <td>{{ data.count }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="2" class="muted">Sem leads ainda.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
 
 {% macro money(v, cents=False) -%}
 {%- if v is none or (not v and v != 0) %}—{% else %}R$ {{ ("{:,.2f}" if cents else "{:,.0f}").format(v).replace(",", "X").replace(".", ",").replace("X", ".") }}{% endif -%}
@@ -607,6 +591,24 @@
   });
 })();
 </script>
+
+{# origem dos leads por plataforma: só a contagem, fica no fim da aba #}
+<div class="section-title"><h3 style="margin:0">Origem do tráfego</h3></div>
+<div class="card">
+  <table class="table-simple">
+    <thead><tr><th>Plataforma</th><th>Leads</th></tr></thead>
+    <tbody>
+      {% for key, data in platform_counts %}
+      <tr>
+        <td>{{ m.platform_badge(key, data.label) }}</td>
+        <td>{{ data.count }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2" class="muted">Sem leads ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 
 {% endif %}
 
