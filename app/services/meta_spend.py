@@ -169,7 +169,8 @@ def sync_tenant(db, tenant: Tenant, days: int | None = None) -> int:
             clicks=int(r.get("clicks") or 0),
             reach=int(r.get("reach") or 0),
             link_clicks=int(r.get("inline_link_clicks") or 0),
-            landing_page_views=_action(r, "landing_page_view", "omni_landing_page_view"),
+            # o Meta manda o mesmo número nos dois tipos: somar dobrava (taxa de carregamento de 178%)
+            landing_page_views=_action(r, "landing_page_view") or _action(r, "omni_landing_page_view"),
             meta_results=_results(r),
         ))
     db.commit()
