@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from app.config import EVOLUTION_WEBHOOK_TOKEN
 from app.db import SessionLocal
 from app.models import Conversation, Lead, Message, WhatsAppNumber
-from app.services import evolution_client, inbox_state, receipts, response_times, transcribe
+from app.services import calls, evolution_client, inbox_state, receipts, response_times, transcribe
 from app.services.inbound import ingest_inbound, message_exists, record_outbound_from_phone
 from app.services.msgsecret import decrypt_edit, secret_b64, text_from_message, to_bytes
 from app.services.media_store import backup_message_media
@@ -225,16 +225,8 @@ def _other_text(message: dict) -> str:
         return "🖼️ Figurinha animada (abre só no celular)"
     if "stickerPackMessage" in message:
         return "🖼️ Pacote de figurinhas"
-    if "callLogMesssage" in message:  # registro da ligação (é assim mesmo, com 3 "s")
-        log = message["callLogMesssage"] or {}
-        outcome = {"CONNECTED": "atendida", "MISSED": "não atendida", "REJECTED": "recusada", "FAILED": "não completou"}.get(
-            str(log.get("callOutcome") or "").upper(), "")
-        try:
-            secs = int(log.get("durationSecs") or 0)
-        except (TypeError, ValueError):
-            secs = 0
-        parts = [p for p in (outcome, f"{secs // 60}:{secs % 60:02d}" if secs else "") if p]
-        return ("📹 Chamada de vídeo" if log.get("isVideo") else "📞 Ligação pelo WhatsApp") + (" · " + " · ".join(parts) if parts else "")
+    if "callLogMesssage" in message:  # texto final em calls.text (quem ligou, atendida, duração)
+        return "📞 Ligação pelo WhatsApp"
     if "call" in message or "scheduledCallCreationMessage" in message:
         return "📞 Ligação pelo WhatsApp"
     if "requestPhoneNumberMessage" in message:
@@ -585,10 +577,16 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
 
     secret = secret_b64(item.get("message") or {})
     seconds = _audio_seconds(item.get("message") or {}) if media_type == "audio" else 0
+    call = calls.parse_log(item.get("message") or {})  # 📞 registro de ligação (inclusive a feita no celular)
+    if call is not None:
+        body = calls.text("out" if key.get("fromMe") else "in", call)
     if key.get("fromMe"):
-        return _with_quote(db, _set_seconds(db, record_outbound_from_phone(db, number, phone, wa_message_id, body, media_id, media_type, secret=secret), seconds), context_info)
+        message = _with_quote(db, _set_seconds(db, record_outbound_from_phone(db, number, phone, wa_message_id, body, media_id, media_type, secret=secret), seconds), context_info)
+        if call is not None and message is not None:
+            calls.mark(db, message, "out", call["outcome"], call["seconds"])
+        return message
 
-    return _with_quote(db, _set_seconds(db, ingest_inbound(
+    message = _with_quote(db, _set_seconds(db, ingest_inbound(
         db,
         number,
         from_phone=phone,
@@ -600,6 +598,9 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
         referral=_referral_from_context(context_info),
         secret=secret,
     ), seconds), context_info)
+    if call is not None and message is not None:
+        calls.mark(db, message, "in", call["outcome"], call["seconds"])
+    return message
 
 
 CALL_STATUS = {"offer": "tocando…", "ringing": "tocando…", "accept": "atendida", "reject": "recusada",
@@ -609,7 +610,7 @@ CALL_STATUS = {"offer": "tocando…", "ringing": "tocando…", "accept": "atendi
 def _apply_call(db: Session, number: WhatsAppNumber, call: dict) -> None:
     """📞 Ligação que o cliente fez pro WhatsApp do vendedor (evento CALL do Evolution): vira um
     registro na conversa, atualizado a cada mudança (tocando → atendida/não atendida). Só de
-    quem já é lead; o WhatsApp não avisa das ligações que o vendedor faz pelo celular."""
+    quem já é lead. As ligações feitas/atendidas no celular chegam como registro (services/calls.py)."""
     from app.services.lead_match import find_lead_by_phone
 
     call_id, jid = str(call.get("id") or ""), str(call.get("from") or call.get("chatId") or "")
@@ -623,7 +624,7 @@ def _apply_call(db: Session, number: WhatsAppNumber, call: dict) -> None:
                     or lead.active_conversation)
     if conversation is None:
         return
-    status = CALL_STATUS.get(str(call.get("status") or "").lower(), "")
+    status = CALL_STATUS.get(str(call.get("status") or "").lower(), "")  # tocando/atendida/não atendida...
     kind = "📹 Chamada de vídeo" if call.get("isVideo") else "📞 Ligação"
     body = f"{kind} do cliente pelo WhatsApp {number.label}" + (f" · {status}" if status else "")
     wa_id = f"call:{call_id}"[:120]
@@ -634,7 +635,7 @@ def _apply_call(db: Session, number: WhatsAppNumber, call: dict) -> None:
         return  # já sabe se foi atendida; "encerrada" não diz mais nada
     record.body = body
     db.add(record)
-    db.commit()
+    calls.mark(db, record, "in", calls.EVENT_OUTCOMES.get(str(call.get("status") or "").lower(), record.call_outcome))
 
 
 def _audio_seconds(message: dict) -> int:

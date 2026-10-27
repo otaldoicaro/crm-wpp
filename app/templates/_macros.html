@@ -89,3 +89,9 @@
 </div>
 {% endif %}
 {%- endmacro %}
+
+
+{% macro calls_badge(lead) -%}
+{# 📞 ligações do WhatsApp com esse cliente (feitas e recebidas, inclusive pelo celular): services/calls.py #}
+{% if lead.calls_total %}<span class="calls-badge" title="Ligações pelo WhatsApp com esse cliente (feitas e recebidas, também pelo celular){{ ' · última em ' ~ (lead.last_call_at|hora('%d/%m %H:%M')) if lead.last_call_at }}">📞 {{ lead.calls_total }} {{ "ligação" if lead.calls_total == 1 else "ligações" }} · {{ lead.calls_answered }} atendida{{ "s" if lead.calls_answered != 1 }}{% if lead.calls_seconds %} · {{ call_duration(lead.calls_seconds) }} falando{% endif %}</span>{% endif %}
+{%- endmacro %}

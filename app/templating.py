@@ -48,6 +48,9 @@ templates.env.globals["auto_stage"] = funnel.is_automatic  # etapas que só o CR
 templates.env.globals["loss_reasons"] = segments.loss_reasons  # motivos de perda do ramo do cliente
 templates.env.globals["segment_for"] = segments.segment_for
 templates.env.globals["has_feature"] = features.has  # recursos ligados só pra este cliente
+from app.services import calls as _calls  # noqa: E402
+
+templates.env.globals["call_duration"] = _calls.duration  # 📞 "2:10", "1h05"
 templates.env.globals["pay_terms"] = car_deal.describe  # "Entrada R$ ... + 60x R$ ..."
 templates.env.filters["brl"] = lambda v: f"{float(v or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 templates.env.globals["sug_current"] = suggestions.current  # 💡 sugestão de etapa pendente

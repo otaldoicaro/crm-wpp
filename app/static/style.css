@@ -830,6 +830,25 @@ td.goal-bad { background: rgba(214,69,69,.08); }
 .head-summary .rt-row { margin-top: 0; }
 .head-summary .via-number { margin-top: 0; font-size: .76rem; }
 .head-summary .thread-actions { margin-top: 2px; }
+.calls-badge { display: inline-block; font-size: .72rem; font-weight: 600; padding: 1px 7px; border-radius: 99px; background: var(--panel-3); white-space: nowrap; }
+.head-meta { display: flex; flex-direction: column; gap: 4px; }
+.head-meta:empty { display: none; }
+/* Conexão: topo da conversa espalhado na largura toda (quem é + ações / etapa e pagamento + etiquetas / resto numa linha fina) */
+@media (min-width: 900px) {
+  [data-tema="conexao"] .inbox-thread-head { flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 6px; }
+  [data-tema="conexao"] .inbox-thread-head .head-main,
+  [data-tema="conexao"] .inbox-thread-head .head-summary { display: contents; }
+  [data-tema="conexao"] .inbox-thread-head > .back-btn { order: 0; }
+  [data-tema="conexao"] .inbox-thread-head .head-who { order: 1; flex: 0 1 auto; }
+  [data-tema="conexao"] .inbox-thread-head .thread-actions { order: 2; margin: 0 0 0 auto; justify-content: flex-end; }
+  [data-tema="conexao"] .inbox-thread-head .stage-bar { order: 3; margin: 0; flex: 0 1 auto; }
+  [data-tema="conexao"] .inbox-thread-head .head-chips { order: 4; margin-left: auto; justify-content: flex-end; }
+  [data-tema="conexao"] .inbox-thread-head .head-meta { order: 5; flex: 1 1 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 16px; font-size: .76rem; }
+  [data-tema="conexao"] .inbox-thread-head .head-meta .via-next { margin: 0; }
+  [data-tema="conexao"] .inbox-thread-head .head-main > *:not(.head-who):not(.stage-bar),
+  [data-tema="conexao"] .inbox-thread-head .head-comments { order: 6; flex: 1 1 100%; }
+  [data-tema="conexao"] .inbox-thread-head .stage-bar > label:first-child { font-size: 0; gap: 0; }  /* "Etapa" já é óbvio pelo campo */
+}
 .more-menu { position: relative; }
 .more-menu > summary { list-style: none; cursor: pointer; }
 .more-menu > summary::-webkit-details-marker { display: none; }

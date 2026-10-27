@@ -224,6 +224,11 @@ class Lead(Base):
     down_payment: Mapped[Optional[float]] = mapped_column(nullable=True)
     installments: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     installment_value: Mapped[Optional[float]] = mapped_column(nullable=True)
+    # 📞 resumo das ligações do WhatsApp (services/calls.refresh) pro card e o topo da conversa
+    calls_total: Mapped[int] = mapped_column(Integer, default=0)
+    calls_answered: Mapped[int] = mapped_column(Integer, default=0)
+    calls_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    last_call_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     quoted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     next_action_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     next_action_note: Mapped[str] = mapped_column(String(255), default="")
@@ -417,6 +422,10 @@ class Message(Base):
     # edição cifrada que o CRM não conseguiu abrir na hora (JSON: payload, iv, jids): fica guardada
     # pra tentar de novo (scripts/edicoes) quando aprendermos o LID/número que faltava
     pending_edit: Mapped[str] = mapped_column(Text, default="")
+    # 📞 ligação do WhatsApp (services/calls.py): "in" cliente ligou / "out" vendedor ligou; resultado e duração
+    call_dir: Mapped[str] = mapped_column(String(3), default="")
+    call_outcome: Mapped[str] = mapped_column(String(20), default="")
+    call_seconds: Mapped[int] = mapped_column(Integer, default=0)
     # em grupo: quem mandou (nome no WhatsApp)
     sender_name: Mapped[str] = mapped_column(String(120), default="")
     # nossas mensagens: 0 = sem informação (antigas), 1 = enviada ✓, 2 = entregue ✓✓, 3 = lida ✓✓ azul

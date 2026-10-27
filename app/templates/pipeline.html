@@ -90,6 +90,7 @@
           {% if lead.tag == "cliente" %}<span class="tag-badge cliente">Cliente</span>{% endif %}
           {% if lead.form_details %}<span class="form-badge" title="Preencheu o formulário da LP">📝 Formulário</span>{% endif %}
           {% if lead.deal_value %}<span class="value-badge">R$ {{ "%.0f"|format(lead.deal_value) }}</span>{% endif %}
+          {{ m.calls_badge(lead) }}
         </div>
         {% if lead.attribution and lead.attribution.utm_campaign %}
           <div class="campaign" title="{{ lead.attribution.utm_campaign }}">{{ lead.attribution.utm_campaign }}</div>
