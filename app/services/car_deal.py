@@ -144,6 +144,15 @@ def on_text(db, lead: Lead, body: str, outbound: bool) -> bool:
     return had_terms
 
 
+def form_total(down_payment: str, installments: str, installment_value: str, parse_brl) -> float:
+    """Valor da venda parcelada: entrada + nº de parcelas x parcela (0 se faltar parcela)."""
+    digits = re.sub(r"\D", "", installments or "")
+    count = int(digits) if digits and 0 < int(digits) <= 120 else 0
+    each = parse_brl(installment_value) if (installment_value or "").strip() else 0
+    down = parse_brl(down_payment) if (down_payment or "").strip() else 0
+    return round(down + count * each, 2) if count and each else 0.0
+
+
 def save_form(lead: Lead, pay_mode: str, down_payment: str, installments: str, installment_value: str, parse_brl) -> None:
     """Campos de pagamento do topo da conversa / ficha do lead."""
     lead.pay_mode = pay_mode if pay_mode in ("avista", "parcelado") else ""

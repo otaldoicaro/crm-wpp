@@ -15,7 +15,8 @@
   <nav class="inbox-tabs status-chips">
     <a data-reset-scroll class="{{ 'on' if tab == 'todas' }}" href="{{ path }}?lidas=&aviso=">Todas</a>
     <a data-reset-scroll class="{{ 'on' if tab == 'naolidas' }}" href="{{ path }}?lidas=naolidas&aviso=">Não lidas <span class="unread-total {{ 'zero' if not status_counts.naolidas }}" data-status="naolidas">{{ status_counts.naolidas }}</span></a>
-    <a data-reset-scroll class="tab-hot {{ 'on' if tab == 'interesse' }}" href="{{ path }}?lidas=&aviso=interesse" title="{{ 'Leads na etapa ' ~ ('Agendamento' if has_feature(tenant, 'agendamentos') else 'Negociando') if has_feature(tenant, 'interessados_negociando') else 'Viram o preço e responderam com interesse (“como faço?”, “qual o pix?”): follow-up já!' }}">🔥 Interessados <span class="unread-total {{ 'zero' if not status_counts.interesse }}" data-status="interesse">{{ status_counts.interesse }}</span></a>
+    {% set agenda_tab = has_feature(tenant, 'agendamentos') %}
+    <a data-reset-scroll class="tab-hot {{ 'on' if tab == 'interesse' }}" href="{{ path }}?lidas=&aviso=interesse" title="{{ 'Leads na etapa Agendamento (visita marcada)' if agenda_tab else ('Leads na etapa Negociando' if has_feature(tenant, 'interessados_negociando') else 'Viram o preço e responderam com interesse (“como faço?”, “qual o pix?”): follow-up já!') }}">{{ "📅 Agendamentos" if agenda_tab else "🔥 Interessados" }} <span class="unread-total {{ 'zero' if not status_counts.interesse }}" data-status="interesse">{{ status_counts.interesse }}</span></a>
     <a data-reset-scroll class="tab-sale {{ 'on' if tab == 'venda' }}" href="{{ path }}?lidas=&aviso=venda" title="Comprovante que o CRM não confirmou sozinho, ou cliente que disse que vem buscar / paga na entrega: marque Ganho ou Perdido">💰 Venda a confirmar <span class="unread-total {{ 'zero' if not status_counts.venda }}" data-status="venda">{{ status_counts.venda }}</span></a>
   </nav>
   {# filtros extras: numa gaveta; quando tem algum ligado, o botão fica amarelo e aparecem as etiquetas #}
@@ -113,8 +114,9 @@
               {% for st in stages %}<option value="{{ st.id }}" data-won="{{ 1 if st.is_won else 0 }}" data-lost="{{ 1 if st.is_lost else 0 }}" {{ "selected" if selected_lead.stage_id == st.id else ("disabled" if auto_stage(st)) }}>{{ st.name }}{{ " (automática)" if auto_stage(st) }}</option>{% endfor %}
             </select>
           </label>
+          {% if has_feature(tenant, "pagamento_parcelado") %}{% with lead=selected_lead, with_value=True %}{% include "_payment_fields.html" %}{% endwith %}{% else %}
           <label class="stage-value">R$ <input name="deal_value" inputmode="decimal" autocomplete="off" placeholder="valor da venda" value="{{ ('%.2f'|format(selected_lead.deal_value or selected_lead.quoted_value)).replace('.', ',') if (selected_lead.deal_value or selected_lead.quoted_value) else '' }}"></label>
-          {% if has_feature(tenant, "pagamento_parcelado") %}{% with lead=selected_lead %}{% include "_payment_fields.html" %}{% endwith %}{% endif %}
+          {% endif %}
           <div class="stage-loss" hidden>{% with reason=selected_lead.loss_reason, detail=selected_lead.loss_detail, required=False %}{% include "_loss_fields.html" %}{% endwith %}</div>
           <button class="btn small" type="submit" hidden>Salvar</button>
           <span class="stage-status muted"></span>
@@ -260,20 +262,25 @@
     el.addEventListener("blur", function () { el.value = money(el.value, true); sync(); });
     el.value = money(el.value, true);
   });
+  // parcelado: o valor da venda sai da entrada + parcelas (o servidor soma)
   var payMode = bar.querySelector(".pay-mode");
-  if (payMode) payMode.addEventListener("change", function () { bar.querySelector(".pay-parcelado").hidden = payMode.value === "avista"; });
+  function hasValue() {
+    if (payMode && payMode.value === "parcelado") return !!(bar.installments.value.trim() && bar.installment_value.value.trim());
+    return !!value.value.trim();
+  }
   function sync() {
     var won = opt().dataset.won === "1";
     loss.hidden = opt().dataset.lost !== "1";
-    value.parentNode.classList.toggle("needed", won && !value.value.trim());
+    value.parentNode.classList.toggle("needed", won && !hasValue());
+    if (payMode) bar.querySelector(".pay-parcelado").classList.toggle("needed", won && !hasValue());
     btn.hidden = state() === initial;
     status.textContent = "";
   }
   fields.forEach(function (el) { el.addEventListener("input", sync); el.addEventListener("change", sync); });
-  sel.addEventListener("change", function () { if (opt().dataset.won === "1" && !value.value.trim()) value.focus(); });
+  sel.addEventListener("change", function () { if (opt().dataset.won === "1" && !hasValue()) (value.disabled ? bar.installments : value).focus(); });
   bar.addEventListener("submit", function (e) {
     e.preventDefault();
-    if (opt().dataset.won === "1" && !value.value.trim()) { status.textContent = "Preencha o valor da venda"; value.focus(); return; }
+    if (opt().dataset.won === "1" && !hasValue()) { status.textContent = value.disabled ? "Preencha as parcelas" : "Preencha o valor da venda"; (value.disabled ? bar.installments : value).focus(); return; }
     if (opt().dataset.lost === "1" && !bar.loss_reason.value) { status.textContent = "Escolha o motivo da perda"; bar.loss_reason.focus(); return; }
     btn.disabled = true; status.textContent = "Salvando…";
     fetch("/leads/" + bar.dataset.lead + "/etapa", { method: "POST", body: new FormData(bar) })

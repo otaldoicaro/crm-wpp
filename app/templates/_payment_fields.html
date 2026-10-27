@@ -1,15 +1,31 @@
-{# venda parcelada (recurso "pagamento_parcelado"): forma de pagamento, entrada e parcelas. Variável: lead #}
+{# venda parcelada (recurso "pagamento_parcelado"): à vista OU entrada + parcelas, um de cada vez.
+   Variáveis: lead; with_value=True (topo da conversa) põe aqui o valor da venda, como "valor à vista" #}
+{% set parcelado = lead.pay_mode == "parcelado" %}
 <span class="pay-fields">
-  <label>Pagamento
-    <select name="pay_mode" class="pay-mode">
-      <option value="" {{ "selected" if not lead.pay_mode }}>—</option>
-      <option value="avista" {{ "selected" if lead.pay_mode == "avista" }}>À vista</option>
-      <option value="parcelado" {{ "selected" if lead.pay_mode == "parcelado" }}>Parcelado</option>
-    </select>
-  </label>
-  <span class="pay-parcelado" {{ "hidden" if lead.pay_mode == "avista" }}>
-    <label>Entrada R$ <input name="down_payment" class="money" inputmode="decimal" autocomplete="off" placeholder="0 = sem entrada" value="{{ lead.down_payment|brl if lead.down_payment is not none else '' }}"></label>
-    <span class="pay-inst"><label>Parcelas <input name="installments" inputmode="numeric" autocomplete="off" placeholder="60" style="width:56px" value="{{ lead.installments or '' }}"></label>
-    <label>x R$ <input name="installment_value" class="money" inputmode="decimal" autocomplete="off" placeholder="valor" value="{{ lead.installment_value|brl if lead.installment_value else '' }}"></label></span>
+  <select name="pay_mode" class="pay-mode" title="Forma de pagamento" aria-label="Forma de pagamento">
+    <option value="" {{ "selected" if not lead.pay_mode }}>Pagamento…</option>
+    <option value="avista" {{ "selected" if lead.pay_mode == "avista" }}>À vista</option>
+    <option value="parcelado" {{ "selected" if parcelado }}>Parcelado</option>
+  </select>
+  {% if with_value %}
+  <label class="stage-value pay-avista" {{ "hidden" if parcelado }}>R$ <input name="deal_value" inputmode="decimal" autocomplete="off" placeholder="valor à vista" title="Valor à vista" {{ "disabled" if parcelado }} value="{{ ('%.2f'|format(lead.deal_value or lead.quoted_value)).replace('.', ',') if (lead.deal_value or lead.quoted_value) else '' }}"></label>
+  {% endif %}
+  <span class="pay-parcelado" {{ "hidden" if not parcelado }}>
+    <input name="down_payment" class="money" inputmode="decimal" autocomplete="off" placeholder="entrada R$" title="Entrada (0 = sem entrada)" value="{{ lead.down_payment|brl if lead.down_payment is not none else '' }}">
+    <span class="muted">+</span>
+    <input name="installments" inputmode="numeric" autocomplete="off" placeholder="nº" title="Quantidade de parcelas" value="{{ lead.installments or '' }}">
+    <span class="muted">x</span>
+    <input name="installment_value" class="money" inputmode="decimal" autocomplete="off" placeholder="parcela R$" title="Valor da parcela" value="{{ lead.installment_value|brl if lead.installment_value else '' }}">
   </span>
 </span>
+<script>
+// "Parcelado" mostra entrada + parcelas e esconde o valor à vista (e vice-versa)
+(function (box) {
+  var mode = box.querySelector(".pay-mode"), avista = box.querySelector(".pay-avista"), parc = box.querySelector(".pay-parcelado");
+  mode.addEventListener("change", function () {
+    var p = mode.value === "parcelado";
+    parc.hidden = !p;
+    if (avista) { avista.hidden = p; avista.querySelector("input").disabled = p; }
+  });
+})(document.currentScript.previousElementSibling);
+</script>

@@ -1098,7 +1098,7 @@ def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
         "comprovante": and_(Lead.receipt_status.in_(("pending", "auto")), Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
         "sem_motivo": and_(Lead.stage_id.in_([st.id for st in stages if st.is_lost]), or_(Lead.loss_reason.is_(None), Lead.loss_reason == "")),
         "interesse": (Lead.stage_id == getattr(funnel.negotiation_stage(stages), "id", None)
-                      if features.has(tenant, "interessados_negociando")  # ex.: seminovos: interessado = negociando/agendamento
+                      if features.has(tenant, "interessados_negociando") or features.has(tenant, "agendamentos")  # aba vira 📅 Agendamentos
                       else and_(Lead.interest_at.isnot(None), is_open)),
         # 💰 venda a confirmar: comprovante que o CRM não confirmou sozinho, ou "vou buscar / pago na entrega / pode separar"
         "venda": or_(and_(Lead.receipt_status.in_(("pending", "auto")), Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
@@ -1498,6 +1498,8 @@ def set_lead_stage(
         return JSONResponse({"ok": False, "error": "etapa não encontrada"}, status_code=404)
     try:
         value = _parse_brl(deal_value)
+        if value <= 0 and pay_mode == "parcelado" and features.has(tenant, "pagamento_parcelado"):
+            value = car_deal.form_total(down_payment, installments, installment_value, _parse_brl)  # entrada + parcelas
     except ValueError:
         return JSONResponse({"ok": False, "error": "valor inválido (use só números, ex: 1250,90)"}, status_code=400)
     if stage.is_won and value <= 0:

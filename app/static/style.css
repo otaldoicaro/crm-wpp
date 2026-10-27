@@ -971,15 +971,15 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .ap audio { display: none; }
 
 /* ---------- venda parcelada (recurso "pagamento_parcelado"): Pagamento · Entrada · 60 x R$ ---------- */
-.pay-fields { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.pay-fields { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pay-fields label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.pay-parcelado { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
-.pay-parcelado[hidden] { display: none !important; }
-.pay-fields input.money { width: 96px; }
-.pay-fields input[name=installments] { width: 50px !important; text-align: center; }
-.stage-bar .pay-fields input { width: 96px; }
+.pay-parcelado { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.pay-parcelado[hidden], .pay-avista[hidden] { display: none !important; }
+.pay-fields input.money { width: 92px; }
+.pay-fields input[name=installments] { width: 42px !important; text-align: center; }
+.stage-bar .pay-fields .pay-avista input { width: 110px; }
+.stage-bar .pay-parcelado.needed input { border-color: var(--danger); background: var(--danger-bg); }
 .pay-detail { display: flex; flex-wrap: wrap; gap: 8px; }
-.pay-inst { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .owner-history ul { margin: 0; padding-left: 18px; font-size: .84rem; } .owner-history li { margin: 3px 0; }
 .seller-filter { display: flex; flex-wrap: wrap; gap: 10px 18px; }
 .top-sold { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 14px; }
