@@ -31,6 +31,9 @@
     </nav>
     <div class="user">
       {% if not user.read_only %}
+      {% if has_feature(tenant, "agendamentos") %}{% set ag = agenda_count(tenant, user) %}
+      <a href="/agendamentos" class="nav-recados {{ 'active' if active_nav == 'agenda' else '' }}" title="Visitas agendadas na loja">📅 Agendamentos{% if ag %}<span class="nav-badge">{{ ag }}</span>{% endif %}</a>
+      {% endif %}
       {% set rec = recados_pending(user) %}
       <a href="/recados" class="nav-recados {{ 'active' if active_nav == 'recados' else '' }}" title="Recados entre admin e vendedor sobre os leads">💬 Recados{% if rec %}<span class="nav-badge">{{ rec }}</span>{% endif %}</a>
       {% if user.role == "agent" %}

@@ -1,0 +1,25 @@
+{# 📅 janela "Agendar visita" (recurso "agendamentos"). Variáveis: lead, voltar. Abre pelo botão 📅 Agendar
+   ou ao escolher a etapa Agendamento (services/agenda.py) #}
+{% set appt = agenda_active(lead) %}{% set agenda_prefill = agenda_prefill_for(lead) %}{% set agenda_texts = agenda_texts_for(tenant) %}
+{% set local_at = appt.at|hora("%Y-%m-%d") if appt else "" %}
+<dialog class="agenda-dialog" id="agendaDialog-{{ lead.id }}">
+  <form method="post" action="/leads/{{ lead.id }}/agendar">
+    <input type="hidden" name="voltar" value="{{ voltar }}">
+    <h3>📅 {{ "Remarcar" if appt else "Agendar" }} visita · {{ lead.name or lead.phone }}</h3>
+    <label class="f">Carro de interesse <input name="carro" maxlength="200" value="{{ appt.car if appt else agenda_prefill.car }}" placeholder="ex: HB20 Comfort 2020"></label>
+    <label class="f">Possível forma de pagamento
+      <input name="pagamento" list="agendaPagamentos" maxlength="120" value="{{ appt.payment if appt else agenda_prefill.payment }}" placeholder="escolha ou escreva"></label>
+    <datalist id="agendaPagamentos">{% for p in agenda_payments %}<option value="{{ p }}">{% endfor %}</datalist>
+    <div class="grid2">
+      <label class="f">Data <input type="date" name="data" required value="{{ local_at }}"></label>
+      <label class="f">Horário <input type="time" name="hora" required value="{{ appt.at|hora('%H:%M') if appt else '' }}"></label>
+    </div>
+    <label class="check"><input type="checkbox" name="confirmar" value="1" {{ "checked" if not appt }} onchange="this.form.texto_confirmacao.hidden = !this.checked"> Mandar confirmação agora pelo WhatsApp</label>
+    <textarea name="texto_confirmacao" rows="5" {{ "hidden" if appt }}>{{ agenda_texts.confirm }}</textarea>
+    <p class="muted hint">{nome}, {data}, {hora}, {carro} e {vendedor} são preenchidos na hora de enviar.</p>
+    {% if tenant.agenda_reminder_hours %}
+    <label class="check"><input type="checkbox" name="lembrete" value="1" {{ "checked" if (appt.reminder if appt else True) }}> Mandar lembrete no dia, {{ tenant.agenda_reminder_hours }}h antes <span class="muted" style="font-weight:400">(se a visita for daqui a mais de {{ tenant.agenda_reminder_hours }}h)</span></label>
+    {% endif %}
+    <div class="agenda-actions"><button type="button" class="btn ghost small" data-close>Cancelar</button><button class="btn small" type="submit">Salvar agendamento</button></div>
+  </form>
+</dialog>

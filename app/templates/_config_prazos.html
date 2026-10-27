@@ -58,6 +58,17 @@
   <p class="muted">{nome} = 1º nome do cliente (ex: Renato). Sem nome, a 2ª começa com “Opa, tudo bem? Como parece…”.</p>
   {% endif %}
 
+  {% if "agendamentos" in features_on %}
+  {% set at = agenda_texts_for(tenant) %}
+  <h3 id="agendamentos">📅 Agendamentos</h3>
+  <p class="muted">Mensagens que vão pro cliente quando o vendedor agenda uma visita (ele pode desmarcar ou editar na hora). Dá pra usar {nome}, {data}, {hora}, {carro} e {vendedor}.</p>
+  <label style="display:block;margin-top:6px"><b>Confirmação</b> — sai na hora de agendar:</label>
+  <textarea name="agenda_confirm_text" rows="5" style="width:100%;max-width:560px">{{ at.confirm }}</textarea>
+  <label style="display:block;margin-top:6px"><b>Lembrete no dia</b> — sai
+    <input name="agenda_reminder_hours" type="number" min="0" max="12" style="width:60px" value="{{ tenant.agenda_reminder_hours }}"> horas antes da visita (0 = sem lembrete):</label>
+  <textarea name="agenda_reminder_text" rows="3" style="width:100%;max-width:560px">{{ at.reminder }}</textarea>
+  {% endif %}
+
   <h3 id="recursos">⚙️ Recursos deste CRM</h3>
   <input type="hidden" name="features_form" value="1">
   {% for key, label in feature_list.items() %}

@@ -3,6 +3,7 @@
 {% block title %}Pipeline{% endblock %}
 {% block body_attrs %}data-keep-window data-keep-scope="pipeline:{{ date_range }}:{{ date_from }}:{{ date_to }}:{{ seller }}:{{ 1 if atrasados }}:{{ ordem }}"{% endblock %}
 {% block content %}
+{% set agenda_on = has_feature(tenant, "agendamentos") %}
 {% set qs = "date_range=" ~ date_range ~ "&date_from=" ~ date_from ~ "&date_to=" ~ date_to ~ "&seller=" ~ seller %}
 <div class="kanban-toolbar">
   <div>
@@ -92,6 +93,7 @@
           {% if lead.deal_value %}<span class="value-badge">R$ {{ "%.0f"|format(lead.deal_value) }}</span>{% endif %}
           {{ m.calls_badge(lead) }}
         </div>
+        {% if agenda_on %}{{ m.agenda_chip(lead) }}{% endif %}
         {% if lead.attribution and lead.attribution.utm_campaign %}
           <div class="campaign" title="{{ lead.attribution.utm_campaign }}">{{ lead.attribution.utm_campaign }}</div>
         {% endif %}

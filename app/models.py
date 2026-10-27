@@ -70,6 +70,11 @@ class Tenant(Base):
     autofu_since: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     autofu_text1: Mapped[str] = mapped_column(Text, default="")
     autofu_text2: Mapped[str] = mapped_column(Text, default="")
+    # 📅 agendamentos (recurso "agendamentos", services/agenda.py): textos pro cliente (vazio = padrão do ramo)
+    # e com quantas horas de antecedência sai o lembrete (0 = sem lembrete)
+    agenda_confirm_text: Mapped[str] = mapped_column(Text, default="")
+    agenda_reminder_text: Mapped[str] = mapped_column(Text, default="")
+    agenda_reminder_hours: Mapped[int] = mapped_column(Integer, default=4)
     # horário comercial (tempo de atendimento "só em horário comercial"), ex:
     # "seg-sex 07:30-17:30; sab 09:00-16:00" (dia sem horário = fechado). Configurável em /prazos
     business_hours: Mapped[str] = mapped_column(String(200), default="seg-sex 07:30-17:30; sab 09:00-16:00")
@@ -587,3 +592,29 @@ class Notification(Base):
     url: Mapped[str] = mapped_column(String(300), default="")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now, index=True)
     seen_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class Appointment(Base):
+    """📅 Visita agendada (recurso "agendamentos"): quem vem, ver qual carro, como pretende pagar e
+    quando. Na hora marcada vira "a confirmar"; 6h depois sem ninguém marcar, "prazo atrasado"."""
+
+    __tablename__ = "appointments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    lead_id: Mapped[str] = mapped_column(ForeignKey("leads.id"), index=True)
+    user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)  # vendedor que atende
+    created_by_user_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    at: Mapped[datetime.datetime] = mapped_column(DateTime, index=True)  # UTC
+    car: Mapped[str] = mapped_column(String(200), default="")
+    payment: Mapped[str] = mapped_column(String(120), default="")
+    status: Mapped[str] = mapped_column(String(20), default="agendado", index=True)  # agendado | veio | nao_veio | cancelado
+    reminder: Mapped[bool] = mapped_column(Boolean, default=False)  # mandar lembrete no dia
+    confirm_sent_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    reminder_sent_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    alerted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)  # 🔔 aviso 10 min antes
+    done_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+
+    lead: Mapped["Lead"] = relationship()
+    user: Mapped[Optional["User"]] = relationship()

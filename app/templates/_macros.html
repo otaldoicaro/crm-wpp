@@ -95,3 +95,8 @@
 {# 📞 ligações do WhatsApp com esse cliente (feitas e recebidas, inclusive pelo celular): services/calls.py #}
 {% if lead.calls_total %}<span class="calls-badge" title="Ligações pelo WhatsApp com esse cliente (feitas e recebidas, também pelo celular){{ ' · última em ' ~ (lead.last_call_at|hora('%d/%m %H:%M')) if lead.last_call_at }}">📞 {{ lead.calls_total }} {{ "ligação" if lead.calls_total == 1 else "ligações" }} · {{ lead.calls_answered }} atendida{{ "s" if lead.calls_answered != 1 }}{% if lead.calls_seconds %} · {{ call_duration(lead.calls_seconds) }} falando{% endif %}</span>{% endif %}
 {%- endmacro %}
+
+{% macro agenda_chip(lead) -%}
+{# 📅 visita em aberto (recurso "agendamentos"): quando, carro; a confirmar / prazo atrasado #}
+{% set a = agenda_active(lead) %}{% if a %}{% set st = agenda_state(a) %}<span class="agenda-chip {{ st }}" title="Visita agendada{{ ': ' ~ a.car if a.car }}{{ ' · ' ~ a.payment if a.payment }}">{% if st == "atrasado" %}⏰ Prazo atrasado · {% elif st == "a_confirmar" %}🟡 A confirmar · {% else %}📅 {% endif %}{{ agenda_when(a) }}{% if a.car %} · {{ a.car[:28] }}{% endif %}</span>{% endif %}
+{%- endmacro %}

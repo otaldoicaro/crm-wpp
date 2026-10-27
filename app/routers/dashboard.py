@@ -758,6 +758,17 @@ async def save_deadlines(
             if field in form:
                 value = str(form.get(field, "")).replace("\r\n", "\n").strip()
                 setattr(tenant, field, "" if value == default else value[:1500])
+        if "agenda_confirm_text" in form:  # 📅 textos dos agendamentos (vazio/igual ao padrão = padrão do ramo)
+            from app.services import agenda
+
+            defaults = agenda.texts(tenant)
+            for field, key in (("agenda_confirm_text", "confirm_default"), ("agenda_reminder_text", "reminder_default")):
+                value = str(form.get(field, "")).replace("\r\n", "\n").strip()
+                setattr(tenant, field, "" if value == defaults[key] else value[:1500])
+            try:
+                tenant.agenda_reminder_hours = max(0, min(12, int(str(form.get("agenda_reminder_hours") or "0"))))
+            except ValueError:
+                pass
         if form.get("features_form") == "1":
             was_on = autofollow.is_on(tenant)
             tenant.features = features.store(form.getlist("feature"))
@@ -2346,6 +2357,123 @@ def recados_page(
         "selected": selected, "thread": comments.thread(db, selected) if selected else [],
         "open_count": len(comments.threads_for(db, user)) if arquivados else len(threads),
     })
+
+
+@router.get("/agendamentos", response_class=HTMLResponse)
+def agenda_page(
+    request: Request,
+    aba: str = "proximos",
+    vendedor: str = "",
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """📅 Agendamentos (recurso "agendamentos"): próximos por dia, a confirmar (passou da hora, até 6h),
+    atrasados (6h+ sem ninguém marcar se o cliente veio) e concluídos."""
+    from app.models import Appointment
+    from app.services import agenda
+
+    if not features.has(tenant, agenda.FEATURE):
+        raise HTTPException(status_code=404, detail="Agendamentos não está ligado neste CRM")
+    now = datetime.datetime.utcnow()
+    query = agenda.visible(db, tenant, user)
+    if user.role == "admin" and vendedor:
+        query = query.filter(Appointment.user_id == vendedor)
+    open_rows = query.filter(Appointment.status == "agendado").order_by(Appointment.at).all()
+    groups = {"proximos": [], "a_confirmar": [], "atrasado": []}
+    for appt in open_rows:
+        groups["proximos" if agenda.state(appt, now) == "agendado" else agenda.state(appt, now)].append(appt)
+    done = (query.filter(Appointment.status.in_(("veio", "nao_veio", "cancelado")), Appointment.at >= now - datetime.timedelta(days=60))
+            .order_by(Appointment.at.desc()).limit(200).all()) if aba == "concluidos" else []
+    today = to_local(now).date()
+    days = []
+    for appt in groups["proximos"]:
+        day = to_local(appt.at).date()
+        if not days or days[-1][0] != day:
+            days.append((day, []))
+        days[-1][1].append(appt)
+    return templates.TemplateResponse(request, "agendamentos.html", {
+        "tenant": tenant, "user": user, "active_nav": "agenda", "aba": aba, "vendedor": vendedor,
+        "groups": groups, "days": [(agenda.day_title(d, today), items) for d, items in days], "done": done,
+        "sellers": team_members(db, tenant.id, only_active=True) if user.role == "admin" else [],
+        "agenda": agenda, "now": now, "texts": agenda.texts(tenant),
+    })
+
+
+@router.post("/leads/{lead_id}/agendar")
+def schedule_visit(
+    lead_id: str,
+    data: str = Form(...),
+    hora: str = Form(...),
+    carro: str = Form(""),
+    pagamento: str = Form(""),
+    confirmar: str = Form(""),
+    texto_confirmacao: str = Form(""),
+    lembrete: str = Form(""),
+    voltar: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """📅 Agenda (ou remarca) a visita do lead: vai pra Agendamento e, se marcado, a confirmação sai pro cliente."""
+    from app.models import Appointment
+    from app.services import agenda
+
+    if not features.has(tenant, agenda.FEATURE):
+        raise HTTPException(status_code=404, detail="Agendamentos não está ligado neste CRM")
+    lead = _lead_for_action(db, tenant, user, lead_id)
+    back = voltar if voltar.startswith("/") else f"/inbox/{lead.id}"
+    when = agenda.parse_when(data, hora)
+    if when is None:
+        return RedirectResponse(url=back.split("?")[0] + "?erro=" + quote("Preencha a data e o horário da visita."), status_code=302)
+    appt = agenda.active_for(db, lead.id)
+    moved = appt is not None and appt.at != when
+    before = agenda.when_label(appt) if appt is not None else ""
+    if appt is None:
+        appt = Appointment(tenant_id=tenant.id, lead_id=lead.id, created_by_user_id=user.id)
+        db.add(appt)
+    appt.at, appt.car, appt.payment = when, carro.strip()[:200], pagamento.strip()[:120]
+    appt.user_id = lead.assigned_user_id or user.id
+    # lembrete só faz sentido se a visita está mais longe que a antecedência (senão sairia junto da confirmação)
+    appt.reminder = bool(lembrete) and when - datetime.datetime.utcnow() > datetime.timedelta(hours=tenant.agenda_reminder_hours or 0)
+    if moved:
+        appt.alerted_at = appt.reminder_sent_at = None  # horário novo: avisa e lembra de novo
+    target = funnel.negotiation_stage(funnel._stages(db, tenant.id))
+    if target is not None and lead.stage and not (lead.stage.is_won or lead.stage.is_lost) and lead.stage_id != target.id:
+        funnel.set_stage(lead, target)
+    db.flush()
+    db.refresh(appt)
+    _add_note(db, lead, (f"📆 Visita remarcada de {before} para {agenda.when_label(appt)}" if moved else f"📅 Visita agendada para {agenda.when_label(appt)}")
+              + (f" ({appt.car})" if appt.car else "") + f" · por {user.name}")
+    db.commit()
+    if confirmar:
+        text = agenda.compose(texto_confirmacao.replace("\r\n", "\n").strip() or agenda.texts(tenant)["confirm"], tenant, appt, lead)
+        if agenda.send(db, tenant, lead, appt, text, "Confirmação da visita"):
+            appt.confirm_sent_at = datetime.datetime.utcnow()
+        db.commit()
+    return RedirectResponse(url=back, status_code=302)
+
+
+@router.post("/agendamentos/{appt_id}/status")
+def agenda_status(
+    appt_id: str,
+    acao: str = Form(...),
+    voltar: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """✅ Veio / ❌ Não veio / cancelar."""
+    from app.models import Appointment
+    from app.services import agenda
+
+    appt = agenda.visible(db, tenant, user).filter(Appointment.id == appt_id).first()
+    if appt is None or acao not in ("veio", "nao_veio", "cancelado"):
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+    appt.status, appt.done_at = acao, datetime.datetime.utcnow()
+    _add_note(db, appt.lead, f"📅 Visita de {agenda.when_label(appt)}: {agenda.DONE_LABEL[acao]} · marcado por {user.name}")
+    db.commit()
+    return RedirectResponse(url=voltar if voltar.startswith("/") else "/agendamentos", status_code=302)
 
 
 @router.post("/leads/{lead_id}/comentarios")

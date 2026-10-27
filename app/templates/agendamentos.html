@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Agendamentos{% endblock %}
+{% block content %}
+{% macro card(a) %}
+{% set st = agenda.state(a, now) %}
+{% set lead = a.lead %}
+<div class="agenda-card {{ st }}">
+  <div class="agenda-when"><b>{{ agenda.when_label(a, now) if st != "agendado" else (a.at|hora("%H:%M")) }}</b>
+    {% if st == "atrasado" %}<span class="agenda-tag late">⏰ Prazo atrasado · Cliente veio?</span>
+    {% elif st == "a_confirmar" %}<span class="agenda-tag confirm">🟡 Visita a confirmar · Cliente veio?</span>
+    {% elif st == "agendado" and (a.at - now).total_seconds() <= 3600 %}<span class="agenda-tag soon">🔔 em {{ ((a.at - now).total_seconds() // 60)|int }} min</span>
+    {% elif st in agenda.DONE_LABEL %}<span class="agenda-tag done">{{ agenda.DONE_LABEL[st] }}</span>{% endif %}
+  </div>
+  <div class="agenda-row"><span>Cliente</span><b>{{ lead.name or lead.phone }}</b></div>
+  {% if a.car %}<div class="agenda-row"><span>Carro</span>{{ a.car }}</div>{% endif %}
+  {% if a.payment %}<div class="agenda-row"><span>Pagamento</span>{{ a.payment }}</div>{% endif %}
+  <div class="muted agenda-who">{{ "Vendedor: " ~ a.user.name if a.user else "sem vendedor" }}{% if a.confirm_sent_at %} · ✉️ confirmação enviada{% endif %}{% if a.reminder_sent_at %} · lembrete enviado {{ a.reminder_sent_at|hora("%H:%M") }}{% elif a.reminder and st == "agendado" and tenant.agenda_reminder_hours %} · lembrete {{ tenant.agenda_reminder_hours }}h antes{% endif %}{% if st == "a_confirmar" %} · vira “Prazo atrasado” às {{ (a.at + agenda.CONFIRM_AFTER)|hora("%H:%M") }}{% endif %}</div>
+  {% if a.status == "agendado" %}
+  <div class="agenda-actions">
+    {% if st != "agendado" %}
+    <form method="post" action="/agendamentos/{{ a.id }}/status"><input type="hidden" name="voltar" value="/agendamentos?aba={{ aba }}"><button class="btn small" name="acao" value="veio">✅ Veio</button></form>
+    <form method="post" action="/agendamentos/{{ a.id }}/status"><input type="hidden" name="voltar" value="/agendamentos?aba={{ aba }}"><button class="btn ghost small" name="acao" value="nao_veio">❌ Não veio</button></form>
+    {% endif %}
+    <button type="button" class="btn ghost small" data-open="agendaDialog-{{ lead.id }}">📆 Remarcar</button>
+    <a class="btn ghost small" href="{{ '/inbox/' if lead.conversations else '/leads/' }}{{ lead.id }}">💬 Abrir conversa</a>
+    {% if st == "agendado" %}<form method="post" action="/agendamentos/{{ a.id }}/status" onsubmit="return confirm('Cancelar este agendamento?')"><input type="hidden" name="voltar" value="/agendamentos?aba={{ aba }}"><button class="btn ghost small" name="acao" value="cancelado">Cancelar</button></form>{% endif %}
+  </div>
+  {% with voltar="/agendamentos?aba=" ~ aba %}{% include "_agenda_dialog.html" %}{% endwith %}
+  {% endif %}
+</div>
+{% endmacro %}
+
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">📅 Agendamentos</h2>
+    <span class="muted">Visitas marcadas na loja. Na hora marcada vira “a confirmar”; 6h depois sem ninguém marcar se o cliente veio, “prazo atrasado”.</span>
+  </div>
+  {% if sellers %}
+  <form method="get" action="/agendamentos"><input type="hidden" name="aba" value="{{ aba }}">
+    <select name="vendedor" onchange="this.form.submit()"><option value="">Todos os vendedores</option>{% for s in sellers %}<option value="{{ s.id }}" {{ "selected" if vendedor == s.id }}>{{ s.name }}</option>{% endfor %}</select>
+  </form>
+  {% endif %}
+</div>
+<nav class="dash-tabs">
+  {% set q = "&vendedor=" ~ vendedor if vendedor else "" %}
+  <a class="dash-tab {{ 'on' if aba == 'proximos' }}" href="/agendamentos?aba=proximos{{ q }}">Próximos ({{ groups.proximos|length }})</a>
+  <a class="dash-tab {{ 'on' if aba == 'confirmar' }}" href="/agendamentos?aba=confirmar{{ q }}">🟡 A confirmar ({{ groups.a_confirmar|length }})</a>
+  <a class="dash-tab {{ 'on' if aba == 'atrasados' }} {{ 'late' if groups.atrasado }}" href="/agendamentos?aba=atrasados{{ q }}">⏰ Atrasados ({{ groups.atrasado|length }})</a>
+  <a class="dash-tab {{ 'on' if aba == 'concluidos' }}" href="/agendamentos?aba=concluidos{{ q }}">Concluídos</a>
+</nav>
+
+{% if aba == "proximos" %}
+  {% if groups.atrasado or groups.a_confirmar %}<p class="agenda-alert">⚠️ {{ (groups.atrasado + groups.a_confirmar)|length }} visita(s) já passaram do horário e esperam alguém marcar se o cliente veio. <a href="/agendamentos?aba={{ 'atrasados' if groups.atrasado else 'confirmar' }}{{ q }}">Ver</a></p>{% endif %}
+  {% for title, items in days %}
+  <h3 class="agenda-day">{{ title }}</h3>
+  <div class="agenda-cards">{% for a in items %}{{ card(a) }}{% endfor %}</div>
+  {% else %}
+  <p class="muted card">Nenhuma visita agendada daqui pra frente. Pra agendar, abra a conversa do lead e clique em 📅 Agendar (ou mude a etapa pra Agendamento).</p>
+  {% endfor %}
+{% elif aba == "confirmar" %}
+  <div class="agenda-cards">{% for a in groups.a_confirmar %}{{ card(a) }}{% else %}<p class="muted card">Nenhuma visita esperando confirmação. 🎉</p>{% endfor %}</div>
+{% elif aba == "atrasados" %}
+  <div class="agenda-cards">{% for a in groups.atrasado|reverse %}{{ card(a) }}{% else %}<p class="muted card">Nenhum prazo atrasado. 🎉</p>{% endfor %}</div>
+{% else %}
+  <div class="agenda-cards">{% for a in done %}{{ card(a) }}{% else %}<p class="muted card">Nenhuma visita concluída nos últimos 60 dias.</p>{% endfor %}</div>
+{% endif %}
+<script src="/static/agenda.js?v={{ asset_version }}"></script>
+{% endblock %}

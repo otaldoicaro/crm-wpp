@@ -64,6 +64,10 @@ SEGMENTS = {
         # 🤖 follow-up automático (24h sem resposta): vazio = autofollow.DEFAULT_TEXT1 (fala de peça)
         "autofu_text1": "Oi! Passando pra saber se você ainda tem interesse no carro que conversamos. 🚗\n\n"
                         "🙂 Se tiver qualquer dúvida ou quiser agendar uma visita, me chama aqui que dou continuidade no atendimento.",
+        # 📅 agendamentos ({nome}, {data}, {hora}, {carro}, {empresa}, {vendedor}); linha com dado vazio sai
+        "agenda_confirm_text": "{nome}, sua visita está confirmada! 🚗\n📅 {data} às {hora}\n🚘 {carro}\n"
+                               "Qualquer imprevisto, é só me avisar por aqui 😉",
+        "agenda_reminder_text": "Oi {nome}! Passando pra lembrar da sua visita hoje às {hora} pra ver o {carro}. Te espero aqui! 😉",
         "auto_hello_stage": "Em atendimento",  # formulário de carro não diz se vai comprar: o time já falou
     },
 }

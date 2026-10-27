@@ -51,6 +51,40 @@ templates.env.globals["has_feature"] = features.has  # recursos ligados só pra 
 from app.services import calls as _calls  # noqa: E402
 
 templates.env.globals["call_duration"] = _calls.duration  # 📞 "2:10", "1h05"
+
+
+def _agenda_active(lead):
+    """📅 Visita em aberto deste lead (ou None)."""
+    from sqlalchemy.orm import object_session
+
+    from app.services import agenda
+
+    session = object_session(lead) if lead is not None else None
+    return agenda.active_for(session, lead.id) if session is not None else None
+
+
+def _agenda_count(tenant, user) -> int:
+    from app.db import SessionLocal
+    from app.services import agenda
+
+    db = SessionLocal()
+    try:
+        return agenda.pending_count(db, tenant, user)
+    except Exception:
+        return 0
+    finally:
+        db.close()
+
+
+from app.services import agenda as _agenda  # noqa: E402
+
+templates.env.globals["agenda_active"] = _agenda_active
+templates.env.globals["agenda_count"] = _agenda_count  # número da aba 📅 Agendamentos
+templates.env.globals["agenda_prefill_for"] = _agenda.prefill
+templates.env.globals["agenda_texts_for"] = _agenda.texts
+templates.env.globals["agenda_payments"] = _agenda.PAYMENTS
+templates.env.globals["agenda_state"] = _agenda.state
+templates.env.globals["agenda_when"] = _agenda.when_label
 templates.env.globals["pay_terms"] = car_deal.describe  # "Entrada R$ ... + 60x R$ ..."
 templates.env.filters["brl"] = lambda v: f"{float(v or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 templates.env.globals["sug_current"] = suggestions.current  # 💡 sugestão de etapa pendente

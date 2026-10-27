@@ -97,6 +97,7 @@
     <div class="inbox-thread-head">
       <a href="/inbox" class="back-btn" aria-label="Voltar">←</a>
       {% set closed = selected_lead.stage and (selected_lead.stage.is_won or selected_lead.stage.is_lost) %}
+      {% set agenda_on = has_feature(tenant, "agendamentos") %}
       {# esquerda: quem é + etapa/valor + avisos que pedem ação #}
       <div class="head-main">
         <div class="head-who">
@@ -111,7 +112,7 @@
         <form class="stage-bar" id="stageBar" data-lead="{{ selected_lead.id }}">
           <label>Etapa
             <select name="stage_id">
-              {% for st in stages %}<option value="{{ st.id }}" data-won="{{ 1 if st.is_won else 0 }}" data-lost="{{ 1 if st.is_lost else 0 }}" {{ "selected" if selected_lead.stage_id == st.id else ("disabled" if auto_stage(st)) }}>{{ st.name }}{{ " (automática)" if auto_stage(st) }}</option>{% endfor %}
+              {% for st in stages %}<option value="{{ st.id }}" data-won="{{ 1 if st.is_won else 0 }}" data-lost="{{ 1 if st.is_lost else 0 }}" data-agenda="{{ 1 if agenda_on and st.name == 'Agendamento' else 0 }}" {{ "selected" if selected_lead.stage_id == st.id else ("disabled" if auto_stage(st)) }}>{{ st.name }}{{ " (automática)" if auto_stage(st) }}</option>{% endfor %}
             </select>
           </label>
           {% if has_feature(tenant, "pagamento_parcelado") %}{% with lead=selected_lead, with_value=True %}{% include "_payment_fields.html" %}{% endwith %}{% else %}
@@ -122,12 +123,14 @@
           <span class="stage-status muted"></span>
         </form>
         {% endif %}
+        {% if agenda_on and not selected_lead.is_group %}{% with lead=selected_lead, voltar="/inbox/" ~ selected_lead.id %}{% include "_agenda_dialog.html" %}{% endwith %}{% endif %}
         {% if not selected_lead.is_group %}{% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_suggest_banner.html" %}{% include "_next_step.html" %}{% endwith %}{% endif %}
       </div>
 
       {# direita: resumo do lead em etiquetas + ações (o que é usado menos fica no "⋯ Mais") #}
       <div class="head-summary">
         <div class="head-chips">
+          {% if agenda_on %}{{ m.agenda_chip(selected_lead) }}{% endif %}
           {{ m.platform_badge(platform, platform_label) }}
           {% if not selected_lead.is_group %}
           {% if selected_lead.tag %}<span class="tag-pill">{{ tag_label[selected_lead.tag] }}</span>{% endif %}
@@ -158,6 +161,7 @@
             <button class="btn ghost small" type="submit" title="O cliente quer comprar de novo">+ Novo negócio</button>
           </form>
           {% endif %}
+          {% if agenda_on and not selected_lead.is_group %}<button type="button" class="btn ghost small" data-open="agendaDialog-{{ selected_lead.id }}" title="Marcar (ou remarcar) a visita do cliente na loja">📅 Agendar</button>{% endif %}
           {% if not selected_lead.is_group %}<a class="btn ghost small" href="/leads/{{ selected_lead.id }}?voltar=inbox" title="Ficha completa: dados, origem, histórico de negócios, pagamento">📋 Ver status do lead</a>
           <a class="btn ghost small recado-btn {{ 'has' if lead_recado_open }}" href="/recados?lead={{ selected_lead.id }}" title="Recados entre admin e vendedor sobre este lead (não vão pro WhatsApp)">💬 Recado{% if lead_recado_open %}<span class="nav-badge">!</span>{% endif %}</a>{% endif %}
           <details class="more-menu">
@@ -280,6 +284,14 @@
     status.textContent = "";
   }
   fields.forEach(function (el) { el.addEventListener("input", sync); el.addEventListener("change", sync); });
+  // 📅 escolheu "Agendamento": abre a janela de agendar (salvar lá já muda a etapa); cancelar volta a etapa
+  sel.addEventListener("change", function () {
+    if (opt().dataset.agenda !== "1") return;
+    var dlg = document.getElementById("agendaDialog-" + bar.dataset.lead); if (!dlg) return;
+    var before = initial ? initial.split("|")[0] : "";
+    dlg.showModal();
+    dlg.addEventListener("close", function () { if (before && sel.value !== before) { sel.value = before; sync(); } }, { once: true });
+  });
   sel.addEventListener("change", function () { if (opt().dataset.won === "1" && !hasValue()) (value.disabled ? bar.installments : value).focus(); });
   bar.addEventListener("submit", function (e) {
     e.preventDefault();
@@ -964,4 +976,5 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   document.getElementById("qrToggle").addEventListener("click", function () { if (field.qrOpen) field.qrOpen(); });
 })();
 </script>
+<script src="/static/agenda.js?v={{ asset_version }}"></script>
 {% endblock %}
