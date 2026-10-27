@@ -62,7 +62,7 @@ def kind_for_stage(stage, stages) -> str:
 
     if stage.is_won:
         return "won"
-    negotiation = funnel.stage_named(stages, funnel.NEGOTIATION_NAME, "Negociação", "Negociacao", "Oportunidade")
+    negotiation = funnel.negotiation_stage(stages)
     return "opportunity" if negotiation is not None and stage.id == negotiation.id else ""
 
 

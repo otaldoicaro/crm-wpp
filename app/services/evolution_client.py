@@ -22,7 +22,7 @@ from app.config import EVOLUTION_API_KEY, EVOLUTION_API_URL, EVOLUTION_WEBHOOK_T
 logger = logging.getLogger("evolution_client")
 
 # MESSAGES_UPDATE: só pra saber quando o vendedor leu a mensagem do cliente no celular
-WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE", "CONTACTS_UPSERT"]
+WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE", "CONTACTS_UPSERT", "CALL"]
 
 
 class EvolutionError(Exception):
@@ -100,6 +100,32 @@ def set_webhook(instance: str) -> None:
             }
         },
     )
+
+
+def refresh_webhooks(delay_seconds: int = 60) -> None:
+    """Um minuto depois do start: regrava o webhook de todos os WhatsApps conectados, pra valer a
+    lista de eventos desta versão (ex: 📞 CALL) sem precisar reconectar nenhum número."""
+    import threading
+
+    if not EVOLUTION_API_URL:
+        return
+
+    def run():
+        from app.db import SessionLocal
+        from app.models import WhatsAppNumber
+
+        with SessionLocal() as db:
+            instances = [n.evolution_instance for n in db.query(WhatsAppNumber).filter(
+                WhatsAppNumber.provider == "evolution", WhatsAppNumber.is_active.is_(True)) if n.evolution_instance]
+        for instance in instances:
+            try:
+                set_webhook(instance)
+            except Exception as exc:  # instância apagada no Evolution etc.: segue com as outras
+                logger.warning("webhook de %s não atualizou: %s", instance, exc)
+
+    timer = threading.Timer(delay_seconds, run)
+    timer.daemon = True
+    timer.start()
 
 
 def connect(instance: str, phone_digits: str = "") -> dict:

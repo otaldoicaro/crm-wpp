@@ -192,6 +192,7 @@ label { font-size: .85rem; color: var(--muted); font-weight: 600; }
 }
 .msg-time { font-size: .65rem; color: var(--muted); margin-top: 3px; }
 .msg-bubble.out + .msg-time { text-align: right; }
+.msg-time .msg-by { font-weight: 700; padding: 0 5px; border-radius: 6px; background: var(--panel-3); }
 .inbox-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); }
 .reply-box { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); }
 .reply-box input[type=text] { flex: 1; border-radius: 20px; padding: 11px 16px; }

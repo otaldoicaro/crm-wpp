@@ -225,7 +225,17 @@ def _other_text(message: dict) -> str:
         return "🖼️ Figurinha animada (abre só no celular)"
     if "stickerPackMessage" in message:
         return "🖼️ Pacote de figurinhas"
-    if "call" in message or "callLogMesssage" in message or "scheduledCallCreationMessage" in message:
+    if "callLogMesssage" in message:  # registro da ligação (é assim mesmo, com 3 "s")
+        log = message["callLogMesssage"] or {}
+        outcome = {"CONNECTED": "atendida", "MISSED": "não atendida", "REJECTED": "recusada", "FAILED": "não completou"}.get(
+            str(log.get("callOutcome") or "").upper(), "")
+        try:
+            secs = int(log.get("durationSecs") or 0)
+        except (TypeError, ValueError):
+            secs = 0
+        parts = [p for p in (outcome, f"{secs // 60}:{secs % 60:02d}" if secs else "") if p]
+        return ("📹 Chamada de vídeo" if log.get("isVideo") else "📞 Ligação pelo WhatsApp") + (" · " + " · ".join(parts) if parts else "")
+    if "call" in message or "scheduledCallCreationMessage" in message:
         return "📞 Ligação pelo WhatsApp"
     if "requestPhoneNumberMessage" in message:
         return "📱 Pediu seu número de telefone"
@@ -534,6 +544,11 @@ def _process_event_db(db: Session, payload: dict) -> list:
         _apply_saved_names(db, number, data)
         return []
 
+    if event == "call":
+        for call in data if isinstance(data, list) else [data]:
+            _apply_call(db, number, call)
+        return []
+
     if event != "messages.upsert":
         return []
 
@@ -585,6 +600,41 @@ def _handle_message(db: Session, number: WhatsAppNumber, item: dict):
         referral=_referral_from_context(context_info),
         secret=secret,
     ), seconds), context_info)
+
+
+CALL_STATUS = {"offer": "tocando…", "ringing": "tocando…", "accept": "atendida", "reject": "recusada",
+               "timeout": "não atendida", "terminate": "encerrada"}
+
+
+def _apply_call(db: Session, number: WhatsAppNumber, call: dict) -> None:
+    """📞 Ligação que o cliente fez pro WhatsApp do vendedor (evento CALL do Evolution): vira um
+    registro na conversa, atualizado a cada mudança (tocando → atendida/não atendida). Só de
+    quem já é lead; o WhatsApp não avisa das ligações que o vendedor faz pelo celular."""
+    from app.services.lead_match import find_lead_by_phone
+
+    call_id, jid = str(call.get("id") or ""), str(call.get("from") or call.get("chatId") or "")
+    if not call_id or not jid or call.get("isGroup") or jid.endswith("@g.us"):
+        return
+    phone = _phone_from_key({"remoteJid": jid}, call, db, number)
+    lead = find_lead_by_phone(db, number.tenant_id, phone) if phone else None
+    if lead is None or lead.is_group:
+        return
+    conversation = (db.query(Conversation).filter(Conversation.lead_id == lead.id, Conversation.whatsapp_number_id == number.id).first()
+                    or lead.active_conversation)
+    if conversation is None:
+        return
+    status = CALL_STATUS.get(str(call.get("status") or "").lower(), "")
+    kind = "📹 Chamada de vídeo" if call.get("isVideo") else "📞 Ligação"
+    body = f"{kind} do cliente pelo WhatsApp {number.label}" + (f" · {status}" if status else "")
+    wa_id = f"call:{call_id}"[:120]
+    record = db.query(Message).filter(Message.wa_message_id == wa_id).first()
+    if record is None:
+        record = Message(conversation_id=conversation.id, direction="note", wa_message_id=wa_id, body=body)
+    elif status in ("tocando…", "encerrada") and "·" in record.body and "tocando" not in record.body:
+        return  # já sabe se foi atendida; "encerrada" não diz mais nada
+    record.body = body
+    db.add(record)
+    db.commit()
 
 
 def _audio_seconds(message: dict) -> int:

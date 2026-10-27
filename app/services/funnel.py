@@ -19,6 +19,10 @@ from app.models import Lead, PipelineStage, Tenant
 logger = logging.getLogger("funnel")
 
 NEGOTIATION_NAME = "Negociando"
+# a mesma etapa com outros nomes; "Agendamento" = recurso "agendamentos" (visita marcada na loja)
+NEGOTIATION_NAMES = (NEGOTIATION_NAME, "Negociação", "Negociacao", "Oportunidade", "Agendamento")
+SCHEDULE_NAME = "Agendamento"
+COLD_NAME = "Lead frio"  # recurso "lead_frio": o cliente parou de responder
 NO_CHAT_NAME = "Lead sem conversa"  # 1ª etapa: chegou (formulário/link) e ainda não falou no WhatsApp
 
 
@@ -29,6 +33,10 @@ def _plain(text: str) -> str:
 def stage_named(stages: list, *names: str) -> Optional[PipelineStage]:
     wanted = {_plain(n) for n in names}
     return next((s for s in stages if _plain(s.name) in wanted), None)
+
+
+def negotiation_stage(stages: list) -> Optional[PipelineStage]:
+    return stage_named(stages, *NEGOTIATION_NAMES)
 
 
 def set_stage(lead: Lead, stage: PipelineStage) -> None:
@@ -177,12 +185,19 @@ def in_service_stage(stages: list) -> Optional[PipelineStage]:
 def on_message(db, lead: Lead, outbound: bool) -> None:
     """Mensagem na conversa:
     - o time mandou (CRM ou celular): "Lead sem conversa"/"Novo" -> "Em atendimento";
-    - o cliente mandou: "Lead sem conversa" -> "Novo" (fica pro time fazer o 1º contato).
+    - o cliente mandou: "Lead sem conversa" -> "Novo" (fica pro time fazer o 1º contato);
+      "Lead frio" -> "Em atendimento".
     Lead que já está mais adiante no funil não volta."""
     stage = lead.stage
     if stage is None or lead.is_group:
         return
     stages = _stages(db, lead.tenant_id)
+    if not outbound and _plain(stage.name) == _plain(COLD_NAME):  # ❄️ o cliente voltou a falar
+        target = in_service_stage(stages)
+        if target is not None:
+            set_stage(lead, target)
+            db.add(lead)
+        return
     novo = entry_stage(db, lead.tenant_id, with_chat=True)
     first_contact = {_plain(NO_CHAT_NAME)} | ({_plain(novo.name)} if novo else set())
     if _plain(stage.name) not in first_contact:
@@ -222,7 +237,7 @@ def levels(stages: list) -> dict:
     qualified = stage_named(stages, "Qualificado", "Qualificados") or next(
         (s for s in stages if s.conversion_event_name and not s.is_won), None
     )
-    negotiation = stage_named(stages, NEGOTIATION_NAME, "Negociação", "Negociacao", "Oportunidade")
+    negotiation = negotiation_stage(stages)
     return {
         "qualified": qualified.order if qualified else (won.order if won else 10**6),
         "negotiation": negotiation.order if negotiation else (won.order if won else 10**6),
@@ -269,7 +284,7 @@ def setup(db) -> None:
     a etapa mais avançada dos leads antigos (= a atual, se não estiver perdido)."""
     for tenant in db.query(Tenant).all():
         stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
-        if not stages or stage_named(stages, NEGOTIATION_NAME, "Negociação", "Negociacao", "Oportunidade"):
+        if not stages or negotiation_stage(stages):
             continue
         qualified = stage_named(stages, "Qualificado", "Qualificados")
         if qualified is None:
@@ -283,6 +298,7 @@ def setup(db) -> None:
     db.commit()
     for tenant in db.query(Tenant).all():
         _create_no_chat_stage(db, tenant)
+        apply_features(db, tenant)
     terminal = [st.id for st in db.query(PipelineStage).filter(PipelineStage.is_won | PipelineStage.is_lost)]
     db.query(Lead).filter(Lead.stage_id.in_(terminal), Lead.closed_at.is_(None)).update(
         {Lead.closed_at: Lead.updated_at, Lead.updated_at: Lead.updated_at}, synchronize_session=False
@@ -291,6 +307,33 @@ def setup(db) -> None:
         db.query(Lead).filter(Lead.stage_id == st.id, or_(Lead.reached_order.is_(None), Lead.reached_order < st.order)).update(
             {Lead.reached_order: st.order, Lead.updated_at: Lead.updated_at}, synchronize_session=False
         )
+    db.commit()
+
+
+def apply_features(db, tenant: Tenant) -> None:
+    """Etapas que dependem de recurso do cliente (no start e ao salvar ⚙ Prazos → Recursos):
+    📅 "agendamentos": Negociando se chama Agendamento (e volta a Negociando se desligar);
+    ❄️ "lead_frio": cria a etapa Lead frio antes de Ganho/Perdido (desligar não apaga a etapa)."""
+    from app import features
+
+    stages = _stages(db, tenant.id)
+    if not stages:
+        return
+    scheduling = features.has(tenant, "agendamentos")
+    negotiation = negotiation_stage(stages)
+    if negotiation is not None:
+        if scheduling and _plain(negotiation.name) == _plain(NEGOTIATION_NAME):
+            negotiation.name = SCHEDULE_NAME
+        elif not scheduling and _plain(negotiation.name) == _plain(SCHEDULE_NAME):
+            negotiation.name = NEGOTIATION_NAME
+    if features.has(tenant, "lead_frio") and stage_named(stages, COLD_NAME) is None:
+        closing = [st for st in stages if st.is_won or st.is_lost]
+        order = min(st.order for st in closing) if closing else max(st.order for st in stages) + 1
+        for st in stages:
+            if st.order >= order:
+                st.order += 1
+        db.add(PipelineStage(tenant_id=tenant.id, name=COLD_NAME, order=order))
+        logger.info("funil: etapa %s criada em %s", COLD_NAME, tenant.name)
     db.commit()
 
 

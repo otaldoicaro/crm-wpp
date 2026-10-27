@@ -27,6 +27,7 @@ from app.models import Conversation, Lead, Message, PipelineStage, Tenant
 logger = logging.getLogger("autofollow")
 
 FEATURE = "followup_automatico"
+ONLY_FIRST = "followup_so_24h"  # só a 1ª mensagem, depois de qualquer recado nosso; sem 2ª e sem Perdido
 FIRST_AFTER = datetime.timedelta(hours=24)
 SECOND_AFTER = datetime.timedelta(hours=24)
 CLOSE_AFTER = datetime.timedelta(hours=6)
@@ -59,9 +60,17 @@ def first_name(name: str) -> str:
     return first.capitalize() if first.isalpha() and len(first) > 1 else ""
 
 
+def is_on(tenant: Tenant) -> bool:
+    return features.has(tenant, FEATURE) or features.has(tenant, ONLY_FIRST)
+
+
+def default_text1(tenant: Tenant) -> str:
+    return segments.segment_for(tenant).get("autofu_text1") or DEFAULT_TEXT1
+
+
 def text_for(tenant: Tenant, lead: Lead, step: int) -> str:
     if step == 1:
-        return (tenant.autofu_text1 or DEFAULT_TEXT1).strip()
+        return (tenant.autofu_text1 or default_text1(tenant)).strip()
     text = (tenant.autofu_text2 or DEFAULT_TEXT2).strip()
     name = first_name(lead.name)
     if name:
@@ -90,6 +99,10 @@ def _last_outbound_texts(db, lead: Lead) -> list:
     return [t or b for b, t in q.order_by(Message.created_at.desc()).limit(10)]
 
 
+def _step_label(tenant: Tenant, step: int) -> str:
+    return "de 24h" if features.has(tenant, ONLY_FIRST) else f"{step}/2"
+
+
 def _send(db, tenant: Tenant, lead: Lead, step: int) -> bool:
     from app.routers.dashboard import _record_outbound
     from app.services import handover, invalid_contact, messaging, response_times
@@ -104,7 +117,7 @@ def _send(db, tenant: Tenant, lead: Lead, step: int) -> bool:
     if ok is False:
         _record_outbound(db, conversation, sender, "", f"⚠️ Não enviada ({messaging.last_error()}): {text}")
         db.add(Message(conversation_id=conversation.id, direction="note",
-                       body=f"🤖 O follow-up automático {step}/2 não saiu ({messaging.last_error()}). O fluxo parou nesta conversa."))
+                       body=f"🤖 O follow-up automático {_step_label(tenant, step)} não saiu ({messaging.last_error()}). O fluxo parou nesta conversa."))
         invalid_contact.after_failed_send(db, lead)
         return False
     if used != lead.phone:
@@ -112,7 +125,7 @@ def _send(db, tenant: Tenant, lead: Lead, step: int) -> bool:
     response_times.mark_outbound(lead)
     _record_outbound(db, conversation, sender, wa_id, text, secret=secret, pending=ok is None)
     db.add(Message(conversation_id=conversation.id, direction="note",
-                   body=f"🤖 Follow-up automático {step}/2 (o cliente estava sem responder)"
+                   body=f"🤖 Follow-up automático {_step_label(tenant, step)} (o cliente estava sem responder)"
                         + (". Se ele não responder em 6h, o lead vai pra Perdido · Não responde mais." if step == 2 else ".")))
     return True
 
@@ -127,8 +140,9 @@ def run() -> int:
     try:
         now = datetime.datetime.utcnow()
         for tenant in db.query(Tenant).all():
-            if not features.has(tenant, FEATURE):
+            if not is_on(tenant):
                 continue
+            only_first = features.has(tenant, ONLY_FIRST)
             if tenant.autofu_since is None:  # acabou de ligar: só daqui pra frente
                 tenant.autofu_since = now
                 db.commit()
@@ -149,13 +163,15 @@ def run() -> int:
                     step, lead.autofu_step, lead.autofu_at = 0, 0, None  # o vendedor falou de novo: recomeça
                 try:
                     if step == 0 and now - lead.last_outbound_at >= FIRST_AFTER and hours_open:
-                        if not about_deal(" ".join(_last_outbound_texts(db, lead))):
+                        if not only_first and not about_deal(" ".join(_last_outbound_texts(db, lead))):
                             continue
                         if _send(db, tenant, lead, 1):
                             lead.autofu_step, lead.autofu_at = 1, datetime.datetime.utcnow()
                         else:
                             lead.autofu_step = -1
                         done += 1
+                    elif only_first:
+                        continue  # só de 24h: depois da 1ª mensagem, para aqui
                     elif step == 1 and at and now - at >= SECOND_AFTER and hours_open:
                         if _send(db, tenant, lead, 2):
                             lead.autofu_step, lead.autofu_at = 2, datetime.datetime.utcnow()

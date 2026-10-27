@@ -204,7 +204,7 @@ def lose_silent_leads(db, days: int = LOST_AFTER_DAYS, now: Optional[datetime.da
     Devolve [(lead, motivo)]. "Lead sem conversa"/"Novo" (o time nem respondeu) ficam de fora."""
     from sqlalchemy import func
 
-    from app import segments
+    from app import features, segments
     from app.models import PipelineStage, Tenant
     from app.services import funnel
 
@@ -213,6 +213,8 @@ def lose_silent_leads(db, days: int = LOST_AFTER_DAYS, now: Optional[datetime.da
     last_msg = dict(db.query(Conversation.lead_id, func.max(Conversation.last_message_at)).group_by(Conversation.lead_id).all())
     done = []
     for tenant in db.query(Tenant).all():
+        if features.has(tenant, "lead_frio"):
+            continue  # ❄️ esse cliente usa Lead frio (cool_silent_leads) em vez de Perdido
         stages = funnel._stages(db, tenant.id)
         lost = next((st for st in stages if st.is_lost), None)
         service = funnel.in_service_stage(stages)
@@ -238,6 +240,45 @@ def lose_silent_leads(db, days: int = LOST_AFTER_DAYS, now: Optional[datetime.da
             done.append((lead, reason))
     if commit:
         db.commit()
+    return done
+
+
+# ---------- ❄️ lead frio (recurso "lead_frio") ----------
+COLD_AFTER_DAYS = 7  # o cliente não responde há 7 dias
+
+
+def cool_silent_leads(db, days: int = COLD_AFTER_DAYS, now: Optional[datetime.datetime] = None) -> list:
+    """Leads em atendimento (Em atendimento em diante, em aberto) cujo cliente não manda nada há X
+    dias vão pra "Lead frio". Se o cliente voltar a falar, voltam pra Em atendimento (funnel.on_message)."""
+    from app import features
+    from app.models import Tenant
+    from app.services import funnel
+
+    now = now or datetime.datetime.utcnow()
+    cutoff = now - datetime.timedelta(days=days)
+    done = []
+    for tenant in db.query(Tenant).all():
+        if not features.has(tenant, "lead_frio"):
+            continue
+        stages = funnel._stages(db, tenant.id)
+        cold, service = funnel.stage_named(stages, funnel.COLD_NAME), funnel.in_service_stage(stages)
+        if cold is None or service is None:
+            continue
+        active = [st.id for st in stages if not st.is_won and not st.is_lost and st.order >= service.order and st.id != cold.id]
+        for lead in db.query(Lead).filter(
+            Lead.tenant_id == tenant.id, Lead.stage_id.in_(active), Lead.is_group.is_(False),
+            Lead.deleted_at.is_(None), Lead.archived_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS),
+            Lead.last_outbound_at.isnot(None),
+        ):
+            heard = lead.last_inbound_at or lead.created_at
+            if heard is None or heard >= cutoff:
+                continue
+            funnel.set_stage(lead, cold)
+            days_quiet = (now - heard).days
+            _note(db, lead, f"🤖 Etapa automática: {cold.name}. O cliente não responde há {days_quiet} dias. "
+                            "Se ele voltar a falar, o lead volta sozinho pra Em atendimento.")
+            done.append(lead)
+    db.commit()
     return done
 
 

@@ -62,6 +62,9 @@ def schedule(delay_seconds: int = 120) -> None:
             lost = autostage.lose_silent_leads(db)  # negociação parada há 7 dias -> Perdido
             if lost:
                 logger.info("perdidos automáticos (sem mensagens há %s dias): %s", autostage.LOST_AFTER_DAYS, len(lost))
+            cold = autostage.cool_silent_leads(db)  # ❄️ quem usa Lead frio: cliente calado há 7 dias
+            if cold:
+                logger.info("lead frio automático (cliente sem responder há %s dias): %s", autostage.COLD_AFTER_DAYS, len(cold))
             n = archive_old_leads(db)
             if n:
                 logger.info("arquivamento automático: %s leads saíram do Pipeline", n)

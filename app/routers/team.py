@@ -201,6 +201,8 @@ def team_action(
                 return RedirectResponse(url="/equipe?erro=" + quote("Confirme pra colocar um admin no rodízio."), status_code=302)
             member.rodizio_confirmed_at = datetime.datetime.utcnow()
         member.accepting_leads = not member.accepting_leads
+    elif action == "passar" and member.role != "admin" and not member.read_only:
+        member.can_transfer = not member.can_transfer  # ↪ pode passar lead pra outro vendedor
     elif action == "ativo" and member.id != user.id:
         member.is_active = not member.is_active
     elif action == "remover" and member.id != user.id:

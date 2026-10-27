@@ -65,7 +65,7 @@
   <p class="team-wa-summary"><b>📱 {{ connected_total }} de {{ numbers_total }} WhatsApps conectados</b>{% if connected_total < numbers_total %} · <a href="/whatsapp">reconectar os desconectados →</a>{% endif %}</p>
   <div style="overflow-x:auto;">
   <table class="table-simple">
-    <thead><tr><th>Nome</th><th class="hide-sm">E-mail</th><th>Nível de acesso</th><th>WhatsApp</th><th>Rodízio</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th class="hide-sm">E-mail</th><th>Nível de acesso</th><th>WhatsApp</th><th>Rodízio</th><th title="Pode passar um lead pra outro vendedor (o admin sempre pode)">Passa leads</th><th></th></tr></thead>
     <tbody>
     {% for u in users %}
       {% set mine = numbers_by_owner.get(u.id, []) %}
@@ -98,6 +98,15 @@
             {% if u.role == "admin" and not u.accepting_leads %}onsubmit='if (!confirm({{ ("ATENÇÃO: " ~ u.name ~ " é ADMIN.\n\nColocar no rodízio de atendimento?\n\nLeads novos e o link rotativo vão passar a cair pra ele(a), no WhatsApp: " ~ wa ~ ".\n\nConfira se é isso mesmo antes de continuar.")|tojson }})) return false; this.confirmar.value = "1";'{% endif %}>
             <input type="hidden" name="confirmar" value="">
             <button class="btn small {{ '' if u.accepting_leads else 'ghost' }}" type="submit" title="{{ 'Admin fica fora do rodízio por padrão' if u.role == 'admin' and not u.accepting_leads }}">{{ "No rodízio" if u.accepting_leads else ("Fora do rodízio (admin)" if u.role == "admin" else "Pausado") }}</button>
+          </form>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.read_only %}<span class="muted">—</span>
+          {% elif u.role == "admin" %}<span class="muted" title="Admin sempre pode passar leads">sempre</span>
+          {% else %}
+          <form method="post" action="/equipe/{{ u.id }}/passar" style="margin:0">
+            <button class="btn small {{ '' if u.can_transfer else 'ghost' }}" type="submit" title="Deixar {{ u.name }} passar os leads dele(a) pra outro vendedor">{{ "↪ Pode passar" if u.can_transfer else "Não pode" }}</button>
           </form>
           {% endif %}
         </td>

@@ -46,7 +46,7 @@
       <span class="msg-text">{{ msg.body|quebras }}</span>
     {% endif %}
   </div>
-  <span class="msg-time">{% if msg.ack == -1 %}<span class="pending-send" title="O WhatsApp demorou pra responder: assim que confirmar, aparece o ✓. Não reenvie.">⏳ confirmando envio · </span>{% endif %}{% if msg.edited_at %}editada · {% endif %}{{ msg.created_at|hora("%d/%m %H:%M") }}{% if msg.direction == 'out' and msg.ack and not deleted %} <span class="ticks{{ ' read' if msg.ack >= 3 }}" title="{{ ['', 'Enviada', 'Entregue', 'Lida pelo cliente'][msg.ack if msg.ack < 4 else 3] }}">{{ "✓✓" if msg.ack >= 2 else "✓" }}</span>{% endif %}</span>
+  <span class="msg-time">{% if msg.direction == 'out' %}{# quem mandou: pra quem supervisiona ver troca de vendedor #}{% if msg.sender %}<span class="msg-by" title="Enviada pelo CRM por {{ msg.sender.name }}">{{ msg.sender.name }}</span>{% else %}{% set num = msg.conversation.whatsapp_number if msg.conversation else none %}<span class="msg-by" title="Enviada direto pelo celular (fora do CRM)">📱 {{ num.owner.name if num and num.owner else (num.label if num else "celular") }}</span>{% endif %} · {% endif %}{% if msg.ack == -1 %}<span class="pending-send" title="O WhatsApp demorou pra responder: assim que confirmar, aparece o ✓. Não reenvie.">⏳ confirmando envio · </span>{% endif %}{% if msg.edited_at %}editada · {% endif %}{{ msg.created_at|hora("%d/%m %H:%M") }}{% if msg.direction == 'out' and msg.ack and not deleted %} <span class="ticks{{ ' read' if msg.ack >= 3 }}" title="{{ ['', 'Enviada', 'Entregue', 'Lida pelo cliente'][msg.ack if msg.ack < 4 else 3] }}">{{ "✓✓" if msg.ack >= 2 else "✓" }}</span>{% endif %}</span>
   {% endif %}
 {% else %}
   <p class="muted">Sem mensagens ainda.</p>

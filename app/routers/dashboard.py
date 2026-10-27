@@ -706,7 +706,7 @@ def settings_page(
             .replace("{empresa}", tenant.name),
             "hello_stage": first_contact.target_stage_name(tenant),
             "feature_list": features.FEATURES, "features_on": features.enabled(tenant),
-            "autofu_default1": autofollow.DEFAULT_TEXT1, "autofu_default2": autofollow.DEFAULT_TEXT2,
+            "autofu_default1": autofollow.default_text1(tenant), "autofu_only_first": features.has(tenant, autofollow.ONLY_FIRST), "autofu_default2": autofollow.DEFAULT_TEXT2,
         })
     else:
         ctx.update({
@@ -754,14 +754,15 @@ async def save_deadlines(
         generic_default = first_contact.generic_text(SimpleNamespace(auto_hello_generic_text="", segment=tenant.segment)).replace(
             "{empresa}", tenant.name)
         tenant.auto_hello_generic_text = "" if generic == generic_default else generic[:1500]
-        for field, default in (("autofu_text1", autofollow.DEFAULT_TEXT1), ("autofu_text2", autofollow.DEFAULT_TEXT2)):
+        for field, default in (("autofu_text1", autofollow.default_text1(tenant)), ("autofu_text2", autofollow.DEFAULT_TEXT2)):
             if field in form:
                 value = str(form.get(field, "")).replace("\r\n", "\n").strip()
                 setattr(tenant, field, "" if value == default else value[:1500])
         if form.get("features_form") == "1":
-            was_on = features.has(tenant, autofollow.FEATURE)
+            was_on = autofollow.is_on(tenant)
             tenant.features = features.store(form.getlist("feature"))
-            if features.has(tenant, autofollow.FEATURE) != was_on:
+            funnel.apply_features(db, tenant)  # 📅 Agendamento / ❄️ Lead frio
+            if autofollow.is_on(tenant) != was_on:
                 tenant.autofu_since = None  # ligou agora: vale só daqui pra frente (autofollow.run marca a hora)
         db.commit()
 
@@ -1083,12 +1084,6 @@ INBOX_AVISOS = [
 ]
 
 
-def _plain_name(name: str) -> str:
-    import unicodedata
-
-    return unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode().lower().strip()
-
-
 def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
     """Condição SQL pros avisos pendentes (mesmas regras de quando o aviso aparece na conversa)."""
     stages = funnel._stages(db, tenant.id)
@@ -1102,8 +1097,8 @@ def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
         "outro": and_(Lead.suggest_kind == "outro", Lead.tag.notin_(NOT_SALES_TAGS)),
         "comprovante": and_(Lead.receipt_status.in_(("pending", "auto")), Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
         "sem_motivo": and_(Lead.stage_id.in_([st.id for st in stages if st.is_lost]), or_(Lead.loss_reason.is_(None), Lead.loss_reason == "")),
-        "interesse": (Lead.stage_id.in_([st.id for st in stages if st.id in open_ids and _plain_name(st.name) == "negociando"])
-                      if features.has(tenant, "interessados_negociando")  # ex.: seminovos: interessado = negociando
+        "interesse": (Lead.stage_id == getattr(funnel.negotiation_stage(stages), "id", None)
+                      if features.has(tenant, "interessados_negociando")  # ex.: seminovos: interessado = negociando/agendamento
                       else and_(Lead.interest_at.isnot(None), is_open)),
         # 💰 venda a confirmar: comprovante que o CRM não confirmou sozinho, ou "vou buscar / pago na entrega / pode separar"
         "venda": or_(and_(Lead.receipt_status.in_(("pending", "auto")), Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
@@ -1333,7 +1328,7 @@ def _inbox_context(
             "other_numbers": other_numbers,
             "platform": resolve_platform(selected_lead.attribution) if selected_lead else None,
             "transfer_people": _transfer_options(db, tenant, selected_lead)
-            if selected_lead and not selected_lead.is_group and user.role == "admin" else [],
+            if selected_lead and not selected_lead.is_group and _can_transfer(user) else [],
             "stages": db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
             if selected_lead and not selected_lead.is_group else [],
             "deal_info": deals.summary(db, selected_lead) if selected_lead and not selected_lead.is_group else None,
@@ -1728,6 +1723,11 @@ def settle_lead(
     return RedirectResponse(url=back, status_code=302)
 
 
+def _can_transfer(user: User) -> bool:
+    """Admin, ou vendedor com "Passa leads" ligado em Equipe."""
+    return not user.read_only and (user.role == "admin" or bool(user.can_transfer))
+
+
 @router.post("/leads/{lead_id}/transferir")
 def transfer_lead(
     lead_id: str,
@@ -1740,10 +1740,12 @@ def transfer_lead(
     user: User = Depends(current_user_required),
 ):
     """Passa o lead (com a conversa inteira) pra outro vendedor. O histórico todo continua no
-    CRM: quem recebe abre a conversa e vê tudo, desde a 1ª mensagem. Com `trocar_numero`, as
-    próximas mensagens saem pelo WhatsApp do novo vendedor."""
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Só o admin passa conversas pra outro vendedor")
+    CRM: quem recebe abre a conversa e vê tudo, desde a 1ª mensagem. Com `trocar_numero` (ou o
+    recurso "passar_troca_numero" do cliente), as próximas mensagens saem pelo WhatsApp do novo vendedor."""
+    if not _can_transfer(user):
+        raise HTTPException(status_code=403, detail="Só o admin (ou quem tem a permissão em Equipe) passa leads pra outro vendedor")
+    if features.has(tenant, "passar_troca_numero"):
+        trocar_numero = "1"
     lead = _lead_for_action(db, tenant, user, lead_id)
     target = next((p for p in team_members(db, tenant.id, only_active=True) if p.id == para), None)
     if target is None:
@@ -2094,7 +2096,7 @@ def team_thread(
     head = templates.get_template("_team_thread_head.html").render({
         "tenant": tenant, "lead": lead, "closed": closed, "truncated": len(lead.all_messages) > TEAM_THREAD_LAST,
         "can_settle": not lead.is_group and bool(response_times.waiting_since(lead)),
-        "transfer_people": [] if lead.is_group or user.role != "admin" else _transfer_options(db, tenant, lead),
+        "transfer_people": [] if lead.is_group or not _can_transfer(user) else _transfer_options(db, tenant, lead),
         "stages": [] if lead.is_group else db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all(),
     })
     body = templates.get_template("_inbox_messages.html").render({"messages": messages})

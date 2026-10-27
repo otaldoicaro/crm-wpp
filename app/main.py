@@ -8,7 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.staticfiles import StaticFiles
 
 from app.db import SessionLocal, setup_text_search, sync_indexes, sync_schema
-from app.services import archiver, followup, funnel, history_sync, media_store, meta_spend, people, response_times
+from app.services import archiver, evolution_client, followup, funnel, history_sync, media_store, meta_spend, people, response_times
 from app.routers import (
     admin_setup,
     auth_router,
@@ -40,6 +40,7 @@ with SessionLocal() as _fdb:
 archiver.schedule()
 meta_spend.schedule()
 history_sync.schedule()
+evolution_client.refresh_webhooks()  # eventos novos do webhook (📞 ligações) valem sem reconectar
 from app.services.conversions import queue as conversions_queue  # noqa: E402
 
 conversions_queue.schedule()  # 📤 eventos do CRM pro Meta (por cliente)  # recupera do Evolution mensagens que escaparam (a cada 1h, último dia)  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)

@@ -118,6 +118,8 @@ class User(Base):
     # admin só entra no rodízio se alguém ligar na mão (e confirmar): quando foi confirmado
     rodizio_confirmed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     max_open_leads: Mapped[int] = mapped_column(Integer, default=0)  # 0 = sem limite
+    # vendedor que pode passar lead pra outro vendedor (ex: SDR); admin sempre pode. Liga em Equipe
+    can_transfer: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="users")

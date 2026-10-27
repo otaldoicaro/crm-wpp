@@ -61,6 +61,9 @@ SEGMENTS = {
         "auto_hello_text": "Olá, {nome}! Tudo bem? Aqui é {vendedor}, da {empresa}. Vi que você se interessou "
                            "pelos nossos carros! Me conta qual modelo você procura e se tem carro pra dar na troca, "
                            "que eu já te ajudo 😉",
+        # 🤖 follow-up automático (24h sem resposta): vazio = autofollow.DEFAULT_TEXT1 (fala de peça)
+        "autofu_text1": "Oi! Passando pra saber se você ainda tem interesse no carro que conversamos. 🚗\n\n"
+                        "🙂 Se tiver qualquer dúvida ou quiser agendar uma visita, me chama aqui que dou continuidade no atendimento.",
         "auto_hello_stage": "Em atendimento",  # formulário de carro não diz se vai comprar: o time já falou
     },
 }

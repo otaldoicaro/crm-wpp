@@ -201,8 +201,13 @@ def on_outbound_text(db, lead: Lead, body: str) -> None:
     if value is None:
         return
     lead.quoted_value, lead.quoted_at = value, _now()
+    from app import features
+
+    if features.has(lead.tenant, "agendamentos"):  # a etapa é a visita marcada, não o preço
+        db.add(lead)
+        return
     stages = funnel._stages(db, lead.tenant_id)
-    target = funnel.stage_named(stages, funnel.NEGOTIATION_NAME, "Negociação", "Negociacao", "Oportunidade")
+    target = funnel.negotiation_stage(stages)
     stage = lead.stage
     if target is not None and _open(stage) and stage.order < target.order:
         funnel.set_stage(lead, target)

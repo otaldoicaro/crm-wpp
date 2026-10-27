@@ -111,7 +111,7 @@ def to_negotiation(db, lead: Lead, why: str) -> bool:
     from app.services import funnel
 
     stage = lead.stage
-    target = funnel.stage_named(funnel._stages(db, lead.tenant_id), funnel.NEGOTIATION_NAME, "Negociação", "Negociacao")
+    target = funnel.negotiation_stage(funnel._stages(db, lead.tenant_id))
     if target is None or stage is None or stage.is_won or stage.is_lost or stage.order >= target.order:
         return False
     funnel.set_stage(lead, target)
@@ -134,7 +134,7 @@ def on_text(db, lead: Lead, body: str, outbound: bool) -> bool:
                 setattr(lead, key, value)
             if "installments" in terms:
                 lead.pay_mode = "parcelado"
-            if outbound:
+            if outbound and not features.has(tenant, "agendamentos"):  # com agendamento, só a visita muda a etapa
                 to_negotiation(db, lead, f"💳 Condição enviada ao cliente ({describe(lead)})")
     if features.has(tenant, "visita_negociando"):
         phrase = visit_phrase(body, outbound)

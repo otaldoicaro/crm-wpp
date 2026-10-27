@@ -48,7 +48,29 @@ def _format_details(data: dict) -> str:
         value = str(data.get(key) or "").strip()
         if value:
             lines.append(f"{label}: {value}")
+    lines += [f"{question}: {answer}" for question, answer in form_answers(data.get("respostas"))]
     return "\n".join(lines)
+
+
+def form_answers(raw) -> list:
+    """Perguntas do formulário nativo do Meta (via Make), em qualquer um destes formatos:
+    {"Qual carro?": "Onix"} ou a lista do próprio Meta [{"name": "qual_carro?", "values": ["Onix"]}].
+    Devolve [(pergunta, resposta)], sem os campos que já viram nome/telefone/e-mail."""
+    if isinstance(raw, dict):
+        pairs = list(raw.items())
+    elif isinstance(raw, list):
+        pairs = [(i.get("name") or i.get("label") or i.get("question") or "", i.get("values") or i.get("value") or i.get("answer") or "")
+                 for i in raw if isinstance(i, dict)]
+    else:
+        return []
+    skip = {"full_name", "nome", "name", "phone_number", "telefone", "whatsapp", "email", "e-mail"}
+    out = []
+    for question, answer in pairs:
+        question = " ".join(str(question or "").replace("_", " ").split()).strip()
+        answer = ", ".join(str(a) for a in answer if str(a).strip()) if isinstance(answer, list) else str(answer or "").strip()
+        if question and answer and question.lower().replace(" ", "_") not in skip:
+            out.append((question[:1].upper() + question[1:][:150], answer[:500]))
+    return out[:30]
 
 
 def upsert_form_lead(db: Session, tenant_id: str, data: dict, source: str = "site_form") -> tuple:
