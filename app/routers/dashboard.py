@@ -1083,6 +1083,12 @@ INBOX_AVISOS = [
 ]
 
 
+def _plain_name(name: str) -> str:
+    import unicodedata
+
+    return unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode().lower().strip()
+
+
 def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
     """Condição SQL pros avisos pendentes (mesmas regras de quando o aviso aparece na conversa)."""
     stages = funnel._stages(db, tenant.id)
@@ -1096,7 +1102,9 @@ def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
         "outro": and_(Lead.suggest_kind == "outro", Lead.tag.notin_(NOT_SALES_TAGS)),
         "comprovante": and_(Lead.receipt_status.in_(("pending", "auto")), Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
         "sem_motivo": and_(Lead.stage_id.in_([st.id for st in stages if st.is_lost]), or_(Lead.loss_reason.is_(None), Lead.loss_reason == "")),
-        "interesse": and_(Lead.interest_at.isnot(None), is_open),
+        "interesse": (Lead.stage_id.in_([st.id for st in stages if st.id in open_ids and _plain_name(st.name) == "negociando"])
+                      if features.has(tenant, "interessados_negociando")  # ex.: seminovos: interessado = negociando
+                      else and_(Lead.interest_at.isnot(None), is_open)),
         # 💰 venda a confirmar: comprovante que o CRM não confirmou sozinho, ou "vou buscar / pago na entrega / pode separar"
         "venda": or_(and_(Lead.receipt_status.in_(("pending", "auto")), Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
                      and_(Lead.suggest_kind == "ganho", is_open)),

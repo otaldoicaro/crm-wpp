@@ -8,6 +8,7 @@ from app import segments
 FEATURES = {
     "pagamento_parcelado": "Venda parcelada: forma de pagamento, entrada e parcelas no lead (lidas também da conversa, ex: “60x 2.473,25”, “entrada de 6.700”)",
     "visita_negociando": "Visita marcada na loja leva o lead pra Negociando",
+    "interessados_negociando": "🔥 Aba “Interessados” do Inbox mostra os leads que estão na etapa Negociando",
     "followup_automatico": "🤖 Follow-up automático: 24h sem resposta depois do preço → 1ª mensagem; mais 24h → 2ª; mais 6h → "
                            "Perdido · Não responde mais (só no horário de atendimento, textos abaixo)",
     "transcrever_audios": "🎙️ Transcrever os áudios do WhatsApp (o texto aparece embaixo do áudio e entra nas regras "

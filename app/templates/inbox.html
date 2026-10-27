@@ -15,7 +15,7 @@
   <nav class="inbox-tabs status-chips">
     <a data-reset-scroll class="{{ 'on' if tab == 'todas' }}" href="{{ path }}?lidas=&aviso=">Todas</a>
     <a data-reset-scroll class="{{ 'on' if tab == 'naolidas' }}" href="{{ path }}?lidas=naolidas&aviso=">Não lidas <span class="unread-total {{ 'zero' if not status_counts.naolidas }}" data-status="naolidas">{{ status_counts.naolidas }}</span></a>
-    <a data-reset-scroll class="tab-hot {{ 'on' if tab == 'interesse' }}" href="{{ path }}?lidas=&aviso=interesse" title="Viram o preço e responderam com interesse (“como faço?”, “qual o pix?”): follow-up já!">🔥 Interessados <span class="unread-total {{ 'zero' if not status_counts.interesse }}" data-status="interesse">{{ status_counts.interesse }}</span></a>
+    <a data-reset-scroll class="tab-hot {{ 'on' if tab == 'interesse' }}" href="{{ path }}?lidas=&aviso=interesse" title="{{ 'Leads na etapa Negociando' if has_feature(tenant, 'interessados_negociando') else 'Viram o preço e responderam com interesse (“como faço?”, “qual o pix?”): follow-up já!' }}">🔥 Interessados <span class="unread-total {{ 'zero' if not status_counts.interesse }}" data-status="interesse">{{ status_counts.interesse }}</span></a>
     <a data-reset-scroll class="tab-sale {{ 'on' if tab == 'venda' }}" href="{{ path }}?lidas=&aviso=venda" title="Comprovante que o CRM não confirmou sozinho, ou cliente que disse que vem buscar / paga na entrega: marque Ganho ou Perdido">💰 Venda a confirmar <span class="unread-total {{ 'zero' if not status_counts.venda }}" data-status="venda">{{ status_counts.venda }}</span></a>
   </nav>
   {# filtros extras: numa gaveta; quando tem algum ligado, o botão fica amarelo e aparecem as etiquetas #}
