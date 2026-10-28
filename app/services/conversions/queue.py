@@ -154,6 +154,9 @@ def schedule(delay_seconds: int = 60) -> None:
             from app.services import autofollow
 
             autofollow.run()  # 🤖 follow-up automático (24h / 48h / Perdido)
+            from app.services import after_hours
+
+            after_hours.run()  # 🌙 resposta pra quem escreveu com a loja fechada
             from app.services import agenda
 
             agenda.run()  # 📅 aviso 10 min antes da visita + lembrete pro cliente

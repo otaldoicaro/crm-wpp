@@ -70,6 +70,8 @@ class Tenant(Base):
     autofu_since: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     autofu_text1: Mapped[str] = mapped_column(Text, default="")
     autofu_text2: Mapped[str] = mapped_column(Text, default="")
+    # 🌙 mensagem fora do horário (services/after_hours.py): texto do cliente (vazio = padrão do ramo)
+    after_hours_text: Mapped[str] = mapped_column(Text, default="")
     # 📅 agendamentos (recurso "agendamentos", services/agenda.py): textos pro cliente (vazio = padrão do ramo)
     # e com quantas horas de antecedência sai o lembrete (0 = sem lembrete)
     agenda_confirm_text: Mapped[str] = mapped_column(Text, default="")
@@ -269,6 +271,8 @@ class Lead(Base):
     # 🤖 follow-up automático: 0 = nada, 1/2 = mensagens enviadas, 3 = foi pra Perdido, -1 = parou (erro)
     autofu_step: Mapped[int] = mapped_column(Integer, default=0)
     autofu_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    # 🌙 quando saiu a última mensagem fora do horário (uma por período fechado)
+    after_hours_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # 🔥 o cliente quis comprar depois de receber o preço ("como faço?", "qual o pix?"): services/buying.py
     interest_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
     interest_text: Mapped[str] = mapped_column(String(255), default="")

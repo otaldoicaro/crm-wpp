@@ -65,6 +65,12 @@ SEGMENTS = {
         "autofu_text1": "Oi! Passando pra saber se você ainda tem interesse no carro que conversamos. 🚗\n\n"
                         "🙂 Se tiver qualquer dúvida ou quiser agendar uma visita, me chama aqui que dou continuidade no atendimento.",
         # 📅 agendamentos ({nome}, {data}, {hora}, {carro}, {empresa}, {vendedor}); linha com dado vazio sai
+        # 🌙 mensagem fora do horário: vazio = after_hours.DEFAULT_TEXT (fala de peça)
+        "after_hours_text": "Olá, {nome}! Tudo bem? Aqui é {vendedor}, da {empresa}. 😊\n\n"
+                            "No momento estamos fora do horário de atendimento ({horario}).\n\n"
+                            "Já me conta aqui qual carro você procura e se tem carro pra dar na troca, que {retorno}, "
+                            "assim que eu voltar, já te ajudo.\n\n"
+                            "Só aguardar que te respondo! 🙏",
         "agenda_confirm_text": "{nome}, sua visita está confirmada! 🚗\n📅 {data} às {hora}\n🚘 {carro}\n"
                                "Qualquer imprevisto, é só me avisar por aqui 😉",
         "agenda_reminder_text": "Oi {nome}! Passando pra lembrar da sua visita hoje às {hora} pra ver o {carro}. Te espero aqui! 😉",

@@ -19,6 +19,8 @@ FEATURES = {
                            "Perdido · Não responde mais (só no horário de atendimento, textos abaixo)",
     "followup_so_24h": "🤖 Follow-up automático só de 24h: a gente chamou o cliente e ele não respondeu em 24h → 1 mensagem "
                        "(qualquer assunto). Sem 2ª mensagem e sem Perdido automático (no horário de atendimento, texto abaixo)",
+    "mensagem_fora_horario": "🌙 Mensagem fora do horário: o cliente escreveu com a loja fechada → resposta automática do "
+                             "WhatsApp do vendedor pedindo o que ele precisa e avisando que voltamos “amanhã cedo” (texto abaixo)",
     "transcrever_audios": "🎙️ Transcrever os áudios do WhatsApp (o texto aparece embaixo do áudio e entra nas regras "
                           "automáticas e na busca). Custo no Groq: ~US$ 0,04 por hora de áudio",
 }

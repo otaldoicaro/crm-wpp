@@ -22,7 +22,7 @@ from app.deps import current_tenant, current_user_required
 from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app import features
-from app.services import autofollow, autostage, car_deal, channels, comments, deals, handover, invalid_contact, notify, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
+from app.services import after_hours, autofollow, autostage, car_deal, channels, comments, deals, handover, invalid_contact, notify, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -707,6 +707,7 @@ def settings_page(
             "hello_stage": first_contact.target_stage_name(tenant),
             "feature_list": features.FEATURES, "features_on": features.enabled(tenant),
             "autofu_default1": autofollow.default_text1(tenant), "autofu_only_first": features.has(tenant, autofollow.ONLY_FIRST), "autofu_default2": autofollow.DEFAULT_TEXT2,
+            "after_hours_default": after_hours.default_text(tenant), "after_hours_label": after_hours.hours_label(tenant),
         })
     else:
         ctx.update({
@@ -758,6 +759,9 @@ async def save_deadlines(
             if field in form:
                 value = str(form.get(field, "")).replace("\r\n", "\n").strip()
                 setattr(tenant, field, "" if value == default else value[:1500])
+        if "after_hours_text" in form:  # 🌙 igual ao padrão do ramo: segue o padrão
+            value = str(form.get("after_hours_text", "")).replace("\r\n", "\n").strip()
+            tenant.after_hours_text = "" if value == after_hours.default_text(tenant) else value[:1500]
         if "agenda_confirm_text" in form:  # 📅 textos dos agendamentos (vazio/igual ao padrão = padrão do ramo)
             from app.services import agenda
 
