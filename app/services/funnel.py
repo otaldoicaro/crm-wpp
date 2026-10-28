@@ -313,7 +313,8 @@ def setup(db) -> None:
 def apply_features(db, tenant: Tenant) -> None:
     """Etapas que dependem de recurso do cliente (no start e ao salvar ⚙ Prazos → Recursos):
     📅 "agendamentos": Negociando se chama Agendamento (e volta a Negociando se desligar);
-    ❄️ "lead_frio": cria a etapa Lead frio antes de Ganho/Perdido (desligar não apaga a etapa)."""
+    ❄️ "lead_frio": cria a etapa Lead frio antes de Ganho/Perdido; desligado, a etapa sai do funil
+    (quem estava nela volta pra Em atendimento)."""
     from app import features
 
     stages = _stages(db, tenant.id)
@@ -334,6 +335,24 @@ def apply_features(db, tenant: Tenant) -> None:
                 st.order += 1
         db.add(PipelineStage(tenant_id=tenant.id, name=COLD_NAME, order=order))
         logger.info("funil: etapa %s criada em %s", COLD_NAME, tenant.name)
+    cold = stage_named(stages, COLD_NAME)
+    if cold is not None and not features.has(tenant, "lead_frio"):
+        # recurso desligado: a etapa sai do funil e quem estava nela volta pra Em atendimento
+        # (a regra normal dos 7 dias parados cuida deles dali em diante)
+        back = in_service_stage(stages)
+        if back is None:
+            db.commit()
+            return
+        moved = 0
+        for lead in db.query(Lead).filter(Lead.stage_id == cold.id):
+            set_stage(lead, back)
+            moved += 1
+        db.flush()
+        db.delete(cold)
+        for st in stages:
+            if st.order > cold.order:
+                st.order -= 1
+        logger.info("funil: etapa %s removida em %s (%s leads voltaram pra %s)", COLD_NAME, tenant.name, moved, back.name)
     db.commit()
 
 
