@@ -113,8 +113,26 @@ def pick_number_for_click(db: Session, tenant_id: str) -> WhatsAppNumber | None:
         return None
 
     oldest = datetime.datetime(1970, 1, 1)
-    chosen = min(candidates, key=lambda n: n.last_routed_at or oldest)
-    chosen.last_routed_at = datetime.datetime.utcnow()
+    chosen = take_turn(sorted(candidates, key=lambda n: n.last_routed_at or oldest))
     db.add(chosen)
     db.commit()
     return chosen
+
+
+def take_turn(numbers: list) -> WhatsAppNumber:
+    """A vez no rodízio (números já em ordem: quem recebeu há mais tempo primeiro). Vendedor com
+    ½ rodízio pula uma vez sim, outra não: quando pula, vai pro fim da fila como se tivesse recebido.
+    Marca a hora no escolhido. Todos pulando (ex: só ele no rodízio): fica com o 1º mesmo."""
+    now = datetime.datetime.utcnow()
+    for number in numbers:
+        owner = number.owner
+        if owner is not None and owner.rodizio_half and not owner.rodizio_skip:
+            owner.rodizio_skip = True  # pulou esta: a próxima vez dele conta
+            number.last_routed_at = now - datetime.timedelta(seconds=1)  # na frente de quem recebeu agora
+            continue
+        if owner is not None and owner.rodizio_half:
+            owner.rodizio_skip = False
+        number.last_routed_at = now
+        return number
+    numbers[0].last_routed_at = now
+    return numbers[0]

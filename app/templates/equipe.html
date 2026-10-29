@@ -99,6 +99,12 @@
             <input type="hidden" name="confirmar" value="">
             <button class="btn small {{ '' if u.accepting_leads else 'ghost' }}" type="submit" title="{{ 'Admin fica fora do rodízio por padrão' if u.role == 'admin' and not u.accepting_leads }}">{{ "No rodízio" if u.accepting_leads else ("Fora do rodízio (admin)" if u.role == "admin" else "Pausado") }}</button>
           </form>
+          {% if u.accepting_leads %}
+          <form method="post" action="/equipe/{{ u.id }}/metade" style="margin:4px 0 0">
+            <button class="btn small {{ '' if u.rodizio_half else 'ghost' }}" type="submit"
+              title="{{ 'Recebe 1 lead a cada 2 vezes que seria a vez dele(a). Clique pra voltar ao rodízio inteiro' if u.rodizio_half else 'Clique pra ' ~ u.name ~ ' receber só metade: 1 lead a cada 2 vezes' }}">{{ "½ rodízio (50%)" if u.rodizio_half else "Rodízio 100%" }}</button>
+          </form>
+          {% endif %}
           {% endif %}
         </td>
         <td>

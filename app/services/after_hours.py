@@ -2,7 +2,8 @@
 
 O cliente mandou mensagem com a loja fechada (Tenant.business_hours) -> sai uma resposta pelo mesmo
 WhatsApp onde ele escreveu (o do vendedor que atende), pedindo o que ele quer e avisando quando voltamos
-("amanhã cedo", "segunda cedinho").
+("amanhã cedo", "segunda cedinho"). Se ele já disse a peça, o carro e o ano, sai a outra mensagem do ramo
+("acredito que a gente tenha essa peça… amanhã já confiro pra você"; seminovos não tem).
 
 Regras:
 - uma vez por período fechado (Lead.after_hours_at): mandou 5 mensagens de noite, recebe 1 resposta;
@@ -38,12 +39,35 @@ DEFAULT_TEXT = (
     "já verifico pra você.\n\n"
     "Só aguardar que te respondo! 🙏"
 )
+DEFAULT_DETAIL_TEXT = (
+    "Opa, meu amigo(a)! Tudo bem? 😄\n\n"
+    "Acredito que a gente tenha essa peça lá sim! Só que agora tô fora da loja e sem acesso ao meu sistema pra "
+    "consultar o estoque direitinho.\n\n"
+    "{Dia}, a partir das 8h30, já vou estar na loja e consigo conferir pra vc, tá bom?\n\n"
+    "Se tiver alguma dúvida ou quiser me passar mais alguma informação sobre a peça, pode mandar por aqui mesmo!\n\n"
+    "Assim que eu chegar {dia}, confiro tudo e te dou um retorno. 🤝"
+)
 DAY_NAMES = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
 FULL_DAY_NAMES = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
 
 
 def default_text(tenant: Tenant) -> str:
     return segments.segment_for(tenant).get("after_hours_text") or DEFAULT_TEXT
+
+
+def detail_default(tenant: Tenant) -> str:
+    """Mensagem pra quem já disse peça, carro e ano ("" = o ramo não tem: vai sempre a outra)."""
+    return segments.segment_for(tenant).get("after_hours_detail_text", DEFAULT_DETAIL_TEXT)
+
+
+def says_what_they_want(texts: list) -> bool:
+    """A peça, o carro e o ano estão nas mensagens? ("farol do gol 2015", "retrovisor onix 18/19")"""
+    from app.services.products import _PART_RE
+    from app.services.suggestions import _MODEL, _YEAR, _norm
+
+    plain = _norm(" ".join(t for t in texts if t))
+    return bool(_PART_RE.search(plain) and _MODEL.search(plain)
+                and (_YEAR.search(plain) or re.search(r"\b\d{2}/\d{2}\b", plain)))
 
 
 def _hours(tenant: Tenant) -> dict:
@@ -94,6 +118,12 @@ def closed_since(tenant: Tenant, now: datetime.datetime) -> datetime.datetime:
     return now - datetime.timedelta(days=7)
 
 
+def return_day(tenant: Tenant, now: datetime.datetime) -> str:
+    """O dia em que a loja abre de novo: "hoje", "amanhã" ou "segunda" (sábado à noite)."""
+    phrase = return_phrase(tenant, now)
+    return phrase.split(" ")[0] if phrase != "assim que possível" else "logo"
+
+
 def return_phrase(tenant: Tenant, now: datetime.datetime) -> str:
     """Quando a loja abre de novo: "hoje cedo", "amanhã cedo" ou "segunda cedinho"."""
     local, hours = to_local(now), _hours(tenant)
@@ -109,10 +139,11 @@ def return_phrase(tenant: Tenant, now: datetime.datetime) -> str:
     return "assim que possível"
 
 
-def text_for(tenant: Tenant, lead: Lead, seller_name: str, now: datetime.datetime) -> str:
+def text_for(tenant: Tenant, lead: Lead, seller_name: str, now: datetime.datetime, detailed: bool = False) -> str:
     from app.services.autofollow import first_name
 
-    text = (tenant.after_hours_text or default_text(tenant)).strip()
+    detail = (tenant.after_hours_detail_text or detail_default(tenant)).strip() if detailed else ""
+    text = detail or (tenant.after_hours_text or default_text(tenant)).strip()
     name, seller = first_name(lead.name), first_name(seller_name)
     if not name:
         text = re.sub(r",?\s*\{nome\}", "", text)  # "Olá! Tudo bem?"
@@ -120,7 +151,8 @@ def text_for(tenant: Tenant, lead: Lead, seller_name: str, now: datetime.datetim
         text = re.sub(r"\s*Aqui é \{vendedor\}[^.!?\n]*[.!?]?", "", text)  # sai a frase toda ("Aqui é …, da Loja.")
         text = text.replace("{vendedor}", "")
     for key, value in (("nome", name), ("vendedor", seller), ("empresa", tenant.name),
-                       ("horario", hours_label(tenant)), ("retorno", return_phrase(tenant, now))):
+                       ("horario", hours_label(tenant)), ("retorno", return_phrase(tenant, now)),
+                       ("dia", return_day(tenant, now)), ("Dia", return_day(tenant, now).capitalize())):
         text = text.replace("{" + key + "}", value)
     return text
 
@@ -140,7 +172,9 @@ def _send(db, tenant: Tenant, lead: Lead, now: datetime.datetime) -> bool:
     if not handover.usable(number):
         return False  # WhatsApp desconectado: não tenta outro número de madrugada
     seller = number.owner or lead.assigned_user
-    text = text_for(tenant, lead, seller.name if seller else "", now)
+    texts = [t or b for b, t in db.query(Message.body, Message.transcript).join(Conversation, Conversation.id == Message.conversation_id)
+             .filter(Conversation.lead_id == lead.id, Message.direction == "in", Message.created_at >= closed_since(tenant, now))]
+    text = text_for(tenant, lead, seller.name if seller else "", now, detailed=says_what_they_want(texts))
     # o envio não é resposta do vendedor: se o eco do celular marcar como resposta, volta como estava
     before = (lead.last_outbound_at, lead.first_response_at, lead.unanswered_outs)
     ok, wa_id, secret, _used = messaging.send_text_any(number, lead.phone, text)

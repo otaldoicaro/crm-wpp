@@ -708,6 +708,7 @@ def settings_page(
             "feature_list": features.FEATURES, "features_on": features.enabled(tenant),
             "autofu_default1": autofollow.default_text1(tenant), "autofu_only_first": features.has(tenant, autofollow.ONLY_FIRST), "autofu_default2": autofollow.DEFAULT_TEXT2,
             "after_hours_default": after_hours.default_text(tenant), "after_hours_label": after_hours.hours_label(tenant),
+            "after_hours_detail_default": after_hours.detail_default(tenant),
         })
     else:
         ctx.update({
@@ -762,6 +763,9 @@ async def save_deadlines(
         if "after_hours_text" in form:  # 🌙 igual ao padrão do ramo: segue o padrão
             value = str(form.get("after_hours_text", "")).replace("\r\n", "\n").strip()
             tenant.after_hours_text = "" if value == after_hours.default_text(tenant) else value[:1500]
+        if "after_hours_detail_text" in form:
+            value = str(form.get("after_hours_detail_text", "")).replace("\r\n", "\n").strip()
+            tenant.after_hours_detail_text = "" if value == after_hours.detail_default(tenant) else value[:1500]
         if "agenda_confirm_text" in form:  # 📅 textos dos agendamentos (vazio/igual ao padrão = padrão do ramo)
             from app.services import agenda
 

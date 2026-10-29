@@ -175,8 +175,9 @@ def assign_form_lead(db, lead: Lead) -> None:
     if not numbers:
         assign_lead(db, lead)
         return
-    number = numbers[0]
-    number.last_routed_at = datetime.datetime.utcnow()
+    from app.services.distribution import take_turn
+
+    number = take_turn(numbers)  # ½ rodízio: vendedor pela metade pula uma vez sim, outra não
     lead.assigned_user_id = number.owner_user_id
     db.commit()
 
@@ -193,8 +194,9 @@ def number_for(db, lead: Lead) -> WhatsAppNumber | None:
     candidates = seller_numbers(db, lead.tenant_id)
     if not candidates:
         return None
-    number = candidates[0]
-    number.last_routed_at = datetime.datetime.utcnow()
+    from app.services.distribution import take_turn
+
+    number = take_turn(candidates)
     previous, before = lead.assigned_user_id, lead.assigned_user
     lead.assigned_user_id = number.owner_user_id
     from app.services import ownership

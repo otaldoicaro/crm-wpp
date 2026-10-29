@@ -71,6 +71,7 @@ SEGMENTS = {
                             "Já me conta aqui qual carro você procura e se tem carro pra dar na troca, que {retorno}, "
                             "assim que eu voltar, já te ajudo.\n\n"
                             "Só aguardar que te respondo! 🙏",
+        "after_hours_detail_text": "",  # sem a versão "já disse a peça, o carro e o ano"
         "agenda_confirm_text": "{nome}, sua visita está confirmada! 🚗\n📅 {data} às {hora}\n🚘 {carro}\n"
                                "Qualquer imprevisto, é só me avisar por aqui 😉",
         "agenda_reminder_text": "Oi {nome}! Passando pra lembrar da sua visita hoje às {hora} pra ver o {carro}. Te espero aqui! 😉",

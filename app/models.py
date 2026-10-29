@@ -72,6 +72,7 @@ class Tenant(Base):
     autofu_text2: Mapped[str] = mapped_column(Text, default="")
     # 🌙 mensagem fora do horário (services/after_hours.py): texto do cliente (vazio = padrão do ramo)
     after_hours_text: Mapped[str] = mapped_column(Text, default="")
+    after_hours_detail_text: Mapped[str] = mapped_column(Text, default="")  # quem já disse peça, carro e ano
     # 📅 agendamentos (recurso "agendamentos", services/agenda.py): textos pro cliente (vazio = padrão do ramo)
     # e com quantas horas de antecedência sai o lembrete (0 = sem lembrete)
     agenda_confirm_text: Mapped[str] = mapped_column(Text, default="")
@@ -125,6 +126,10 @@ class User(Base):
     # admin só entra no rodízio se alguém ligar na mão (e confirmar): quando foi confirmado
     rodizio_confirmed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     max_open_leads: Mapped[int] = mapped_column(Integer, default=0)  # 0 = sem limite
+    # ½ rodízio pela metade (Equipe): recebe 1 lead a cada 2 vezes que seria a vez dele.
+    # rodizio_skip = a próxima vez dele conta (a anterior foi pulada)
+    rodizio_half: Mapped[bool] = mapped_column(Boolean, default=False)
+    rodizio_skip: Mapped[bool] = mapped_column(Boolean, default=False)
     # vendedor que pode passar lead pra outro vendedor (ex: SDR); admin sempre pode. Liga em Equipe
     can_transfer: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)

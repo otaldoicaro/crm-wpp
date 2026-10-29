@@ -61,9 +61,14 @@
   <h3 id="fora-do-horario">🌙 Mensagem fora do horário {% if "mensagem_fora_horario" in features_on %}<span class="goal-ok" style="font-size:.8rem">ligado</span>{% else %}<span class="muted" style="font-size:.8rem">(desligado — ligue em Recursos, abaixo)</span>{% endif %}</h3>
   <p class="muted">O cliente escreveu com a loja fechada ({{ after_hours_label }}): sai esta resposta pelo WhatsApp onde ele escreveu, uma vez por noite.
     Não sai se o vendedor falou com ele nos últimos 30 minutos, e o cliente continua aparecendo como aguardando resposta.</p>
+  {% if after_hours_detail_default %}
+  <label style="display:block;margin-top:6px"><b>Quando o cliente já disse a peça, o carro e o ano</b> (ex: “farol do gol 2015”):</label>
+  <textarea name="after_hours_detail_text" rows="9" style="width:100%;max-width:560px">{{ tenant.after_hours_detail_text or after_hours_detail_default }}</textarea>
+  <label style="display:block;margin-top:6px"><b>Quando ainda não disse</b> o que precisa:</label>
+  {% endif %}
   <textarea name="after_hours_text" rows="7" style="width:100%;max-width:560px">{{ tenant.after_hours_text or after_hours_default }}</textarea>
   <p class="muted">Dá pra usar: {nome} (1º nome do cliente) · {vendedor} · {empresa} · {horario} (o horário de atendimento acima, por extenso) ·
-    {retorno} (“hoje cedo”, “amanhã cedo” ou “segunda cedinho”, conforme quando a loja abre de novo).</p>
+    {retorno} (“hoje cedo”, “amanhã cedo” ou “segunda cedinho”) · {Dia} / {dia} (“Amanhã” / “amanhã”, “Segunda” / “segunda”, “Hoje” / “hoje”), conforme quando a loja abre de novo.</p>
 
   {% if "agendamentos" in features_on %}
   {% set at = agenda_texts_for(tenant) %}
