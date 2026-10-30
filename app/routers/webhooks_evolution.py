@@ -522,6 +522,10 @@ def _process_event_db(db: Session, payload: dict) -> list:
     if event == "connection.update":
         state = data.get("state", "")
         if state:
+            if number.connection_state == "open" and state == "close":
+                from app.services import wa_health
+
+                wa_health.on_dropped(db, number)  # 📵 caiu: avisa o vendedor e os admins
             number.connection_state = state
             db.add(number)
             db.commit()

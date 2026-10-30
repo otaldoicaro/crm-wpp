@@ -162,6 +162,17 @@ def owner_phone(instance: str) -> str:
     return ""
 
 
+def restart(instance: str) -> None:
+    """Reinicia a conexão do número no Evolution (sem QR code: usa a sessão salva). Resolve a conexão
+    "zumbi" (diz open, mas o envio volta "Connection Closed"). v2 é POST; v1 era PUT."""
+    try:
+        _request("POST", f"/instance/restart/{instance}", timeout=30)
+    except EvolutionError as exc:
+        if "404" not in str(exc) and "405" not in str(exc):
+            raise
+        _request("PUT", f"/instance/restart/{instance}", timeout=30)
+
+
 def logout(instance: str) -> None:
     _request("DELETE", f"/instance/logout/{instance}")
 

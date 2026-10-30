@@ -40,6 +40,9 @@ with SessionLocal() as _fdb:
 archiver.schedule()
 meta_spend.schedule()
 history_sync.schedule()
+from app.services import wa_health  # noqa: E402
+
+wa_health.schedule()  # 🩺 confere os WhatsApps a cada 5 min e religa sozinho o que travar
 evolution_client.refresh_webhooks()  # eventos novos do webhook (📞 ligações) valem sem reconectar
 from app.services.conversions import queue as conversions_queue  # noqa: E402
 

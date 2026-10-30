@@ -32,6 +32,21 @@ def strip_failed(body: str) -> str:
     return FAILED_PREFIX.sub("", body or "", count=1)
 
 
+def _healing(number: WhatsAppNumber, send):
+    """Conexão "zumbi" (o Evolution diz conectado, mas responde "Connection Closed"): reinicia a
+    conexão do número e tenta de novo, uma vez (services/wa_health.py)."""
+    from app.services import wa_health
+
+    try:
+        return send()
+    except evolution_client.EvolutionTimeout:
+        raise
+    except evolution_client.EvolutionError as exc:
+        if not wa_health.is_zombie_error(exc) or not wa_health.heal(number, "envio voltou Connection Closed"):
+            raise
+    return send()
+
+
 def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dict] = None) -> tuple:
     """Devolve (ok, id_da_mensagem_no_whatsapp, messageSecret). quote: ver evolution_client.send_text.
     ok=None: o Evolution não respondeu a tempo (servidor lento) — pode ter saído; a confirmação
@@ -39,7 +54,7 @@ def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dic
     _last.no_whatsapp = False
     if number.provider == "evolution":
         try:
-            wa_id, secret = evolution_client.send_text(number.evolution_instance, phone, body, quote)
+            wa_id, secret = _healing(number, lambda: evolution_client.send_text(number.evolution_instance, phone, body, quote))
             return True, wa_id, secret
         except evolution_client.EvolutionTimeout:
             return None, "", ""
@@ -80,11 +95,11 @@ def send_media(
     if number.provider == "evolution":
         try:
             if media_kind == "audio":  # vai como mensagem de voz (legenda não existe em áudio)
-                wa_id, secret = evolution_client.send_audio(number.evolution_instance, phone, content)
+                wa_id, secret = _healing(number, lambda: evolution_client.send_audio(number.evolution_instance, phone, content))
             else:
-                wa_id, secret = evolution_client.send_media(
+                wa_id, secret = _healing(number, lambda: evolution_client.send_media(
                     number.evolution_instance, phone, content, filename, mime_type, media_kind, caption
-                )
+                ))
         except evolution_client.EvolutionTimeout:
             return None, "", "", "", ""  # servidor lento: pode ter saído (confirma pelo webhook)
         except evolution_client.EvolutionError as exc:
