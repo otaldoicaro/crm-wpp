@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import Conversation, Lead, Message, WhatsAppNumber
-from app.services import attribution, autofollow, autostage, buying, deals, followup, funnel, ownership, response_times, suggestions
+from app.services import attribution, autofollow, autostage, buying, deals, followup, funnel, handover, ownership, response_times, suggestions
 from app.services.distribution import assign_lead
 from app.services.lead_match import find_lead_by_phone
 
@@ -116,7 +116,7 @@ def ingest_inbound(
     had_this_number = any(c.whatsapp_number_id == number.id for c in lead.conversations)
     conversation = _get_or_create_conversation(db, number, lead)
     if (not had_this_number and lead.conversations and number.owner_user_id and lead.assigned_user_id
-            and number.owner_user_id != lead.assigned_user_id and not lead.is_group):
+            and number.owner_user_id != lead.assigned_user_id and not lead.is_group and not handover.private(lead)):
         # 👥 o cliente já fala com outro vendedor e agora chamou neste WhatsApp: avisa quem chegou depois
         from app.services import notify
 

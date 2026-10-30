@@ -13,6 +13,7 @@ import datetime
 from typing import Optional
 
 from app.models import Conversation, Lead, Message, WhatsAppNumber
+from app.services.inbox_state import NOT_SALES_TAGS
 
 
 def usable(number: Optional[WhatsAppNumber]) -> bool:
@@ -62,6 +63,32 @@ def move_to(db, lead: Lead, number: WhatsAppNumber, why: str) -> Conversation:
     return conversation
 
 
+def private(lead: Lead) -> bool:
+    """🔒 Contato "Time" ou "Outro": cada vendedor tem a conversa DELE com essa pessoa, separada.
+    Ex.: o gerente que fala com 2 vendedores — um nunca vê o que o outro conversou."""
+    return (lead.tag or "") in NOT_SALES_TAGS and not lead.is_group
+
+
+def _owner_id(conv: Conversation) -> Optional[str]:
+    return conv.whatsapp_number.owner_user_id if conv.whatsapp_number else None
+
+
+def visible_conversations(lead: Lead, user) -> list:
+    """Conversas desse contato que a pessoa pode ver. Admin vê todas; em contato Time/Outro o vendedor
+    vê só a do WhatsApp dele (e a de número sem dono, se o contato é dele). O histórico de cada um continua."""
+    if getattr(user, "role", "") == "admin" or not private(lead):
+        return list(lead.conversations)
+    user_id = getattr(user, "id", None)
+    return [c for c in lead.conversations
+            if _owner_id(c) == user_id or (_owner_id(c) is None and lead.assigned_user_id == user_id)]
+
+
+def visible_messages(lead: Lead, user) -> list:
+    if getattr(user, "role", "") == "admin" or not private(lead):
+        return lead.all_messages
+    return sorted((m for c in visible_conversations(lead, user) for m in c.messages), key=lambda m: m.created_at)
+
+
 def ensure_sendable(db, lead: Lead, user=None) -> Optional[Conversation]:
     """Antes de responder: vendedor que tem conversa com esse cliente no WhatsApp DELE responde por
     ela (cliente que fala com 2 vendedores). Senão: se a conversa está presa num WhatsApp que não
@@ -71,6 +98,9 @@ def ensure_sendable(db, lead: Lead, user=None) -> Optional[Conversation]:
                     and usable(c.whatsapp_number)), None)
         if own is not None:
             return own
+        if private(lead):  # 🔒 Time/Outro: nunca responde pela conversa de outro vendedor
+            mine = visible_conversations(lead, user)
+            return mine[-1] if mine else None
     target = next_number(db, lead)
     if target is None:
         return lead.active_conversation
@@ -84,6 +114,8 @@ def other_sellers(db, lead: Lead, user) -> list:
     e o responsável, se não for quem está olhando. [{"name", "since", "is_owner"}]"""
     from app.models import User
 
+    if private(lead):
+        return []  # 🔒 Time/Outro: cada um tem a sua conversa, não é cliente disputado
     out = {}
     for conv in lead.conversations:
         owner_id = conv.whatsapp_number.owner_user_id if conv.whatsapp_number else None
@@ -103,6 +135,7 @@ def shared_lead_ids(db, lead_ids: list) -> set:
     if not lead_ids:
         return set()
     rows = (db.query(Conversation.lead_id).join(WhatsAppNumber, WhatsAppNumber.id == Conversation.whatsapp_number_id)
-            .filter(Conversation.lead_id.in_(lead_ids), WhatsAppNumber.owner_user_id.isnot(None))
+            .join(Lead, Lead.id == Conversation.lead_id)
+            .filter(Conversation.lead_id.in_(lead_ids), WhatsAppNumber.owner_user_id.isnot(None), Lead.tag.notin_(NOT_SALES_TAGS))
             .group_by(Conversation.lead_id).having(func.count(func.distinct(WhatsAppNumber.owner_user_id)) > 1).all())
     return {lid for (lid,) in rows}

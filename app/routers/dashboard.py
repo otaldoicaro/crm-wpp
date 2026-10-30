@@ -61,6 +61,14 @@ def _visible_lead(db: Session, tenant: Tenant, user: User, lead_id: str) -> Opti
     return query.first()
 
 
+def _visible_conversation(db: Session, tenant: Tenant, user: User, conversation) -> Optional[Lead]:
+    """Lead da conversa, se esta pessoa pode ver ESSA conversa (🔒 Time/Outro: só a do WhatsApp dela)."""
+    if conversation is None or conversation.tenant_id != tenant.id:
+        return None
+    lead = _visible_lead(db, tenant, user, conversation.lead_id)
+    return lead if lead is not None and conversation in handover.visible_conversations(lead, user) else None
+
+
 def _period_bounds(date_range: str, date_from: str, date_to: str):
     """(início, fim) em UTC pros filtros de período; None = sem limite."""
     if date_range == "custom":
@@ -424,6 +432,7 @@ def lead_detail(
             "start_error": request.query_params.get("erro_envio", ""),
             "comments": [] if lead.is_group else comments.thread(db, lead),
             "owner_history": ownership.history(lead),
+            "lead_messages": handover.visible_messages(lead, user),
         },
     )
 
@@ -1145,7 +1154,14 @@ def _inbox_query(
     if user.role != "admin":
         # no rodízio cada vendedor só enxerga os leads que caíram pra ele; admin vê tudo. E a conversa
         # que está no WhatsApp DELE (cliente que fala com 2 vendedores: cada um vê a sua)
-        query = query.filter(or_(Lead.assigned_user_id == user.id, Conversation.whatsapp_number_id.in_(_own_number_ids(db, user))))
+        # 🔒 contato Time/Outro: só a conversa do WhatsApp DELE (a que outro vendedor tem com a mesma pessoa não aparece)
+        own_ids = _own_number_ids(db, user)
+        unowned_ids = db.query(WhatsAppNumber.id).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.owner_user_id.is_(None))
+        query = query.filter(or_(
+            Conversation.whatsapp_number_id.in_(own_ids),
+            and_(Lead.assigned_user_id == user.id, Lead.tag.notin_(NOT_SALES_TAGS)),
+            and_(Lead.assigned_user_id == user.id, Conversation.whatsapp_number_id.in_(unowned_ids)),
+        ))
     if numero:
         query = query.filter(Conversation.whatsapp_number_id == numero)
     removed_ids = removed_user_ids(db, tenant.id)
@@ -1284,11 +1300,13 @@ def _inbox_context(
     other_numbers = []
     if selected_lead_id:
         selected_lead = db.query(Lead).filter(Lead.id == selected_lead_id, Lead.tenant_id == tenant.id).first()
-        if selected_lead and user.role != "admin" and selected_lead.assigned_user_id != user.id:
+        if (selected_lead and user.role != "admin" and selected_lead.assigned_user_id != user.id
+                and not (handover.private(selected_lead) and handover.visible_conversations(selected_lead, user))):
             selected_lead = None  # vendedor só abre conversa de lead dele (ex: link antigo de um lead transferido)
-        if selected_lead and selected_lead.conversations:
-            messages = selected_lead.all_messages
-            active_conversation = selected_lead.active_conversation
+        if selected_lead and handover.visible_conversations(selected_lead, user):
+            # 🔒 contato Time/Outro: só o histórico do WhatsApp de quem está olhando
+            messages = handover.visible_messages(selected_lead, user)
+            active_conversation = handover.visible_conversations(selected_lead, user)[-1]
             other_numbers = [] if user.role != "admin" else [
                 n
                 for n in db.query(WhatsAppNumber)
@@ -1358,6 +1376,7 @@ def _inbox_context(
             "lead_recado_open": bool(selected_lead and comments.open_count(db, selected_lead)),
             "other_sellers": handover.other_sellers(db, selected_lead, user) if selected_lead and not selected_lead.is_group else [],
             "shared_leads": handover.shared_lead_ids(db, [c.lead_id for c in conversations]),
+            "private_view": bool(selected_lead and user.role != "admin" and handover.private(selected_lead)),
     }
 
 
@@ -2112,10 +2131,11 @@ def team_thread(
     if not lead:
         raise HTTPException(status_code=404)
     inbox_state.mark_read(db, user.id, lead_id)
-    messages = lead.all_messages[-TEAM_THREAD_LAST:]
+    all_messages = handover.visible_messages(lead, user)
+    messages = all_messages[-TEAM_THREAD_LAST:]
     closed = bool(lead.stage and (lead.stage.is_won or lead.stage.is_lost))
     head = templates.get_template("_team_thread_head.html").render({
-        "tenant": tenant, "lead": lead, "closed": closed, "truncated": len(lead.all_messages) > TEAM_THREAD_LAST,
+        "tenant": tenant, "lead": lead, "closed": closed, "truncated": len(all_messages) > TEAM_THREAD_LAST,
         "can_settle": not lead.is_group and bool(response_times.waiting_since(lead)),
         "transfer_people": [] if lead.is_group or not _can_transfer(user) else _transfer_options(db, tenant, lead),
         "stages": [] if lead.is_group else db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all(),
@@ -2224,7 +2244,7 @@ def get_media(
         raise HTTPException(status_code=404, detail="Mídia não encontrada")
 
     conversation = db.get(Conversation, message.conversation_id)
-    if not conversation or conversation.tenant_id != tenant.id or not _visible_lead(db, tenant, user, conversation.lead_id):
+    if not conversation or conversation.tenant_id != tenant.id or not _visible_conversation(db, tenant, user, conversation):
         raise HTTPException(status_code=404, detail="Mídia não encontrada")
 
     # 1º a cópia própria (sobrevive a número bloqueado); senão busca no WhatsApp
@@ -2251,7 +2271,7 @@ def reply_lead(
     user: User = Depends(current_user_required),
 ):
     lead = _visible_lead(db, tenant, user, lead_id)
-    if not lead or not lead.conversations:
+    if not lead or not handover.visible_conversations(lead, user):
         return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
     conversation = handover.ensure_sendable(db, lead, user)  # 📱 a conversa do WhatsApp de quem responde
@@ -2260,7 +2280,7 @@ def reply_lead(
     quoted = db.get(Message, quote_id) if quote_id else None
     if quoted is not None:
         owner = db.get(Conversation, quoted.conversation_id)
-        if owner is None or owner.lead_id != lead.id or not quoted.wa_message_id:
+        if owner is None or owner.lead_id != lead.id or not quoted.wa_message_id or owner not in handover.visible_conversations(lead, user):
             quoted = None
     quote = {"id": quoted.wa_message_id, "from_me": quoted.direction == "out", "text": quoted.body} if quoted else None
     ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, body, quote)  # tenta com e sem o 9º dígito
@@ -2538,7 +2558,7 @@ def edit_message(
     """✏️ Edita uma mensagem de texto nossa: muda no WhatsApp do cliente e no CRM."""
     message = db.get(Message, message_id)
     conversation = db.get(Conversation, message.conversation_id) if message else None
-    lead = _visible_lead(db, tenant, user, conversation.lead_id) if conversation and conversation.tenant_id == tenant.id else None
+    lead = _visible_conversation(db, tenant, user, conversation)
     text = body.strip()
     if lead is None or message.direction != "out" or message.media_type or not message.wa_message_id:
         return JSONResponse({"ok": False, "error": "Só dá pra editar mensagem de texto enviada"}, status_code=400)
@@ -2573,7 +2593,7 @@ def resend_message(
     a mesma mensagem vira enviada (sem duplicar na conversa)."""
     message = db.get(Message, message_id)
     conversation = db.get(Conversation, message.conversation_id) if message else None
-    lead = _visible_lead(db, tenant, user, conversation.lead_id) if conversation and conversation.tenant_id == tenant.id else None
+    lead = _visible_conversation(db, tenant, user, conversation)
     if lead is None or message.direction != "out" or message.wa_message_id or message.media_type or not message.body.startswith("⚠️"):
         return JSONResponse({"ok": False, "error": "Essa mensagem não pode ser reenviada"}, status_code=400)
     # 1º confere no WhatsApp se ela não saiu mesmo (às vezes o aviso de erro veio mas a mensagem foi)
@@ -2626,7 +2646,7 @@ def delete_message(
     sair ("⚠️ Não enviada") só some do CRM."""
     message = db.get(Message, message_id)
     conversation = db.get(Conversation, message.conversation_id) if message else None
-    lead = _visible_lead(db, tenant, user, conversation.lead_id) if conversation and conversation.tenant_id == tenant.id else None
+    lead = _visible_conversation(db, tenant, user, conversation)
     if lead is None or message.direction != "out" or message.body.startswith("🚫"):
         return JSONResponse({"ok": False, "error": "Só dá pra apagar mensagem enviada pelo time"}, status_code=400)
     if not message.wa_message_id:
@@ -2698,7 +2718,7 @@ def reply_lead_media(
     é um form comum) pra dar pra mostrar 'enviando...' sem recarregar a
     página até a resposta da Meta confirmar."""
     lead = _visible_lead(db, tenant, user, lead_id)
-    if not lead or not lead.conversations:
+    if not lead or not handover.visible_conversations(lead, user):
         return JSONResponse({"ok": False, "error": "conversa não encontrada"}, status_code=404)
 
     content = file.file.read()

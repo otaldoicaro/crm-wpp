@@ -114,7 +114,7 @@
 {% if lead.calls_total %}
 <div class="card" style="margin-top:16px;">
   <h3 style="margin-top:0">📞 Ligações pelo WhatsApp {{ m.calls_badge(lead) }}</h3>
-  <ul>{% for msg in lead.all_messages if msg.call_dir %}<li>{{ msg.created_at|hora("%d/%m %H:%M") }} · {{ msg.body }}{% if msg.direction != "note" and msg.sender %} · {{ msg.sender.name }}{% endif %}</li>{% endfor %}</ul>
+  <ul>{% for msg in lead_messages if msg.call_dir %}<li>{{ msg.created_at|hora("%d/%m %H:%M") }} · {{ msg.body }}{% if msg.direction != "note" and msg.sender %} · {{ msg.sender.name }}{% endif %}</li>{% endfor %}</ul>
 </div>
 {% endif %}
 

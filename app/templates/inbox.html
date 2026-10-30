@@ -141,7 +141,7 @@
         </div>
         <div class="head-meta">{# tempo de resposta, prazos, último valor, WhatsApp de envio, ligações #}
         {% if not selected_lead.is_group %}
-        {% if selected_lead.calls_total %}<div>{{ m.calls_badge(selected_lead) }}</div>{% endif %}
+        {% if selected_lead.calls_total and not private_view %}<div>{{ m.calls_badge(selected_lead) }}</div>{% endif %}
         {{ m.tempo_atendimento(selected_lead, closed=closed) }}
         {{ m.followup_tags(selected_lead) }}
         {% if selected_lead.quoted_value and not closed %}<div class="muted quoted">💰 Último valor enviado: R$ {{ "{:,.2f}".format(selected_lead.quoted_value).replace(",", "X").replace(".", ",").replace("X", ".") }} ({{ selected_lead.quoted_at|hora("%d/%m %H:%M") }})</div>{% endif %}
