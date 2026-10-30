@@ -123,7 +123,7 @@ def friendly_error(exc: Exception) -> str:
         _last.no_whatsapp = True
         return "esse número não tem WhatsApp. Confira o número com o cliente ou ligue"
     if "does not exist" in text or "connection closed" in text or "not connected" in text or "404" in text:
-        return "o WhatsApp deste número está desconectado. Peça pro admin reconectar em WhatsApp."
+        return "o WhatsApp deste número está desconectado. Reconecte em Meu WhatsApp → Conectar agora (QR code)."
     if "sem resposta" in text or "timeout" in text:
         return "o servidor do WhatsApp não respondeu. Tente de novo em instantes."
     return "o WhatsApp recusou o envio. Tente de novo; se continuar, avise o admin."
