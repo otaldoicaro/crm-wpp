@@ -210,3 +210,58 @@ def check_failed_sends() -> int:
     finally:
         db.close()
     return fixed
+
+
+RETRY_AFTER = (2, 5, 15)  # minutos depois da falha: 1ª, 2ª e 3ª tentativa automática
+RETRY_ERRORS = ("desconectado", "não respondeu", "recusou o envio", "não aceitou o envio")  # falha de conexão (número sem WhatsApp não)
+
+
+def retry_failed() -> int:
+    """🔄 Em segundo plano: "⚠️ Não enviada" de texto por falha de conexão, dos últimos 30 min, é mandada de
+    novo sozinha (2, 5 e 15 min depois). Antes confere se não saiu mesmo e se o vendedor não mandou o
+    mesmo texto de novo (pelo CRM ou pelo celular). Devolve quantas saíram."""
+    import datetime
+
+    from app.db import SessionLocal
+    from app.models import Conversation, Lead, Message
+    from app.routers.dashboard import resend_failed
+
+    db = SessionLocal()
+    sent = 0
+    try:
+        now = datetime.datetime.utcnow()
+        rows = db.query(Message).filter(
+            Message.direction == "out", Message.wa_message_id == "", Message.media_type == "",
+            Message.body.like("⚠️ Não enviada%"), Message.auto_retries < len(RETRY_AFTER),
+            Message.created_at >= now - datetime.timedelta(minutes=30),
+        ).order_by(Message.created_at).limit(30).all()
+        for m in rows:
+            if m.created_at > now - datetime.timedelta(minutes=RETRY_AFTER[m.auto_retries or 0]):
+                continue  # ainda não é hora desta tentativa
+            if not any(word in m.body.split("):", 1)[0] for word in RETRY_ERRORS):
+                continue
+            m.auto_retries = (m.auto_retries or 0) + 1
+            db.commit()  # conta a tentativa antes de mandar: nunca tenta mais vezes que o combinado
+            try:
+                if verify_sent(db, m):
+                    db.commit()
+                    continue
+                text = strip_failed(m.body)
+                conv = db.get(Conversation, m.conversation_id)
+                lead = db.get(Lead, conv.lead_id) if conv else None
+                if lead is None or lead.deleted_at:
+                    continue
+                again = db.query(Message.id).join(Conversation, Conversation.id == Message.conversation_id).filter(
+                    Conversation.lead_id == lead.id, Message.direction == "out", Message.wa_message_id != "",
+                    Message.created_at > m.created_at, Message.body == text).first()
+                if again is not None:
+                    continue  # o vendedor já mandou de novo
+                if resend_failed(db, lead, m) is True:
+                    sent += 1
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception("reenvio automático: falhou na mensagem %s", m.id)
+    finally:
+        db.close()
+    return sent

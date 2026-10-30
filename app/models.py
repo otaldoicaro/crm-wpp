@@ -452,6 +452,8 @@ class Message(Base):
     transcript: Mapped[str] = mapped_column(Text, default="")
     # "não enviada"/"sem confirmação": quantas vezes o CRM já conferiu no Evolution se saiu mesmo
     delivery_checks: Mapped[int] = mapped_column(Integer, default=0)
+    # 🔄 "não enviada" por conexão: quantas vezes o CRM já tentou mandar de novo sozinho (messaging.retry_failed)
+    auto_retries: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")

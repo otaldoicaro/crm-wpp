@@ -2580,10 +2580,20 @@ def resend_message(
     if messaging.verify_sent(db, message):
         db.commit()
         return JSONResponse({"ok": True, "already": True})
+    ok = resend_failed(db, lead, message)
+    if ok == "sem_whatsapp":
+        return JSONResponse({"ok": False, "error": "conversa sem WhatsApp"}, status_code=400)
+    db.commit()
+    return JSONResponse({"ok": ok is not False, "pending": ok is None, "error": "" if ok is not False else messaging.last_error()})
+
+
+def resend_failed(db: Session, lead: Lead, message: Message):
+    """Manda de novo uma "⚠️ Não enviada" de texto (botão 🔄 e reenvio automático). Sem commit.
+    Devolve True (saiu), None (⏳ confirmando), False (falhou de novo) ou "sem_whatsapp"."""
     text = messaging.strip_failed(message.body)
     number = db.get(WhatsAppNumber, lead.active_conversation.whatsapp_number_id) if lead.active_conversation else None
     if number is None or not text.strip():
-        return JSONResponse({"ok": False, "error": "conversa sem WhatsApp"}, status_code=400)
+        return "sem_whatsapp"
     ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, text)  # tenta com e sem o 9º dígito
     if ok is not False and used != lead.phone:
         lead.phone = used
@@ -2599,8 +2609,7 @@ def resend_message(
     else:
         message.body = f"⚠️ Não enviada ({messaging.last_error()}): {text}"
         invalid_contact.after_failed_send(db, lead)  # 📵 número não existe: Perdido · Contato inválido
-    db.commit()
-    return JSONResponse({"ok": ok is not False, "pending": ok is None, "error": "" if ok is not False else messaging.last_error()})
+    return ok
 
 
 DELETE_WINDOW = datetime.timedelta(hours=48)  # o WhatsApp deixa "apagar pra todos" por ~2 dias

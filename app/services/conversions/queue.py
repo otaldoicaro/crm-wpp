@@ -170,6 +170,9 @@ def schedule(delay_seconds: int = 60) -> None:
             messaging.expire_unconfirmed()  # "⏳ confirmando envio" sem confirmação há 3 min: avisa
             if messaging.check_failed_sends():  # "não enviada" que saiu mesmo: vira enviada sozinha
                 logger.info("mensagens marcadas como não enviadas foram confirmadas no WhatsApp")
+            retried = messaging.retry_failed()  # 🔄 "não enviada" por conexão: tenta de novo sozinho
+            if retried:
+                logger.info("mensagens não enviadas que saíram no reenvio automático: %s", retried)
         except Exception:
             logger.exception("mensagens sem confirmação: falhou")
         schedule(INTERVAL_SECONDS)
