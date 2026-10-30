@@ -7,8 +7,8 @@ o telefone, o CRM não achava o lead e descartava.
 - Mantém a hora original, na ordem em que aconteceu.
 - Mensagem nossa (do celular) só entra se o contato já é lead, igual no dia a dia (conversa
   pessoal não vira lead). Mensagem do cliente cria o lead se ele não existir.
-- Roda sozinho a cada 6h olhando os últimos 2 dias; dá pra rodar à mão pra trás
-  (scripts/recuperar_historico.py)."""
+- Roda sozinho a cada 20 min olhando as últimas 3h (e o dia inteiro uma vez por noite); dá pra
+  rodar à mão pra trás (scripts/recuperar_historico.py)."""
 
 from __future__ import annotations
 
@@ -23,10 +23,14 @@ from app.services import evolution_client
 
 logger = logging.getLogger("history_sync")
 
-# a cada 3h olhando o último dia: com o LID resolvido na hora (Redis) quase nada escapa, e cada
-# rodada pesa no banco do Evolution (busca as mensagens do dia de todos os números)
-INTERVAL_SECONDS = 3 * 60 * 60
-AUTO_DAYS = 1
+# a cada 20 min olhando as últimas 3h (mensagem que escapou aparece em até 20 min; cada rodada é
+# leve: só as mensagens de 3h de cada número) e, uma vez por noite (FULL_HOUR, horário de Brasília),
+# o dia inteiro, pra garantia
+INTERVAL_SECONDS = 20 * 60
+AUTO_DAYS = 3 / 24
+FULL_DAYS = 1
+FULL_HOUR = 3
+_full_done = {"date": None}
 MAX_PAGES = 100  # 100 x 200 = 20 mil mensagens por número por rodada
 SKIP_TYPES = {"protocolMessage", "reactionMessage", "pollUpdateMessage", "senderKeyDistributionMessage"}
 
@@ -73,7 +77,8 @@ def sync_number(number_id: str, days: int, apply: bool) -> dict:
         number = db.get(WhatsAppNumber, number_id)
         if number is None or number.provider != "evolution":
             return stats
-        until = datetime.datetime.utcnow()
+        # até 2 min atrás: a mensagem recém-chegada ainda pode estar entrando pelo webhook
+        until = datetime.datetime.utcnow() - datetime.timedelta(minutes=2)
         since = until - datetime.timedelta(days=days)
         records = _records(number.evolution_instance, since, until)
         records.sort(key=lambda r: int(r.get("messageTimestamp") or 0))
@@ -162,13 +167,24 @@ def sync_all(days: int, apply: bool) -> dict:
     return result
 
 
+def _days_now() -> float:
+    """Quanto olhar pra trás nesta rodada: o dia inteiro na 1ª rodada depois das FULL_HOUR h; senão 3h."""
+    from app.timeutil import to_local
+
+    local = to_local(datetime.datetime.utcnow())
+    if local.hour >= FULL_HOUR and _full_done["date"] != local.date():
+        _full_done["date"] = local.date()
+        return FULL_DAYS
+    return AUTO_DAYS
+
+
 def schedule(delay_seconds: int = 300) -> None:
     if not evolution_client.is_configured():
         return
 
     def run():
         try:
-            result = sync_all(AUTO_DAYS, apply=True)
+            result = sync_all(_days_now(), apply=True)
             imported = sum(r.get("importar_cliente", 0) + r.get("importar_nossas", 0) for r in result.values())
             if imported:
                 logger.warning("history_sync: %s mensagem(ns) que tinham escapado foram recuperadas", imported)
