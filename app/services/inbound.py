@@ -91,12 +91,15 @@ def ingest_inbound(
         else:
             # fechado há pouco e mandou pedido novo (carro, peça, preço): volta pro atendimento
             lead = autostage.reopen_if_request(db, lead, body, when)
+        # origem: lead do formulário que agora chamou, cliente antigo (negócio novo) ou lead que já
+        # conversava e clicou num anúncio — vale enquanto o lead não tiver origem de verdade
+        if attribution.is_empty(lead.attribution):
+            if referral:
+                attribution.attribution_from_ctwa_referral(db, lead, referral)
+            elif not lead.conversations or attribution.extract_tracking_code(body):
+                attribution.attribution_from_click_bridge(db, lead, body)
         if not lead.conversations:
             # lead que nasceu do formulário da LP e agora chamou no WhatsApp: o mesmo lead
-            if lead.attribution is None and referral:
-                attribution.attribution_from_ctwa_referral(db, lead, referral)
-            elif lead.attribution is None:
-                attribution.attribution_from_click_bridge(db, lead, body)
             if number.owner_user_id and number.owner and number.owner.is_active:
                 previous = lead.assigned_user_id
                 lead.assigned_user_id = number.owner_user_id  # quem atende é o dono do WhatsApp que recebeu

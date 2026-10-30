@@ -103,13 +103,16 @@ def _redirect_with_tracking(
     code = generate_tracking_code(db)
 
     source = params.get("utm_source", "")
+    # iPhone: o Google manda gbraid/wbraid no lugar do gclid; fbc = cookie _fbc do site ("fb.1.<hora>.<fbclid>")
+    fbclid = params.get("fbclid", "") or (params.get("fbc", "").split(".", 3)[3] if params.get("fbc", "").count(".") >= 3 else "")
+    google = params.get("gclid") or params.get("gbraid") or params.get("wbraid")
     if not source:
-        source = "google" if params.get("gclid") else "facebook" if params.get("fbclid") else default_source
+        source = "google" if google else "facebook" if fbclid else default_source
     bridge = ClickBridge(
         tenant_id=tenant_id,
         tracking_code=code,
         gclid=params.get("gclid", ""),
-        fbclid=params.get("fbclid", ""),
+        fbclid=fbclid[:255],
         utm_source=source,
         utm_medium=params.get("utm_medium", "cpc" if source else ""),
         utm_campaign=params.get("utm_campaign", ""),

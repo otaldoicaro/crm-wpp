@@ -74,6 +74,24 @@ def _phone_variants(phone: str) -> set:
     return variants
 
 
+def is_empty(att: UtmAttribution | None) -> bool:
+    """Origem sem nada que diga de onde veio (ex: clique no link do site sem UTM): pode ser trocada."""
+    return att is None or not any((att.utm_source, att.utm_campaign, att.gclid, att.fbclid, att.fbc, att.ctwa_clid, att.ad_id))
+
+
+def _drop_empty(db: Session, lead: Lead) -> bool:
+    """Apaga a origem vazia do lead pra gravar a de verdade. False = o lead já tem origem de verdade."""
+    att = db.query(UtmAttribution).filter(UtmAttribution.lead_id == lead.id).first()
+    if att is None:
+        return True
+    if not is_empty(att):
+        return False
+    db.delete(att)
+    db.flush()
+    db.expire(lead, ["attribution"])
+    return True
+
+
 def attribution_from_click_bridge(db: Session, lead: Lead, message_body: str) -> UtmAttribution | None:
     import datetime
 
@@ -97,6 +115,10 @@ def attribution_from_click_bridge(db: Session, lead: Lead, message_body: str) ->
         )
         code = bridge.tracking_code if bridge else None
     if not bridge or bridge.consumed_at:
+        return None
+    if not any((bridge.utm_source, bridge.utm_campaign, bridge.gclid, bridge.fbclid)) and lead.attribution is not None:
+        return None  # clique sem origem não apaga nada
+    if not _drop_empty(db, lead):
         return None
 
     attribution = UtmAttribution(
@@ -124,6 +146,8 @@ def attribution_from_ctwa_referral(db: Session, lead: Lead, referral: dict) -> U
     {"source_id": "<ad_id>", "source_url": "...", "headline": "...",
      "ctwa_clid": "..."}
     """
+    if not _drop_empty(db, lead):
+        return lead.attribution
     ad_id = referral.get("source_id", "")
     ad_names = fetch_ad_names(ad_id)
 

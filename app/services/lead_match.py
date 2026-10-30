@@ -9,7 +9,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import Lead, UtmAttribution
-from app.services import deals, funnel
+from app.services import attribution, deals, funnel
 from app.services.attribution import _phone_variants, normalize_br_phone
 from app.timeutil import to_local
 
@@ -109,7 +109,7 @@ def upsert_form_lead(db: Session, tenant_id: str, data: dict, source: str = "sit
     db.refresh(lead)
 
     utm_keys = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid", "fbc", "fbp", "ad_id")
-    if lead.attribution is None and any(data.get(k) for k in utm_keys):
+    if any(data.get(k) for k in utm_keys) and attribution.is_empty(lead.attribution) and attribution._drop_empty(db, lead):
         db.add(UtmAttribution(lead_id=lead.id, **{k: str(data.get(k) or "")[:250] for k in utm_keys}))
         db.commit()
 
