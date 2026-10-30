@@ -49,11 +49,15 @@ def is_zombie_error(exc: Exception) -> bool:
 
 def _works(instance: str, phone: str) -> bool:
     """A conexão funciona de verdade? ("open" não basta: o zumbi também diz open)"""
+    if not phone:
+        return True  # sem o número não dá pra testar: confia no "open"
     try:
         evolution_client.whatsapp_numbers(instance, [phone])
         return True
-    except evolution_client.EvolutionError:
-        return False
+    except evolution_client.EvolutionTimeout:
+        return True  # lento não é travado
+    except evolution_client.EvolutionError as exc:
+        return not is_zombie_error(exc)  # só "conexão fechada" conta como travado
 
 
 def heal(number: WhatsAppNumber, why: str):
@@ -80,6 +84,28 @@ def heal(number: WhatsAppNumber, why: str):
         except evolution_client.EvolutionError:
             pass
     return False
+
+
+def hard_reset(db, number: WhatsAppNumber) -> None:
+    """Desconecta 100%: sai do WhatsApp, apaga a sessão no Evolution e cria de novo, limpa. Usado quando a
+    conexão está zumbi (o "sair" normal não funciona nela e o "Conectar" seguia dizendo conectado sem QR).
+    Depois disso o "Conectar agora" mostra o QR code. As conversas do CRM não mudam (commit aqui)."""
+    instance = number.evolution_instance
+    with _lock:
+        _healed[instance] = time.monotonic()  # a queda que vem pelo webhook é nossa: não tenta religar
+    number.connection_state = "close"
+    db.add(number)
+    db.commit()
+    for action in (evolution_client.logout, evolution_client.delete_instance):
+        try:
+            action(instance)
+        except evolution_client.EvolutionError:
+            pass  # zumbi não sai direito / já apagada: segue
+    try:
+        evolution_client.create_instance(instance)  # já com o webhook
+    except evolution_client.EvolutionError as exc:
+        logger.warning("wa_health: não deu pra recriar %s: %s", number.label, exc)  # o "Conectar agora" recria
+    logger.warning("wa_health: %s desconectado 100%% (sessão apagada); precisa ler o QR code", number.label)
 
 
 def _admins_and_owner(db, number: WhatsAppNumber) -> list:
@@ -205,10 +231,13 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
                 warn = ok is False and time.monotonic() - _warned.get(number.evolution_instance, -WARN_EVERY) >= WARN_EVERY
                 if warn:
                     _warned[number.evolution_instance] = time.monotonic()
+            if ok is False:
+                hard_reset(db, number)  # não voltou reiniciando: desconecta 100% pra o QR code aparecer
             if warn:
                 logger.warning("wa_health: %s continua travado depois de reiniciar: precisa de QR code", number.label)
                 _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} travou",
-                      "O CRM tentou religar sozinho e não conseguiu. Desconecte e conecte de novo em Meu WhatsApp (QR code).")
+                      "O CRM tentou religar sozinho e não conseguiu, e desconectou o número. Entre em Meu WhatsApp → "
+                      "Conectar agora e leia o QR code com o celular.")
             return "zumbi"
         return ""
     tenant = db.get(Tenant, number.tenant_id)

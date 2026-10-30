@@ -148,7 +148,11 @@ def number_qr(
     try:
         state = evolution_client.connection_state(number.evolution_instance)
         if state == "open":
-            return JSONResponse(_mark_connected(db, number))
+            from app.services import wa_health
+
+            if wa_health._works(number.evolution_instance, number.phone_number):
+                return JSONResponse(_mark_connected(db, number))
+            wa_health.hard_reset(db, number)  # diz conectado mas não funciona (zumbi): limpa e mostra o QR
         try:
             evolution_client.set_webhook(number.evolution_instance)  # garante que as mensagens vão chegar
         except evolution_client.EvolutionError as exc:
@@ -198,13 +202,9 @@ def disconnect_number(
     user: User = Depends(current_user_required),
 ):
     number = _get_number(db, tenant, user, number_id)
-    number.connection_state = "close"  # antes do logout: a queda que vem pelo webhook é de propósito (não tenta religar)
-    db.add(number)
-    db.commit()
-    try:
-        evolution_client.logout(number.evolution_instance)
-    except evolution_client.EvolutionError:
-        pass  # já estava desconectado
+    from app.services import wa_health
+
+    wa_health.hard_reset(db, number)  # 100%: até a conexão zumbi sai (antes o "Conectar" pulava o QR code)
     return RedirectResponse(url="/whatsapp", status_code=302)
 
 
