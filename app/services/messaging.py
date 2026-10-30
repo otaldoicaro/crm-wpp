@@ -42,7 +42,7 @@ def _healing(number: WhatsAppNumber, send):
     except evolution_client.EvolutionTimeout:
         raise
     except evolution_client.EvolutionError as exc:
-        if not wa_health.is_zombie_error(exc) or not wa_health.heal(number, "envio voltou Connection Closed"):
+        if not wa_health.is_zombie_error(exc) or wa_health.heal(number, "envio voltou Connection Closed") is not True:
             raise
     return send()
 

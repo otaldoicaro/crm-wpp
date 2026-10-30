@@ -29,11 +29,13 @@ HEAL_COOLDOWN = 10 * 60
 SILENT_AFTER = datetime.timedelta(minutes=90)
 SILENT_COOLDOWN = 3 * 60 * 60
 SILENT_MIN_PER_HOUR = 3  # só número que recebe, em média, 3+ mensagens por hora de atendimento
-WAIT_OPEN_SECONDS = 20
+WAIT_OPEN_SECONDS = 30
+WARN_EVERY = 60 * 60  # o aviso "travou" do mesmo número no máximo 1 vez por hora
 
 _lock = threading.Lock()
 _healed: dict = {}  # instância -> quando reiniciou (monotonic)
 _silent: dict = {}  # instância -> quando reiniciou por "parou de receber"
+_warned: dict = {}  # instância -> quando avisou "travou"
 
 
 def is_zombie_error(exc: Exception) -> bool:
@@ -42,13 +44,23 @@ def is_zombie_error(exc: Exception) -> bool:
     return "connection closed" in text or "'statuscode': 428" in text or "precondition required" in text
 
 
-def heal(number: WhatsAppNumber, why: str) -> bool:
-    """Reinicia a conexão do número e espera voltar. True = voltou conectado (vale tentar de novo)."""
+def _works(instance: str, phone: str) -> bool:
+    """A conexão funciona de verdade? ("open" não basta: o zumbi também diz open)"""
+    try:
+        evolution_client.whatsapp_numbers(instance, [phone])
+        return True
+    except evolution_client.EvolutionError:
+        return False
+
+
+def heal(number: WhatsAppNumber, why: str):
+    """Reinicia a conexão do número e espera voltar funcionando. True = voltou (vale tentar de novo),
+    False = não voltou (precisa de QR code), None = já reiniciou há pouco (HEAL_COOLDOWN): não fez nada."""
     instance = number.evolution_instance
     now = time.monotonic()
     with _lock:
         if now - _healed.get(instance, -HEAL_COOLDOWN) < HEAL_COOLDOWN:
-            return False
+            return None
         _healed[instance] = now
     logger.warning("wa_health: reiniciando a conexão de %s (%s)", number.label, why)
     try:
@@ -60,7 +72,7 @@ def heal(number: WhatsAppNumber, why: str) -> bool:
     while time.monotonic() < deadline:
         time.sleep(2)
         try:
-            if evolution_client.connection_state(instance) == "open":
+            if evolution_client.connection_state(instance) == "open" and _works(instance, number.phone_number):
                 return True
         except evolution_client.EvolutionError:
             pass
@@ -126,7 +138,12 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
     except evolution_client.EvolutionError as exc:
         if is_zombie_error(exc):
             ok = heal(number, "conexão zumbi")
-            if not ok:
+            with _lock:
+                warn = ok is False and time.monotonic() - _warned.get(number.evolution_instance, -WARN_EVERY) >= WARN_EVERY
+                if warn:
+                    _warned[number.evolution_instance] = time.monotonic()
+            if warn:
+                logger.warning("wa_health: %s continua travado depois de reiniciar: precisa de QR code", number.label)
                 _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} travou",
                       "O CRM tentou religar sozinho e não conseguiu. Desconecte e conecte de novo em Meu WhatsApp (QR code).")
             return "zumbi"
