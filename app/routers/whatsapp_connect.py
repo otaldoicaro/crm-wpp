@@ -198,13 +198,13 @@ def disconnect_number(
     user: User = Depends(current_user_required),
 ):
     number = _get_number(db, tenant, user, number_id)
+    number.connection_state = "close"  # antes do logout: a queda que vem pelo webhook é de propósito (não tenta religar)
+    db.add(number)
+    db.commit()
     try:
         evolution_client.logout(number.evolution_instance)
     except evolution_client.EvolutionError:
         pass  # já estava desconectado
-    number.connection_state = "close"
-    db.add(number)
-    db.commit()
     return RedirectResponse(url="/whatsapp", status_code=302)
 
 
@@ -236,13 +236,15 @@ def remove_number(
     bloqueado). Desconecta e apaga no Evolution; as conversas antigas continuam no CRM."""
     _require_admin(user)
     number = _get_number(db, tenant, user, number_id)
+    number.is_active = False
+    number.connection_state = "close"  # antes do logout: a queda que vem pelo webhook não tenta religar
+    db.add(number)
+    db.commit()
     for action in (evolution_client.logout, evolution_client.delete_instance):
         try:
             action(number.evolution_instance)
         except evolution_client.EvolutionError:
             pass  # já desconectado/apagado
-    number.is_active = False
-    number.connection_state = "close"
     db.add(number)
     db.commit()
     return RedirectResponse(url="/whatsapp?salvo=1", status_code=302)

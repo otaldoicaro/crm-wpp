@@ -522,13 +522,16 @@ def _process_event_db(db: Session, payload: dict) -> list:
     if event == "connection.update":
         state = data.get("state", "")
         if state:
-            if number.connection_state == "open" and state == "close":
-                from app.services import wa_health
+            from app.services import wa_health
 
-                wa_health.on_dropped(db, number)  # 📵 caiu: avisa o vendedor e os admins
+            before = number.connection_state
             number.connection_state = state
             db.add(number)
             db.commit()
+            if before == "open" and state == "close":
+                wa_health.dropped_in_background(number.id)  # 📵 caiu: tenta religar; não deu, avisa
+            elif state == "open" and before != "open":
+                wa_health.catch_up(number.id)  # voltou: puxa as mensagens do período desconectado
         return []
 
     if event == "messages.update":

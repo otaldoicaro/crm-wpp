@@ -4,7 +4,10 @@
    - No envio (messaging): reinicia a conexão daquele número e tenta mandar de novo, uma vez.
    - A cada CHECK_SECONDS: testa cada número conectado com uma consulta que não manda nada
      (o próprio número tem WhatsApp?). Se voltar "Connection Closed", reinicia a conexão.
-2. Caiu de verdade (pede QR code): avisa na tela o vendedor dono e os admins, uma vez por queda.
+2. Caiu (webhook ou vigia): tenta religar sozinho primeiro; só se não voltar avisa na tela o vendedor
+   dono e os admins (aí precisa de QR code), uma vez por queda.
+4. Voltou (religou sozinho ou alguém leu o QR code): puxa na hora do Evolution as mensagens do período
+   que não entraram no CRM (catch_up).
 3. Parou de receber (o WhatsApp não entrega mais pro servidor, mas a conexão parece boa): no horário
    de atendimento, número que costuma receber bastante e está há SILENT_AFTER sem nenhuma mensagem de
    cliente -> reinicia a conexão (no máximo a cada SILENT_COOLDOWN) e avisa os admins.
@@ -100,6 +103,65 @@ def on_dropped(db, number: WhatsAppNumber) -> None:
           "As mensagens desse número não chegam nem saem pelo CRM. Reconecte em Meu WhatsApp → Conectar agora (QR code).")
 
 
+def recover(db, number: WhatsAppNumber) -> bool:
+    """O número caiu: tenta religar sozinho (sessão salva, sem QR). Voltou: puxa as mensagens do período.
+    Não voltou: avisa o vendedor e os admins (sem commit). True = voltou."""
+    if heal(number, "caiu") is True:
+        number.connection_state = "open"
+        catch_up(number.id)
+        return True
+    on_dropped(db, number)
+    return False
+
+
+def dropped_in_background(number_id: str) -> None:
+    """Webhook disse que caiu: tenta religar fora do webhook (leva até ~30 s). Se o próprio CRM está
+    reiniciando esse número agora, a queda é dele mesmo: não faz nada."""
+    def go():
+        db = SessionLocal()
+        try:
+            number = db.get(WhatsAppNumber, number_id)
+            if number is None or time.monotonic() - _healed.get(number.evolution_instance, -HEAL_COOLDOWN) < 120:
+                return
+            recover(db, number)
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("wa_health: falhou ao religar %s", number_id)
+        finally:
+            db.close()
+
+    threading.Thread(target=go, daemon=True).start()
+
+
+_caught: dict = {}  # número -> quando puxou o histórico pela última vez
+CATCH_UP_DAYS = 1
+
+
+def catch_up(number_id: str) -> None:
+    """O número voltou (religou sozinho ou leu o QR code): puxa já do Evolution as mensagens que não
+    entraram no CRM (o WhatsApp entrega o que ficou parado assim que reconecta). Em segundo plano,
+    no máximo 1 vez a cada 2 min por número."""
+    from app.services import history_sync
+
+    with _lock:
+        if time.monotonic() - _caught.get(number_id, -120) < 120:
+            return
+        _caught[number_id] = time.monotonic()
+
+    def go():
+        time.sleep(30)  # dá tempo do WhatsApp entregar o que estava parado
+        try:
+            st = history_sync.sync_number(number_id, CATCH_UP_DAYS, apply=True)
+            got = st.get("importar_cliente", 0) + st.get("importar_nossas", 0)
+            if got:
+                logger.warning("wa_health: %s mensagem(ns) do período sem conexão recuperadas (número %s)", got, number_id)
+        except Exception:
+            logger.exception("wa_health: falhou ao puxar o histórico do número %s", number_id)
+
+    threading.Thread(target=go, daemon=True).start()
+
+
 def _receives_a_lot(db, number: WhatsAppNumber, hours: dict, now: datetime.datetime) -> bool:
     week = now - datetime.timedelta(days=7)
     count = (db.query(Message.id).join(Conversation, Conversation.id == Message.conversation_id)
@@ -117,7 +179,7 @@ def _last_inbound(db, number: WhatsAppNumber):
 
 
 def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
-    """Confere um número. Devolve o que fez ("", "caiu", "zumbi", "silencioso")."""
+    """Confere um número. Devolve o que fez ("", "caiu", "religou", "zumbi", "silencioso")."""
     from app.services.after_hours import is_open
     from app.services.response_times import parse_hours
 
@@ -128,8 +190,7 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
     if state != "open":
         if number.connection_state == "open" and state == "close":
             number.connection_state = "close"
-            on_dropped(db, number)
-            return "caiu"
+            return "religou" if recover(db, number) else "caiu"
         return ""
     if number.connection_state != "open":
         number.connection_state = "open"  # voltou (ex: depois de reiniciar o Evolution)
@@ -138,6 +199,8 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
     except evolution_client.EvolutionError as exc:
         if is_zombie_error(exc):
             ok = heal(number, "conexão zumbi")
+            if ok:
+                catch_up(number.id)
             with _lock:
                 warn = ok is False and time.monotonic() - _warned.get(number.evolution_instance, -WARN_EVERY) >= WARN_EVERY
                 if warn:
