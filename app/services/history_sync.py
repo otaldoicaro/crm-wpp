@@ -7,7 +7,7 @@ o telefone, o CRM não achava o lead e descartava.
 - Mantém a hora original, na ordem em que aconteceu.
 - Mensagem nossa (do celular) só entra se o contato já é lead, igual no dia a dia (conversa
   pessoal não vira lead). Mensagem do cliente cria o lead se ele não existir.
-- Roda sozinho a cada 20 min olhando as últimas 3h (e o dia inteiro uma vez por noite); dá pra
+- Roda sozinho a cada 5 min olhando a última 1h (e o dia inteiro uma vez por noite); dá pra
   rodar à mão pra trás (scripts/recuperar_historico.py)."""
 
 from __future__ import annotations
@@ -23,11 +23,11 @@ from app.services import evolution_client
 
 logger = logging.getLogger("history_sync")
 
-# a cada 20 min olhando as últimas 3h (mensagem que escapou aparece em até 20 min; cada rodada é
-# leve: só as mensagens de 3h de cada número) e, uma vez por noite (FULL_HOUR, horário de Brasília),
+# a cada 5 min olhando a última 1h (mensagem que escapou aparece em até 5 min; cada rodada é
+# leve: só as mensagens de 1h de cada número) e, uma vez por noite (FULL_HOUR, horário de Brasília),
 # o dia inteiro, pra garantia
-INTERVAL_SECONDS = 20 * 60
-AUTO_DAYS = 3 / 24
+INTERVAL_SECONDS = 5 * 60
+AUTO_DAYS = 1 / 24
 FULL_DAYS = 1
 FULL_HOUR = 3
 _full_done = {"date": None}
@@ -168,7 +168,7 @@ def sync_all(days: int, apply: bool) -> dict:
 
 
 def _days_now() -> float:
-    """Quanto olhar pra trás nesta rodada: o dia inteiro na 1ª rodada depois das FULL_HOUR h; senão 3h."""
+    """Quanto olhar pra trás nesta rodada: o dia inteiro na 1ª rodada depois das FULL_HOUR h; senão 1h."""
     from app.timeutil import to_local
 
     local = to_local(datetime.datetime.utcnow())

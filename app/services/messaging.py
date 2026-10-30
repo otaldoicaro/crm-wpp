@@ -212,13 +212,13 @@ def check_failed_sends() -> int:
     return fixed
 
 
-RETRY_AFTER = (2, 5, 15)  # minutos depois da falha: 1ª, 2ª e 3ª tentativa automática
+RETRY_AFTER = (1, 3, 10)  # minutos depois da falha: 1ª, 2ª e 3ª tentativa automática (a rodada é a cada 1 min)
 RETRY_ERRORS = ("desconectado", "não respondeu", "recusou o envio", "não aceitou o envio")  # falha de conexão (número sem WhatsApp não)
 
 
 def retry_failed() -> int:
     """🔄 Em segundo plano: "⚠️ Não enviada" de texto por falha de conexão, dos últimos 30 min, é mandada de
-    novo sozinha (2, 5 e 15 min depois). Antes confere se não saiu mesmo e se o vendedor não mandou o
+    novo sozinha (1, 3 e 10 min depois). Antes confere se não saiu mesmo e se o vendedor não mandou o
     mesmo texto de novo (pelo CRM ou pelo celular). Devolve quantas saíram."""
     import datetime
 
@@ -256,8 +256,11 @@ def retry_failed() -> int:
                     Message.created_at > m.created_at, Message.body == text).first()
                 if again is not None:
                     continue  # o vendedor já mandou de novo
-                if resend_failed(db, lead, m) is True:
+                result = resend_failed(db, lead, m)
+                if result is True:
                     sent += 1
+                elif result is False and m.auto_retries >= len(RETRY_AFTER):
+                    _warn_gave_up(db, lead, m)
                 db.commit()
             except Exception:
                 db.rollback()
@@ -265,3 +268,14 @@ def retry_failed() -> int:
     finally:
         db.close()
     return sent
+
+
+def _warn_gave_up(db, lead, message) -> None:
+    """As 3 tentativas falharam: avisa na tela quem mandou e o vendedor do lead (sem commit)."""
+    from app.services import notify
+
+    who = {message.sender_user_id, lead.assigned_user_id} - {None}
+    for user_id in who:
+        notify.push(db, lead.tenant_id, user_id, "nao_enviada", "⚠️ Mensagem não saiu",
+                    f"Pra {lead.name or lead.phone}: o CRM tentou 3 vezes e não conseguiu. Confira o WhatsApp do número "
+                    "(Meu WhatsApp) e reenvie pelo 🔄.", f"/inbox/{lead.id}", lead.id)

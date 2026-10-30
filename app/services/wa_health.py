@@ -37,7 +37,9 @@ _silent: dict = {}  # instância -> quando reiniciou por "parou de receber"
 
 
 def is_zombie_error(exc: Exception) -> bool:
-    return "connection closed" in str(exc).lower()
+    """"Connection Closed" (no envio vem assim; na consulta vem como statusCode 428 do Baileys)."""
+    text = str(exc).lower()
+    return "connection closed" in text or "'statuscode': 428" in text or "precondition required" in text
 
 
 def heal(number: WhatsAppNumber, why: str) -> bool:
