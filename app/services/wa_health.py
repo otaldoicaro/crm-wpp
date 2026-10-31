@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import datetime
 import logging
+import re
+import secrets
 import threading
 import time
 
@@ -86,26 +88,41 @@ def heal(number: WhatsAppNumber, why: str):
     return False
 
 
+def fresh_instance_name(db, number: WhatsAppNumber) -> str:
+    """Nome novo, nunca usado, pra mesma linha do CRM: "<nome>-r<4 letras>" (ex: novaviseu-14-r3fa9).
+    Troca o sufixo de uma limpeza anterior em vez de empilhar."""
+    root = re.sub(r"-r[0-9a-f]{4}$", "", number.evolution_instance or "crm")
+    taken = {name for (name,) in db.query(WhatsAppNumber.evolution_instance).all()}
+    while True:
+        name = f"{root}-r{secrets.token_hex(2)}"
+        if name not in taken:
+            return name
+
+
 def hard_reset(db, number: WhatsAppNumber) -> None:
-    """Desconecta 100%: sai do WhatsApp, apaga a sessão no Evolution e cria de novo, limpa. Usado quando a
-    conexão está zumbi (o "sair" normal não funciona nela e o "Conectar" seguia dizendo conectado sem QR).
-    Depois disso o "Conectar agora" mostra o QR code. As conversas do CRM não mudam (commit aqui)."""
-    instance = number.evolution_instance
+    """Desconecta 100%: o número passa a usar uma sessão NOVA no Evolution (outro nome de instância, sem
+    nada salvo), então o "Conectar agora" sempre mostra o QR code. Apagar a sessão velha não basta: na
+    conexão zumbi o Evolution recusa sair/apagar e, ao religar, carrega a sessão velha do banco dele.
+    A velha é largada (tenta sair/apagar; o que vier dela é ignorado: o CRM não conhece mais o nome).
+    As conversas do CRM não mudam: continuam na mesma linha do número (commit aqui)."""
+    old = number.evolution_instance
     with _lock:
-        _healed[instance] = time.monotonic()  # a queda que vem pelo webhook é nossa: não tenta religar
+        _healed[old] = time.monotonic()  # a queda que vem pelo webhook é nossa: não tenta religar
+    number.evolution_instance = fresh_instance_name(db, number)
     number.connection_state = "close"
     db.add(number)
     db.commit()
     for action in (evolution_client.logout, evolution_client.delete_instance):
         try:
-            action(instance)
+            action(old)
         except evolution_client.EvolutionError:
             pass  # zumbi não sai direito / já apagada: segue
     try:
-        evolution_client.create_instance(instance)  # já com o webhook
+        evolution_client.create_instance(number.evolution_instance)  # já com o webhook
     except evolution_client.EvolutionError as exc:
-        logger.warning("wa_health: não deu pra recriar %s: %s", number.label, exc)  # o "Conectar agora" recria
-    logger.warning("wa_health: %s desconectado 100%% (sessão apagada); precisa ler o QR code", number.label)
+        logger.warning("wa_health: não deu pra criar %s: %s", number.evolution_instance, exc)  # o "Conectar agora" cria
+    logger.warning("wa_health: %s desconectado 100%% (sessão nova %s no lugar de %s); precisa ler o QR code",
+                   number.label, number.evolution_instance, old)
 
 
 def _admins_and_owner(db, number: WhatsAppNumber) -> list:

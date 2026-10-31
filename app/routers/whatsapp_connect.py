@@ -47,6 +47,8 @@ def _instance_name(db: Session, tenant: Tenant) -> str:
     e "novaviseu-2", "novaviseu-3"... se ele tiver mais de um número."""
     base = re.sub(r"[^a-z0-9-]", "", tenant.subdomain.lower()) or "crm"
     taken = {name for (name,) in db.query(WhatsAppNumber.evolution_instance).all()}
+    # nome largado no "Desconectar 100%" (virou "<nome>-rxxxx") não volta: a sessão velha pode seguir no Evolution
+    taken |= {re.sub(r"-r[0-9a-f]{4}$", "", name) for name in taken}
     name, n = base, 1
     while name in taken:
         n += 1
@@ -146,7 +148,12 @@ def number_qr(
 ):
     number = _get_number(db, tenant, user, number_id)
     try:
-        state = evolution_client.connection_state(number.evolution_instance)
+        try:
+            state = evolution_client.connection_state(number.evolution_instance)
+        except evolution_client.EvolutionError as exc:
+            if "does not exist" not in str(exc) and "404" not in str(exc):
+                raise
+            state = ""  # instância ainda não existe no Evolution (ex: logo depois do Desconectar): cria abaixo
         if state == "open":
             from app.services import wa_health
 
