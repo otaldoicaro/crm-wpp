@@ -212,6 +212,29 @@ cat > /etc/cron.d/crm-backup <<'CRON'
 0 3 * * * root docker exec crm-db pg_dump -U crm crm | gzip > /root/crm-backups/crm-$(date +\%F).sql.gz && find /root/crm-backups -name 'crm-*.sql.gz' -mtime +14 -delete
 CRON
 
+# ---------- Evolution renovado toda madrugada ----------
+# às 4h (Brasília) zera o log do Evolution (cresce sem parar e deixa tudo lento) e reinicia o Evolution:
+# conexão que ia travar ("zumbi") trava de madrugada, não no meio do atendimento. O vigia do CRM religa
+# cada número sozinho; o que não voltar avisa o vendedor pra ler o QR antes de abrir a loja.
+cat > /usr/local/sbin/crm-evolution-noite <<'SH'
+#!/bin/sh
+EVO=$(docker ps --format '{{.Names}} {{.Image}}' | awk '/evolution-api/ && !/manager/ {print $1; exit}')
+[ -n "$EVO" ] || exit 0
+LOG=$(docker inspect --format '{{.LogPath}}' "$EVO" 2>/dev/null)
+OUT=/var/log/crm-evolution-noite.log
+echo "== $(date)" >> $OUT
+docker exec crm-app python -m scripts.evolution_noite antes >> $OUT 2>&1  # guarda quem funciona e pausa o vigia
+[ -n "$LOG" ] && truncate -s 0 "$LOG"
+docker restart "$EVO" >/dev/null
+sleep 120  # o Evolution sobe e religa cada número com a sessão salva
+docker exec crm-app python -m scripts.evolution_noite depois >> $OUT 2>&1  # confere cada um; religa ou deixa o QR pronto
+SH
+chmod +x /usr/local/sbin/crm-evolution-noite
+cat > /etc/cron.d/crm-evolution-noite <<'CRON'
+# Evolution renovado às 4h de Brasília (o servidor pode estar em outro fuso: confere a hora de Brasília)
+0 * * * * root [ "$(TZ=America/Sao_Paulo date +\%H)" = 04 ] && /usr/local/sbin/crm-evolution-noite
+CRON
+
 IP_DASH=${BASE_DOMAIN%.sslip.io}
 say "Pronto!"
 echo "  CRM:      https://$CRM_DOMAIN/login   (precisa do registro DNS 'crm' apontando pra este servidor)"

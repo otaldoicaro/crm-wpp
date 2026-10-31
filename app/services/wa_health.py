@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import os
 import re
 import secrets
 import threading
@@ -36,6 +37,8 @@ SILENT_COOLDOWN = 3 * 60 * 60
 SILENT_MIN_PER_HOUR = 3  # só número que recebe, em média, 3+ mensagens por hora de atendimento
 WAIT_OPEN_SECONDS = 30
 WARN_EVERY = 60 * 60  # o aviso "travou" do mesmo número no máximo 1 vez por hora
+NIGHT_FILE = "/tmp/evolution-renovando.json"  # scripts/evolution_noite.py: Evolution reiniciando de madrugada
+NIGHT_PAUSE = 15 * 60  # o vigia não mexe em nada enquanto isso (no máximo 15 min, se o script morrer no meio)
 
 _lock = threading.Lock()
 _healed: dict = {}  # instância -> quando reiniciou (monotonic)
@@ -125,6 +128,15 @@ def hard_reset(db, number: WhatsAppNumber) -> None:
                    number.label, number.evolution_instance, old)
 
 
+def paused() -> bool:
+    """O Evolution está sendo renovado de madrugada: queda e "zumbi" agora são esperados; quem confere
+    cada número depois é o próprio script (scripts/evolution_noite.py)."""
+    try:
+        return time.time() - os.path.getmtime(NIGHT_FILE) < NIGHT_PAUSE
+    except OSError:
+        return False
+
+
 def _admins_and_owner(db, number: WhatsAppNumber) -> list:
     ids = [u.id for u in db.query(User).filter(User.tenant_id == number.tenant_id, User.role == "admin",
                                                User.is_active.is_(True), User.removed_at.is_(None))]
@@ -164,7 +176,7 @@ def dropped_in_background(number_id: str) -> None:
         db = SessionLocal()
         try:
             number = db.get(WhatsAppNumber, number_id)
-            if number is None or time.monotonic() - _healed.get(number.evolution_instance, -HEAL_COOLDOWN) < 120:
+            if number is None or paused() or time.monotonic() - _healed.get(number.evolution_instance, -HEAL_COOLDOWN) < 120:
                 return
             recover(db, number)
             db.commit()
@@ -179,6 +191,34 @@ def dropped_in_background(number_id: str) -> None:
 
 _caught: dict = {}  # número -> quando puxou o histórico pela última vez
 CATCH_UP_DAYS = 1
+
+
+def after_night_restart(db, number: WhatsAppNumber) -> str:
+    """Depois da renovação da madrugada, pra cada número que funcionava antes: voltou funcionando ->
+    puxa as mensagens do intervalo; não voltou nem reiniciando -> desconecta 100% (QR novo pronto) e
+    avisa o vendedor e os admins, pra ler o QR antes de abrir a loja. Devolve "ok", "religou" ou "qr"."""
+    from app.services import history_sync
+
+    try:
+        works = (evolution_client.connection_state(number.evolution_instance) == "open"
+                 and _works(number.evolution_instance, number.phone_number))
+    except evolution_client.EvolutionError:
+        works = False
+    what = "ok" if works else ("religou" if heal(number, "renovação da madrugada") is True else "qr")
+    if what == "qr":
+        hard_reset(db, number)
+        _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} desconectou de madrugada",
+              "O CRM tentou religar sozinho e não conseguiu. Antes de começar o atendimento, entre em Meu WhatsApp → "
+              "Conectar agora e leia o QR code com o celular.")
+        return what
+    number.connection_state = "open"
+    db.add(number)
+    db.commit()
+    try:
+        history_sync.sync_number(number.id, CATCH_UP_DAYS, apply=True)
+    except Exception:
+        logger.exception("wa_health: falhou ao puxar o histórico de %s", number.label)
+    return what
 
 
 def catch_up(number_id: str) -> None:
@@ -223,6 +263,8 @@ def _last_inbound(db, number: WhatsAppNumber):
 
 def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
     """Confere um número. Devolve o que fez ("", "caiu", "religou", "zumbi", "silencioso")."""
+    if paused():
+        return ""
     from app.services.after_hours import is_open
     from app.services.response_times import parse_hours
 
