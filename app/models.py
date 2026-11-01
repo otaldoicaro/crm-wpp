@@ -130,6 +130,9 @@ class User(Base):
     # rodizio_skip = a próxima vez dele conta (a anterior foi pulada)
     rodizio_half: Mapped[bool] = mapped_column(Boolean, default=False)
     rodizio_skip: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 🏖 de folga (Equipe): sai do rodízio, e quem escreve no WhatsApp dele vai pra um vendedor que está
+    # trabalhando (fora contato Time/Outro). Volta com "Trabalhando"; os leads repassados ficam com quem atendeu
+    on_leave: Mapped[bool] = mapped_column(Boolean, default=False)
     # vendedor que pode passar lead pra outro vendedor (ex: SDR); admin sempre pode. Liga em Equipe
     can_transfer: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)

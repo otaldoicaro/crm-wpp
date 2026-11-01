@@ -152,7 +152,7 @@ def _connected(number: WhatsAppNumber | None) -> bool:
 def is_seller(user: User | None) -> bool:
     """Vendedor que pode receber lead: ativo, na equipe, no rodízio e NÃO admin (admin não atende)."""
     return (user is not None and user.role == "agent" and user.is_active and not user.removed_at
-            and user.accepting_leads and not user.read_only)
+            and user.accepting_leads and not user.on_leave and not user.read_only)
 
 
 def seller_numbers(db, tenant_id: str) -> list:

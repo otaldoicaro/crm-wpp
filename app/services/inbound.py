@@ -39,6 +39,33 @@ def _get_or_create_conversation(db: Session, number: WhatsAppNumber, lead: Lead)
     return conversation
 
 
+def _cover_leave(db: Session, number: WhatsAppNumber, lead: Lead) -> None:
+    """🏖 Cliente escreveu no WhatsApp de quem está de folga: o lead passa pra um vendedor que está
+    trabalhando, que responde pelo CRM pelo mesmo WhatsApp (o cliente não percebe troca de número).
+    Fica de fora contato Time/Outro (conversa pessoal do vendedor) e grupo. Só mexe se o lead ainda
+    é do vendedor de folga (ou de ninguém): quem já repassou não troca de novo."""
+    owner = number.owner if number.owner_user_id else None
+    if (owner is None or not owner.on_leave or lead.is_group or handover.private(lead)
+            or lead.assigned_user_id not in (None, owner.id)):
+        return
+    from app.services import notify
+    from app.services.distribution import agent_on_duty
+
+    agent = agent_on_duty(db, lead.tenant_id)
+    if agent is None or agent.id == owner.id:
+        return  # ninguém trabalhando: fica com ele
+    previous = lead.assigned_user_id
+    lead.assigned_user_id = agent.id
+    for conv in lead.conversations:
+        if conv.whatsapp_number_id == number.id:
+            conv.assigned_user_id = agent.id
+    ownership.changed(db, lead, previous, f"🏖 {owner.name} está de folga; responda pelo CRM, sai pelo WhatsApp dele")
+    notify.push(db, lead.tenant_id, agent.id, "folga", f"🏖 Lead de {owner.name} (de folga) passou pra você",
+                f"{lead.name or lead.phone} escreveu no WhatsApp de {owner.name}. Responda pelo CRM: "
+                "a mensagem sai pelo WhatsApp dele.", f"/inbox/{lead.id}", lead.id)
+    db.add(lead)
+
+
 def message_exists(db: Session, wa_message_id: str) -> bool:
     return bool(wa_message_id) and db.query(Message.id).filter(Message.wa_message_id == wa_message_id).first() is not None
 
@@ -100,7 +127,7 @@ def ingest_inbound(
                 attribution.attribution_from_click_bridge(db, lead, body)
         if not lead.conversations:
             # lead que nasceu do formulário da LP e agora chamou no WhatsApp: o mesmo lead
-            if number.owner_user_id and number.owner and number.owner.is_active:
+            if number.owner_user_id and number.owner and number.owner.is_active and not number.owner.on_leave:
                 previous = lead.assigned_user_id
                 lead.assigned_user_id = number.owner_user_id  # quem atende é o dono do WhatsApp que recebeu
                 ownership.changed(db, lead, previous, f"o cliente chamou no WhatsApp de {number.owner.name} "
@@ -113,6 +140,7 @@ def ingest_inbound(
             lead.deleted_at = None  # idem pra quem estava na Lixeira (fica registrado em deleted_by)
         db.add(lead)
 
+    _cover_leave(db, number, lead)
     had_this_number = any(c.whatsapp_number_id == number.id for c in lead.conversations)
     conversation = _get_or_create_conversation(db, number, lead)
     if (not had_this_number and lead.conversations and number.owner_user_id and lead.assigned_user_id

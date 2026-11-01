@@ -38,7 +38,8 @@ def assign_next_agent(db: Session, tenant_id: str) -> User | None:
 
     candidates = (
         db.query(User)
-        .filter(User.tenant_id == tenant_id, User.is_active.is_(True), User.accepting_leads.is_(True))
+        .filter(User.tenant_id == tenant_id, User.is_active.is_(True), User.accepting_leads.is_(True),
+                User.on_leave.is_(False))
         .order_by(User.created_at)
         .all()
     )
@@ -62,12 +63,29 @@ def assign_lead(db: Session, lead: Lead, number: WhatsAppNumber | None = None) -
     celular dele que o lead está conversando. Número compartilhado/central:
     rodízio por carga entre todos os vendedores."""
     owner = number.owner if number is not None and number.owner_user_id else None
-    agent = owner if owner and owner.is_active else assign_next_agent(db, lead.tenant_id)
+    if owner and owner.is_active and not owner.on_leave:
+        agent = owner
+    else:
+        agent = agent_on_duty(db, lead.tenant_id)  # 🏖 dono de folga (ou número sem dono): rodízio
     lead.assigned_user_id = agent.id if agent else None
     db.add(lead)
     db.commit()
     db.refresh(lead)
     return agent
+
+
+def agent_on_duty(db: Session, tenant_id: str) -> User | None:
+    """Próximo vendedor do rodízio que está trabalhando (mesmo revezamento do link /go: WhatsApp
+    conectado, no rodízio, não admin, nem de folga, respeita ½ rodízio e limite de leads). Sem ninguém
+    assim: o de menos leads abertos entre quem está no rodízio. Sem commit."""
+    from app.services.first_contact import seller_numbers
+
+    load = _open_leads_by_user(db, tenant_id)
+    numbers = [n for n in seller_numbers(db, tenant_id)
+               if not (n.owner.max_open_leads and load.get(n.owner_user_id, 0) >= n.owner.max_open_leads)]
+    if numbers:
+        return take_turn(numbers).owner
+    return assign_next_agent(db, tenant_id)
 
 
 def _open_leads_by_user(db: Session, tenant_id: str) -> dict:
@@ -101,7 +119,7 @@ def pick_number_for_click(db: Session, tenant_id: str) -> WhatsAppNumber | None:
         if not n.phone_number or not n.owner_user_id:
             return False
         owner = n.owner
-        if not owner or not owner.is_active or not owner.accepting_leads:
+        if not owner or not owner.is_active or not owner.accepting_leads or owner.on_leave:
             return False
         return not (owner.max_open_leads and load.get(owner.id, 0) >= owner.max_open_leads)
 

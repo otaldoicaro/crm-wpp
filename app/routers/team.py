@@ -203,6 +203,8 @@ def team_action(
         member.accepting_leads = not member.accepting_leads
     elif action == "metade" and not member.read_only:
         member.rodizio_half, member.rodizio_skip = not member.rodizio_half, False  # ½ rodízio: 1 lead a cada 2 vezes
+    elif action == "folga" and not member.read_only:
+        member.on_leave = not member.on_leave  # 🏖 de folga: sai do rodízio e as mensagens do WhatsApp dele vão pra quem está trabalhando
     elif action == "passar" and member.role != "admin" and not member.read_only:
         member.can_transfer = not member.can_transfer  # ↪ pode passar lead pra outro vendedor
     elif action == "ativo" and member.id != user.id:
