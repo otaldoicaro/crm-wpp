@@ -66,6 +66,7 @@
     </div>
 
     <div class="wa-connect" hidden>
+      <div class="error-box" style="margin-bottom:10px">⏳ <b>Acabou de desconectar? Espere 5 minutos</b> antes de ler o QR code. Antes disso o WhatsApp recusa e o número pode ficar travado.</div>
       <ol class="wa-steps">
         <li>Abra o <b>WhatsApp</b> no celular deste número</li>
         <li>Toque em <b>⋮ (Android)</b> ou <b>Configurações (iPhone)</b> → <b>Aparelhos conectados</b></li>
@@ -80,7 +81,7 @@
 
     <div class="wa-actions">
       {% if n.connection_state == "open" %}
-        <form method="post" action="/whatsapp/{{ n.id }}/disconnect" onsubmit="return confirm('Desconectar este número do CRM? As conversas deixam de chegar aqui até conectar de novo.\n\nDepois, no celular: WhatsApp → ⋮ (ou Configurações) → Aparelhos conectados → toque em cada aparelho e Desconectar. Aí sim Conectar agora e leia o QR code.')">
+        <form method="post" action="/whatsapp/{{ n.id }}/disconnect" onsubmit="return confirm('Desconectar este número do CRM? As conversas deixam de chegar aqui até conectar de novo.\n\nDepois, no celular: WhatsApp → ⋮ (ou Configurações) → Aparelhos conectados → toque em cada aparelho e Desconectar.\n\n⏳ IMPORTANTE: ESPERE 5 MINUTOS antes de clicar em Conectar agora.\nSe ler o QR code antes disso, o WhatsApp recusa (\'Não foi possível conectar o dispositivo\') e o número pode ficar travado.')">
           <button class="btn ghost small" type="submit">Desconectar</button>
         </form>
       {% else %}

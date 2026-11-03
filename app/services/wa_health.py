@@ -45,7 +45,7 @@ WAIT_OPEN_SECONDS = 30
 # 🧘 modo calmo: o CRM nunca reinicia a conexão sozinho (cada reinício podia derrubar o número de vez ou
 # cortar o QR code no meio da leitura). Ele só confere, puxa as mensagens que escaparam e avisa.
 AUTO_RESTART = False
-RECONNECT_TEXT = ("Entre em Meu WhatsApp → Desconectar, depois Conectar agora e leia o QR code com o celular.")
+RECONNECT_TEXT = ("Entre em Meu WhatsApp → Desconectar, no celular tire o aparelho em Aparelhos conectados, ESPERE 5 MINUTOS ⏳ e só aí Conectar agora e leia o QR code.")
 RESET_KEEP = datetime.timedelta(hours=12)  # depois de um Desconectar, a sessão antiga não volta: espera o QR
 WARN_EVERY = 60 * 60  # o aviso "travou" do mesmo número no máximo 1 vez por hora (e só de novo depois de voltar)
 NIGHT_FILE = "/tmp/evolution-renovando.json"  # scripts/evolution_noite.py: Evolution reiniciando de madrugada
