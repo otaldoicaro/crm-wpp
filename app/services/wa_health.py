@@ -9,9 +9,10 @@
    só o Desconectar/Conectar de alguém.
 4. Voltou (religou sozinho ou alguém leu o QR code): puxa na hora do Evolution as mensagens do período
    que não entraram no CRM (catch_up).
-3. Parou de receber (o WhatsApp não entrega mais pro servidor, mas a conexão parece boa): no horário
-   de atendimento, número que costuma receber bastante e está há SILENT_AFTER sem nenhuma mensagem de
-   cliente -> reinicia a conexão (no máximo a cada SILENT_COOLDOWN) e avisa os admins.
+3. Parou de receber (o WhatsApp não entrega mais pro servidor, mas a conexão parece boa e passa no teste):
+   no horário de atendimento, número que costuma receber bastante, há SILENT_AFTER sem nenhuma mensagem de
+   cliente enquanto os outros WhatsApps recebem -> reinicia; continuou parado -> avisa o vendedor e os
+   admins pra reconectar (QR).
 Toda reinicialização respeita HEAL_COOLDOWN por número: nunca fica reiniciando em loop.
 """
 
@@ -33,8 +34,8 @@ logger = logging.getLogger("wa_health")
 
 CHECK_SECONDS = 60  # cada rodada: 2 consultas leves por número + 1 lista das sessões
 HEAL_COOLDOWN = 10 * 60
-SILENT_AFTER = datetime.timedelta(minutes=90)
-SILENT_COOLDOWN = 3 * 60 * 60
+SILENT_AFTER = datetime.timedelta(minutes=20)
+SILENT_COOLDOWN = 20 * 60  # entre um reinício por "parou de receber" e outro
 SILENT_MIN_PER_HOUR = 3  # só número que recebe, em média, 3+ mensagens por hora de atendimento
 WAIT_OPEN_SECONDS = 30
 RECONNECT_TEXT = ("O CRM tentou religar sozinho e não conseguiu. Entre em Meu WhatsApp → Desconectar, depois "
@@ -47,6 +48,7 @@ NIGHT_PAUSE = 15 * 60  # o vigia não mexe em nada enquanto isso (no máximo 15 
 _lock = threading.Lock()
 _healed: dict = {}  # instância -> quando reiniciou (monotonic)
 _silent: dict = {}  # instância -> quando reiniciou por "parou de receber"
+_silent_strikes: dict = {}  # instância -> quantas vezes seguidas reiniciou e continuou sem receber
 _warned: dict = {}  # instância -> quando avisou "travou"
 _imported: dict = {}  # sessão antiga -> quando puxou as mensagens dela e tentou apagar
 EXTRA_RETRY = 10 * 60  # sessão antiga: puxa as mensagens dela (e tenta apagar a desconectada) a cada 10 min
@@ -430,20 +432,37 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
     tenant = db.get(Tenant, number.tenant_id)
     hours = parse_hours(tenant.business_hours if tenant else "")
     last = _last_inbound(db, number)
+    instance = number.evolution_instance
+    if last is not None and now - last < SILENT_AFTER:
+        _silent_strikes.pop(instance, None)
+        return ""
     if (tenant is not None and is_open(tenant, now) and is_open(tenant, now - SILENT_AFTER)
-            and last is not None and now - last >= SILENT_AFTER and _receives_a_lot(db, number, hours, now)):
-        instance = number.evolution_instance
+            and last is not None and _receives_a_lot(db, number, hours, now) and _others_receiving(db, number, now)):
+        # "parou de receber": diz conectado e passa no teste, mas não chega nada enquanto os outros recebem
         with _lock:
             if time.monotonic() - _silent.get(instance, -SILENT_COOLDOWN) < SILENT_COOLDOWN:
                 return ""
             _silent[instance] = time.monotonic()
-        heal(number, "sem receber mensagem de cliente há muito tempo")
-        admins = [i for i in _admins_and_owner(db, number) if i != number.owner_user_id]
-        _warn(db, number, admins, f"🩺 {number.label} estava sem receber mensagens",
-              "O CRM religou a conexão sozinho. Se o vendedor notar mensagem no celular que não aparece no CRM, "
-              "desconecte e conecte de novo em Meu WhatsApp (QR code).")
+            strikes = _silent_strikes[instance] = _silent_strikes.get(instance, 0) + 1
+        if strikes == 1:
+            heal(number, "parou de receber mensagens")
+            catch_up(number.id)
+            return "silencioso"
+        # já reiniciou e continua sem receber: só reconectando (QR) resolve
+        _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} parou de receber mensagens",
+              f"Há {int((now - last).total_seconds() // 60)} min não chega nenhuma mensagem nesse WhatsApp, enquanto os "
+              "outros recebem. " + RECONNECT_TEXT)
         return "silencioso"
     return ""
+
+
+def _others_receiving(db, number: WhatsAppNumber, now: datetime.datetime) -> bool:
+    """Outro WhatsApp do mesmo cliente recebeu mensagem agora há pouco (então não é só um horário parado)."""
+    return (db.query(Message.id).join(Conversation, Conversation.id == Message.conversation_id)
+            .join(WhatsAppNumber, WhatsAppNumber.id == Conversation.whatsapp_number_id)
+            .filter(WhatsAppNumber.tenant_id == number.tenant_id, WhatsAppNumber.id != number.id,
+                    Message.direction == "in", Message.created_at >= now - SILENT_AFTER)
+            .first() is not None)
 
 
 def run() -> dict:
