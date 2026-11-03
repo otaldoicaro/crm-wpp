@@ -7,7 +7,7 @@ o telefone, o CRM não achava o lead e descartava.
 - Mantém a hora original, na ordem em que aconteceu.
 - Mensagem nossa (do celular) só entra se o contato já é lead, igual no dia a dia (conversa
   pessoal não vira lead). Mensagem do cliente cria o lead se ele não existir.
-- Roda sozinho a cada 5 min olhando a última 1h (e o dia inteiro uma vez por noite); dá pra
+- Roda sozinho a cada 1 min olhando a última 1h (e o dia inteiro uma vez por noite); dá pra
   rodar à mão pra trás (scripts/recuperar_historico.py)."""
 
 from __future__ import annotations
@@ -23,10 +23,10 @@ from app.services import evolution_client
 
 logger = logging.getLogger("history_sync")
 
-# a cada 5 min olhando a última 1h (mensagem que escapou aparece em até 5 min; cada rodada é
+# a cada 1 min olhando a última 1h (mensagem que escapou aparece em até 1 min; cada rodada é
 # leve: só as mensagens de 1h de cada número) e, uma vez por noite (FULL_HOUR, horário de Brasília),
 # o dia inteiro, pra garantia
-INTERVAL_SECONDS = 5 * 60
+INTERVAL_SECONDS = 60
 AUTO_DAYS = 1 / 24
 FULL_DAYS = 1
 FULL_HOUR = 3

@@ -4,8 +4,9 @@
    - No envio (messaging): reinicia a conexão daquele número e tenta mandar de novo, uma vez.
    - A cada CHECK_SECONDS: testa cada número conectado com uma consulta que não manda nada
      (o próprio número tem WhatsApp?). Se voltar "Connection Closed", reinicia a conexão.
-2. Caiu (webhook ou vigia): tenta religar sozinho primeiro; só se não voltar avisa na tela o vendedor
-   dono e os admins (aí precisa de QR code), uma vez por queda.
+2. Caiu ou travou (webhook ou vigia): tenta religar sozinho (reiniciar); só se não voltar avisa na tela o
+   vendedor dono e os admins pra Desconectar e Conectar (QR code). O vigia NUNCA cria sessão nova sozinho:
+   só o Desconectar/Conectar de alguém.
 4. Voltou (religou sozinho ou alguém leu o QR code): puxa na hora do Evolution as mensagens do período
    que não entraram no CRM (catch_up).
 3. Parou de receber (o WhatsApp não entrega mais pro servidor, mas a conexão parece boa): no horário
@@ -36,6 +37,9 @@ SILENT_AFTER = datetime.timedelta(minutes=90)
 SILENT_COOLDOWN = 3 * 60 * 60
 SILENT_MIN_PER_HOUR = 3  # só número que recebe, em média, 3+ mensagens por hora de atendimento
 WAIT_OPEN_SECONDS = 30
+RECONNECT_TEXT = ("O CRM tentou religar sozinho e não conseguiu. Entre em Meu WhatsApp → Desconectar, depois "
+                  "Conectar agora e leia o QR code com o celular.")
+RESET_KEEP = datetime.timedelta(hours=12)  # depois de um Desconectar, a sessão antiga não volta: espera o QR
 WARN_EVERY = 60 * 60  # o aviso "travou" do mesmo número no máximo 1 vez por hora
 NIGHT_FILE = "/tmp/evolution-renovando.json"  # scripts/evolution_noite.py: Evolution reiniciando de madrugada
 NIGHT_PAUSE = 15 * 60  # o vigia não mexe em nada enquanto isso (no máximo 15 min, se o script morrer no meio)
@@ -44,8 +48,6 @@ _lock = threading.Lock()
 _healed: dict = {}  # instância -> quando reiniciou (monotonic)
 _silent: dict = {}  # instância -> quando reiniciou por "parou de receber"
 _warned: dict = {}  # instância -> quando avisou "travou"
-_failed: dict = {}  # instância -> vezes seguidas que reiniciar não resolveu
-HARD_RESET_AFTER = 2  # o vigia só desconecta 100% depois de 2 rodadas seguidas sem conseguir religar
 
 
 def is_zombie_error(exc: Exception) -> bool:
@@ -115,6 +117,7 @@ def hard_reset(db, number: WhatsAppNumber) -> None:
         _healed[old] = time.monotonic()  # a queda que vem pelo webhook é nossa: não tenta religar
     number.evolution_instance = fresh_instance_name(db, number)
     number.connection_state = "close"
+    number.reset_at = datetime.datetime.utcnow()
     db.add(number)
     db.commit()
     for action in (evolution_client.logout, evolution_client.delete_instance):
@@ -157,7 +160,7 @@ def owner_of_old_session(db, instance: str, event: str, state: str):
         return None
     # só mensagem prova que ela funciona: o zumbi também manda "open" (e aí o Conectar voltaria a pular o QR)
     alive = event != "connection.update"
-    if alive and number.connection_state != "open":
+    if alive and number.connection_state != "open" and not _just_reset(number):
         logger.warning("wa_health: %s voltou a usar a sessão %s (a %s não está conectada)",
                        number.label, instance, number.evolution_instance)
         number.evolution_instance = instance
@@ -171,12 +174,18 @@ def owner_of_old_session(db, instance: str, event: str, state: str):
     return number
 
 
+def _just_reset(number: WhatsAppNumber) -> bool:
+    """Alguém clicou Desconectar há pouco: o número espera o QR code, não volta pra sessão antiga."""
+    return number.reset_at is not None and datetime.datetime.utcnow() - number.reset_at < RESET_KEEP
+
+
 def reconcile(db) -> dict:
     """Sessões que sobraram no Evolution de cada número (de um "Desconectar 100%" em que a antiga não
     saiu). Toda rodada:
-    - o número não está funcionando e uma sessão antiga dele está: volta a usar a antiga e puxa as mensagens;
-    - sessão antiga a mais (o número já funciona pela atual): puxa o que passou por ela (nada se perde)
-      e apaga, pra ficar uma sessão só por número.
+    - o número não está funcionando e uma sessão antiga dele está: volta a usar a antiga e puxa as mensagens
+      (menos logo depois de alguém clicar Desconectar: aí ele espera o QR code);
+    - sessão antiga a mais (o número já funciona pela atual, ou alguém clicou Desconectar): puxa o que
+      passou por ela (nada se perde) e apaga, pra ficar uma sessão só por número.
     Só mexe em sessão do mesmo número (mesmo nome de base e, quando dá pra saber, o mesmo telefone)."""
     from app.services import history_sync
 
@@ -198,7 +207,7 @@ def reconcile(db) -> dict:
             continue
         current = number.evolution_instance
         current_ok = state_of.get(current) == "open" and _works(current, number.phone_number)
-        if not current_ok:
+        if not current_ok and not _just_reset(number):
             alive = next((name for name, state in extras if state == "open" and _works(name, number.phone_number)), None)
             if alive is not None:
                 logger.warning("wa_health: %s voltou a usar a sessão %s (a %s não funciona)", number.label, alive, current)
@@ -284,8 +293,8 @@ CATCH_UP_DAYS = 1
 
 def after_night_restart(db, number: WhatsAppNumber) -> str:
     """Depois da renovação da madrugada, pra cada número que funcionava antes: voltou funcionando ->
-    puxa as mensagens do intervalo; não voltou nem reiniciando -> desconecta 100% (QR novo pronto) e
-    avisa o vendedor e os admins, pra ler o QR antes de abrir a loja. Devolve "ok", "religou" ou "qr"."""
+    puxa as mensagens do intervalo; não voltou nem reiniciando -> avisa o vendedor e os admins, pra
+    reconectar (Desconectar + QR) antes de abrir a loja. Devolve "ok", "religou" ou "qr"."""
     from app.services import history_sync
 
     try:
@@ -295,10 +304,8 @@ def after_night_restart(db, number: WhatsAppNumber) -> str:
         works = False
     what = "ok" if works else ("religou" if heal(number, "renovação da madrugada") is True else "qr")
     if what == "qr":
-        hard_reset(db, number)
         _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} desconectou de madrugada",
-              "O CRM tentou religar sozinho e não conseguiu. Antes de começar o atendimento, entre em Meu WhatsApp → "
-              "Conectar agora e leia o QR code com o celular.")
+              "Antes de começar o atendimento: " + RECONNECT_TEXT)
         return what
     number.connection_state = "open"
     db.add(number)
@@ -370,26 +377,21 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
         number.connection_state = "open"  # voltou (ex: depois de reiniciar o Evolution)
     try:  # consulta que precisa da conexão de verdade, sem mandar nada pra ninguém
         evolution_client.whatsapp_numbers(number.evolution_instance, [number.phone_number])
-        _failed.pop(number.evolution_instance, None)
     except evolution_client.EvolutionError as exc:
         if is_zombie_error(exc):
             ok = heal(number, "conexão zumbi")
             if ok:
                 catch_up(number.id)
+            # o vigia só reinicia; nunca cria sessão nova sozinho (a antiga podia voltar e ficar recebendo
+            # sem o CRM ouvir). Não voltou: o vendedor desconecta e conecta (aí sim 100%, com QR code)
             with _lock:
-                fails = _failed[number.evolution_instance] = _failed.get(number.evolution_instance, 0) + (ok is False)
-                warn = (ok is False and fails >= HARD_RESET_AFTER
-                        and time.monotonic() - _warned.get(number.evolution_instance, -WARN_EVERY) >= WARN_EVERY)
+                warn = ok is False and time.monotonic() - _warned.get(number.evolution_instance, -WARN_EVERY) >= WARN_EVERY
                 if warn:
                     _warned[number.evolution_instance] = time.monotonic()
-            if ok is False and fails >= HARD_RESET_AFTER:
-                _failed.pop(number.evolution_instance, None)
-                hard_reset(db, number)  # não voltou reiniciando (2 vezes): desconecta 100% pra o QR code aparecer
             if warn:
-                logger.warning("wa_health: %s continua travado depois de reiniciar: precisa de QR code", number.label)
+                logger.warning("wa_health: %s continua travado depois de reiniciar: precisa reconectar", number.label)
                 _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} travou",
-                      "O CRM tentou religar sozinho e não conseguiu, e desconectou o número. Entre em Meu WhatsApp → "
-                      "Conectar agora e leia o QR code com o celular.")
+                      RECONNECT_TEXT)
             return "zumbi"
         return ""
     tenant = db.get(Tenant, number.tenant_id)
