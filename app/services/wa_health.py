@@ -48,6 +48,8 @@ _lock = threading.Lock()
 _healed: dict = {}  # instância -> quando reiniciou (monotonic)
 _silent: dict = {}  # instância -> quando reiniciou por "parou de receber"
 _warned: dict = {}  # instância -> quando avisou "travou"
+_imported: dict = {}  # sessão antiga -> quando puxou as mensagens dela e tentou apagar
+EXTRA_RETRY = 10 * 60  # sessão antiga que o Evolution não apaga: puxa as mensagens e tenta de novo a cada 10 min
 
 
 def is_zombie_error(exc: Exception) -> bool:
@@ -219,19 +221,31 @@ def reconcile(db) -> dict:
                 done[number.label] = "voltou pra sessão antiga"
             continue  # sem nenhuma funcionando: não apaga nada (o vendedor lê o QR na atual)
         for name, state in extras:
+            now = time.monotonic()
+            with _lock:
+                imported_at = _imported.get(name)
+                if imported_at is not None and now - imported_at < EXTRA_RETRY:
+                    continue  # já puxou e tentou apagar há pouco: o webhook dela continua entrando no número
+                _imported[name] = now
             if state == "open":
                 try:
                     history_sync.sync_number(number.id, 1, apply=True, instance=name)  # nada se perde
                 except Exception:
                     logger.exception("wa_health: falhou ao puxar as mensagens da sessão antiga %s", name)
                     continue  # não apaga sem ter puxado
+            errors = []
             for action in (evolution_client.logout, evolution_client.delete_instance):
                 try:
                     action(name)
-                except evolution_client.EvolutionError:
-                    pass
-            logger.warning("wa_health: sessão antiga %s de %s apagada (o número funciona pela %s)", name, number.label, current)
-            done[number.label] = "sessão antiga apagada"
+                except evolution_client.EvolutionError as exc:
+                    errors.append(f"{action.__name__}: {str(exc)[:160]}")
+            if errors:
+                logger.warning("wa_health: sessão antiga %s de %s: mensagens puxadas, mas o Evolution não apagou (%s)",
+                               name, number.label, "; ".join(errors))
+                done[number.label] = "sessão antiga: mensagens puxadas"
+            else:
+                logger.warning("wa_health: sessão antiga %s de %s apagada (o número funciona pela %s)", name, number.label, current)
+                done[number.label] = "sessão antiga apagada"
     return done
 
 
