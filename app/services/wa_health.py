@@ -464,18 +464,19 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
                 return ""  # reiniciou há pouco: dá o mesmo tempo pra ver se voltou
             _silent[instance] = time.monotonic()
             strikes = _silent_strikes[instance] = _silent_strikes.get(instance, 0) + 1
-        if strikes == 1:
+        if strikes == 1 and AUTO_RESTART:
             heal(number, "parou de receber mensagens")
-            catch_up(number.id)  # puxa do Evolution o que tiver escapado
+            catch_up(number.id)
             return "silencioso"
+        catch_up(number.id)  # puxa do Evolution o que tiver escapado
         if instance in _silent_warned:
             return ""  # já avisou: só avisa de novo depois de voltar a receber
         _silent_warned.add(instance)
-        # pode ser só um horário parado desse vendedor: avisa só os admins, uma vez, pra conferir no celular
-        admins = [uid for uid in _admins_and_owner(db, number) if uid != number.owner_user_id]
-        _warn(db, number, admins, f"📵 {number.label} parou de receber mensagens?",
+        # aviso já na 1ª vez (sem reinício automático não há o que esperar), pro vendedor e os admins:
+        # a sessão que para de receber em silêncio é o "mensagem que não chega" (ex: Davi das 9h às 13h44)
+        _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} parou de receber mensagens?",
               f"Há {int((now - last).total_seconds() // 60)} min não chega nenhuma mensagem nesse WhatsApp no CRM, "
-              "enquanto os outros recebem. Confira com o vendedor se chegou mensagem no celular. Se chegou: " + RECONNECT_TEXT)
+              "enquanto os outros recebem. Se no celular estão chegando mensagens de clientes: " + RECONNECT_TEXT)
         return "silencioso"
     return ""
 
