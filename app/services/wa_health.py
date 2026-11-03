@@ -281,17 +281,31 @@ def _drop(name: str) -> None:
 
 
 def _admins_and_owner(db, number: WhatsAppNumber) -> list:
-    ids = [u.id for u in db.query(User).filter(User.tenant_id == number.tenant_id, User.role == "admin",
-                                               User.is_active.is_(True), User.removed_at.is_(None))]
-    if number.owner_user_id and number.owner_user_id not in ids:
-        ids.append(number.owner_user_id)
-    return ids
+    """Quem recebe os avisos do número: só o vendedor dono. Número sem dono (compartilhado): os admins.
+    Os admins veem a situação de todos na tela WhatsApp; aviso de cada número pra eles assustava."""
+    if number.owner_user_id:
+        owner = db.get(User, number.owner_user_id)
+        if owner is not None and owner.is_active and owner.removed_at is None:
+            return [owner.id]
+    return [u.id for u in db.query(User).filter(User.tenant_id == number.tenant_id, User.role == "admin",
+                                                User.is_active.is_(True), User.removed_at.is_(None))]
+
+
+WARN_SAME_EVERY = datetime.timedelta(hours=24)  # o mesmo aviso do mesmo número pra mesma pessoa: 1 vez por dia
 
 
 def _warn(db, number: WhatsAppNumber, user_ids: list, title: str, body: str) -> None:
+    """Avisa no canto da tela. O mesmo aviso (mesmo título, ex: "📵 WhatsApp do Davi desconectou") só
+    vai de novo pra mesma pessoa depois de 24 h, mesmo que o CRM tenha reiniciado no meio."""
+    from app.models import Notification
     from app.services import notify
 
+    since = datetime.datetime.utcnow() - WARN_SAME_EVERY
     for user_id in user_ids:
+        if db.query(Notification.id).filter(Notification.user_id == user_id, Notification.kind == "whatsapp",
+                                            Notification.title == title[:120],
+                                            Notification.created_at >= since).first():
+            continue
         notify.push(db, number.tenant_id, user_id, "whatsapp", title, body, "/whatsapp")
 
 
@@ -472,7 +486,7 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
         if instance in _silent_warned:
             return ""  # já avisou: só avisa de novo depois de voltar a receber
         _silent_warned.add(instance)
-        # aviso já na 1ª vez (sem reinício automático não há o que esperar), pro vendedor e os admins:
+        # aviso já na 1ª vez (sem reinício automático não há o que esperar), pro vendedor (sem dono: admins):
         # a sessão que para de receber em silêncio é o "mensagem que não chega" (ex: Davi das 9h às 13h44)
         _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} parou de receber mensagens?",
               f"Há {int((now - last).total_seconds() // 60)} min não chega nenhuma mensagem nesse WhatsApp no CRM, "
