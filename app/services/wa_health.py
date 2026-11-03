@@ -49,7 +49,7 @@ _healed: dict = {}  # instância -> quando reiniciou (monotonic)
 _silent: dict = {}  # instância -> quando reiniciou por "parou de receber"
 _warned: dict = {}  # instância -> quando avisou "travou"
 _imported: dict = {}  # sessão antiga -> quando puxou as mensagens dela e tentou apagar
-EXTRA_RETRY = 10 * 60  # sessão antiga que o Evolution não apaga: puxa as mensagens e tenta de novo a cada 10 min
+EXTRA_RETRY = 10 * 60  # sessão antiga: puxa as mensagens dela (e tenta apagar a desconectada) a cada 10 min
 
 
 def is_zombie_error(exc: Exception) -> bool:
@@ -181,13 +181,26 @@ def _just_reset(number: WhatsAppNumber) -> bool:
     return number.reset_at is not None and datetime.datetime.utcnow() - number.reset_at < RESET_KEEP
 
 
+def _traffic(instance: str) -> int:
+    """Quantas mensagens passaram por essa sessão nas últimas 2h (a que recebe de verdade tem movimento)."""
+    until = datetime.datetime.utcnow()
+    since = until - datetime.timedelta(hours=2)
+    try:
+        body = evolution_client.find_messages(instance, since.isoformat() + "Z", until.isoformat() + "Z", page=1, per_page=50)
+    except evolution_client.EvolutionError:
+        return -1
+    return int(body.get("total") or len(body.get("records") or []))
+
+
 def reconcile(db) -> dict:
     """Sessões que sobraram no Evolution de cada número (de um "Desconectar 100%" em que a antiga não
     saiu). Toda rodada:
-    - o número não está funcionando e uma sessão antiga dele está: volta a usar a antiga e puxa as mensagens
-      (menos logo depois de alguém clicar Desconectar: aí ele espera o QR code);
-    - sessão antiga a mais (o número já funciona pela atual, ou alguém clicou Desconectar): puxa o que
-      passou por ela (nada se perde) e apaga, pra ficar uma sessão só por número.
+    - o número usa a sessão que recebe de verdade: se uma antiga funciona e a atual não (ou a antiga tem
+      mais movimento nas últimas 2h), o número passa pra ela e puxa as mensagens. Menos logo depois de
+      alguém clicar Desconectar: aí ele espera o QR code;
+    - sessão antiga conectada continua tendo as mensagens puxadas pro CRM (a cada EXTRA_RETRY) e nunca é
+      desconectada pelo CRM sozinho (podia ser a que funciona no celular do vendedor);
+    - sessão antiga desconectada: tenta apagar (o Evolution às vezes recusa; não faz mal).
     Só mexe em sessão do mesmo número (mesmo nome de base e, quando dá pra saber, o mesmo telefone)."""
     from app.services import history_sync
 
@@ -208,45 +221,51 @@ def reconcile(db) -> dict:
         if not extras:
             continue
         current = number.evolution_instance
-        current_ok = state_of.get(current) == "open" and _works(current, number.phone_number)
-        if not current_ok and not _just_reset(number):
-            alive = next((name for name, state in extras if state == "open" and _works(name, number.phone_number)), None)
-            if alive is not None:
-                logger.warning("wa_health: %s voltou a usar a sessão %s (a %s não funciona)", number.label, alive, current)
-                number.evolution_instance, number.connection_state = alive, "open"
+        if not _just_reset(number):
+            candidates = [current] if state_of.get(current) == "open" and _works(current, number.phone_number) else []
+            candidates += [name for name, state in extras if state == "open" and _works(name, number.phone_number)]
+            best = candidates[0] if candidates else current
+            if len(candidates) > 1:
+                traffic = {name: _traffic(name) for name in candidates}
+                top = max(candidates, key=traffic.get)
+                if current not in candidates or traffic[top] > 2 * traffic[current] + 3:  # sem ficar trocando à toa
+                    best = top
+            if best != current:
+                why = "não funciona" if current not in candidates else "quase não recebe mensagem"
+                logger.warning("wa_health: %s passou pra sessão %s (a %s %s)", number.label, best, current, why)
+                number.evolution_instance, number.connection_state = best, "open"
                 db.add(number)
                 db.commit()
-                used.add(alive)
+                used.add(best)
+                extras = [(name, state) for name, state in extras if name != best] + [(current, state_of.get(current, ""))]
+                current = best
                 catch_up(number.id)
-                done[number.label] = "voltou pra sessão antiga"
-            continue  # sem nenhuma funcionando: não apaga nada (o vendedor lê o QR na atual)
+                done[number.label] = "passou pra sessão que recebe"
         for name, state in extras:
             now = time.monotonic()
             with _lock:
-                imported_at = _imported.get(name)
-                if imported_at is not None and now - imported_at < EXTRA_RETRY:
-                    continue  # já puxou e tentou apagar há pouco: o webhook dela continua entrando no número
+                tried = _imported.get(name)
+                if tried is not None and now - tried < EXTRA_RETRY:
+                    continue
                 _imported[name] = now
             if state == "open":
-                try:
-                    history_sync.sync_number(number.id, 1, apply=True, instance=name)  # nada se perde
+                try:  # o webhook dela já entra no número; isto é a garantia
+                    history_sync.sync_number(number.id, 0.25, apply=True, instance=name)
                 except Exception:
                     logger.exception("wa_health: falhou ao puxar as mensagens da sessão antiga %s", name)
-                    continue  # não apaga sem ter puxado
-            errors = []
-            for action in (evolution_client.logout, evolution_client.delete_instance):
-                try:
-                    action(name)
-                except evolution_client.EvolutionError as exc:
-                    errors.append(f"{action.__name__}: {str(exc)[:160]}")
-            if errors:
-                logger.warning("wa_health: sessão antiga %s de %s: mensagens puxadas, mas o Evolution não apagou (%s)",
-                               name, number.label, "; ".join(errors))
-                done[number.label] = "sessão antiga: mensagens puxadas"
-            else:
-                logger.warning("wa_health: sessão antiga %s de %s apagada (o número funciona pela %s)", name, number.label, current)
-                done[number.label] = "sessão antiga apagada"
+                if _just_reset(number):  # alguém clicou Desconectar: aí sim tira a antiga
+                    _drop(name)
+                continue
+            _drop(name)
     return done
+
+
+def _drop(name: str) -> None:
+    for action in (evolution_client.logout, evolution_client.delete_instance):
+        try:
+            action(name)
+        except evolution_client.EvolutionError:
+            pass  # o Evolution às vezes recusa (sessão sem conexão): fica lá, sem receber nada
 
 
 def _admins_and_owner(db, number: WhatsAppNumber) -> list:
