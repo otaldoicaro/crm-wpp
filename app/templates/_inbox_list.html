@@ -10,6 +10,7 @@
       <div class="preview" style="opacity:.7">{{ lead.assigned_user.name if lead.assigned_user else "sem atendente" }}</div>
       {% if not lead.is_group %}{{ m.followup_tags(lead) }}{% endif %}
     </div>
+    <button type="button" class="item-more" title="Mais opções (passar pra outro vendedor, marcar como lida…)" aria-label="Mais opções">⋮</button>
   </a>
 {% else %}
   {% if tipo == "naolidas" %}

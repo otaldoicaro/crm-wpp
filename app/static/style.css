@@ -1135,3 +1135,17 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .agenda-chip.atrasado { background: var(--danger); color: #fff; }
 .agenda-chip.a_confirmar { background: #fff1c2; color: #8a5a00; }
 .toast-agenda { border-left-color: var(--accent, #FF6A00); }
+
+/* ⋮ e "Selecionar várias" na lista do Inbox (passar conversas pra outro vendedor) */
+.inbox-list-item { position: relative; }
+.item-more { position: absolute; right: 6px; bottom: 6px; width: 26px; height: 26px; padding: 0; border-radius: 6px; background: none; box-shadow: none; color: var(--muted); font-size: 1.05rem; line-height: 1; opacity: .55; }
+.item-more:hover, .inbox-list-item:hover .item-more { opacity: 1; background: var(--panel-3); }
+.inbox-list.selecting .item-more { display: none; }
+.inbox-list.selecting .inbox-list-item::before { content: "☐"; font-size: 1.15rem; align-self: center; color: var(--muted); }
+.inbox-list.selecting .inbox-list-item.picked { background: var(--y-soft); }
+.inbox-list.selecting .inbox-list-item.picked::before { content: "☑"; color: var(--text); }
+.inbox-list.selecting .inbox-list-item[data-group="1"] { opacity: .45; }
+.bulk-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 150; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: calc(100vw - 32px); padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
+.bulk-bar[hidden] { display: none; }
+.bulk-bar select { width: auto; }
+.ctx-menu hr.pass-sep[hidden] { display: none; }

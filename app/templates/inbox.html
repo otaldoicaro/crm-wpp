@@ -773,7 +773,21 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   <button type="button" data-tag="outro">🏷️ É outro (não é venda)</button>
   <button type="button" data-tag="time">🏷️ É do time</button>
   <button type="button" data-tag="">🏷️ Voltar pra lead</button>
+  {% if bulk_people %}
+  <hr class="pass-sep">
+  <button type="button" data-pass>↪ Passar pra outro vendedor…</button>
+  <button type="button" data-select>☑ Selecionar várias</button>
+  {% endif %}
 </div>
+{% if bulk_people %}
+<div class="bulk-bar" id="bulkBar" hidden>
+  <b><span id="bulkCount">0</span> selecionada(s)</b>
+  <button type="button" class="btn ghost small" data-all>Todas da lista</button>
+  <select id="bulkTo"><option value="">↪ Passar pra…</option>{% for p in bulk_people %}<option value="{{ p.id }}">{{ p.name }}{{ " (Admin)" if p.role == "admin" }}</option>{% endfor %}</select>
+  <button type="button" class="btn small" data-go>Passar</button>
+  <button type="button" class="btn ghost small" data-cancel>Cancelar</button>
+</div>
+{% endif %}
 <script>
 // botão direito (computador) ou segurar o dedo (celular) numa conversa: marcar lida/não lida
 (function () {
@@ -791,10 +805,61 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
     menu.querySelector('[data-action="nao-lida"]').hidden = unread;
     menu.querySelector('[data-action="lida"]').hidden = !unread;
     menu.querySelector("[data-settle]").hidden = item.dataset.waiting !== "1";
+    var pass = menu.querySelector("[data-pass]");
+    if (pass) { pass.hidden = isGroup; menu.querySelector(".pass-sep").hidden = false; }
     menu.hidden = false;
     menu.style.left = Math.min(x, window.innerWidth - menu.offsetWidth - 8) + "px";
     menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + "px";
   }
+  // ⋮ em cada conversa: abre o mesmo menu do botão direito
+  list.addEventListener("click", function (e) {
+    var more = e.target.closest(".item-more");
+    if (!more || selecting) return;
+    e.preventDefault(); e.stopPropagation();
+    var r = more.getBoundingClientRect();
+    openMenu(more.closest(".inbox-list-item"), r.left - 160, r.bottom + 4);
+  }, true);
+  // ↪ passar várias conversas de uma vez: clicar na conversa marca/desmarca em vez de abrir
+  var bar = document.getElementById("bulkBar"), selected = new Set(), selecting = false;
+  function paint() {
+    list.classList.toggle("selecting", selecting);
+    list.querySelectorAll(".inbox-list-item").forEach(function (it) { it.classList.toggle("picked", selected.has(it.dataset.lead)); });
+    if (bar) { bar.hidden = !selecting; document.getElementById("bulkCount").textContent = selected.size; }
+  }
+  function stopSelect() { selecting = false; selected.clear(); paint(); }
+  new MutationObserver(function () { if (selecting) paint(); }).observe(list, { childList: true });  // a lista se atualiza sozinha
+  list.addEventListener("click", function (e) {
+    if (!selecting) return;
+    var item = e.target.closest(".inbox-list-item");
+    if (!item) return;
+    e.preventDefault(); e.stopPropagation();
+    if (item.dataset.group === "1") return;
+    if (selected.has(item.dataset.lead)) selected.delete(item.dataset.lead); else selected.add(item.dataset.lead);
+    paint();
+  }, true);
+  if (bar) bar.addEventListener("click", function (e) {
+    if (e.target.dataset.cancel !== undefined) return stopSelect();
+    if (e.target.dataset.all !== undefined) {
+      list.querySelectorAll('.inbox-list-item[data-group="0"]').forEach(function (it) { selected.add(it.dataset.lead); });
+      return paint();
+    }
+    if (e.target.dataset.go === undefined) return;
+    var to = document.getElementById("bulkTo");
+    if (!selected.size) return alert("Marque pelo menos uma conversa (clique nelas).");
+    if (!to.value) return alert("Escolha pra quem passar.");
+    var name = to.options[to.selectedIndex].text;
+    if (!confirm("Passar " + selected.size + " conversa(s) pra " + name + "?\n\nO histórico vai junto e o cliente continua falando com o mesmo WhatsApp.")) return;
+    var body = new URLSearchParams({ para: to.value });
+    selected.forEach(function (id) { body.append("lead_ids", id); });
+    e.target.disabled = true;
+    fetch("/leads/transferir-lote", { method: "POST", body: body }).then(function (r) { return r.json(); }).then(function (d) {
+      e.target.disabled = false;
+      var open = {{ (selected_lead.id if selected_lead else "")|tojson }}, hadOpen = selected.has(open);
+      stopSelect(); to.value = "";
+      alert("✅ " + d.n + " conversa(s) passada(s) pra " + d.para + ".");
+      if (hadOpen) window.location.reload(); else if (window.__inboxRefreshNow) window.__inboxRefreshNow();
+    }).catch(function () { e.target.disabled = false; alert("Não deu pra passar agora. Tente de novo."); });
+  });
   list.addEventListener("contextmenu", function (e) {
     var item = e.target.closest(".inbox-list-item");
     if (!item) return;
@@ -815,6 +880,12 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   document.addEventListener("click", function (e) { if (!menu.contains(e.target)) menu.hidden = true; });
   menu.addEventListener("click", function (e) {
     var action = e.target.dataset.action;
+    if ((e.target.dataset.pass !== undefined || e.target.dataset.select !== undefined) && target) {
+      menu.hidden = true;
+      selecting = true; selected.clear(); selected.add(target); paint();
+      if (e.target.dataset.pass !== undefined) document.getElementById("bulkTo").focus();
+      return;
+    }
     if (e.target.dataset.fav !== undefined && target) {
       menu.hidden = true;
       fetch("/inbox/" + target + "/favorita", { method: "POST", body: new URLSearchParams({ valor: e.target.dataset.fav }) })

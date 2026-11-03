@@ -8,7 +8,7 @@ import re
 import threading
 from urllib.parse import quote, unquote, urlencode
 import time
-from typing import Optional
+from typing import List, Optional
 
 import requests
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, Response, UploadFile
@@ -1364,6 +1364,7 @@ def _inbox_context(
             "active_conversation": active_conversation,
             "other_numbers": other_numbers,
             "platform": resolve_platform(selected_lead.attribution) if selected_lead else None,
+            "bulk_people": [p for p in team_members(db, tenant.id, only_active=True)] if _can_transfer(user) else [],
             "transfer_people": _transfer_options(db, tenant, selected_lead)
             if selected_lead and not selected_lead.is_group and _can_transfer(user) else [],
             "stages": db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
@@ -1768,28 +1769,10 @@ def _can_transfer(user: User) -> bool:
     return not user.read_only and (user.role == "admin" or bool(user.can_transfer))
 
 
-@router.post("/leads/{lead_id}/transferir")
-def transfer_lead(
-    lead_id: str,
-    para: str = Form(...),
-    trocar_numero: str = Form(""),
-    ajax: str = Form(""),
-    voltar: str = Form(""),
-    db: Session = Depends(get_db),
-    tenant: Tenant = Depends(current_tenant),
-    user: User = Depends(current_user_required),
-):
-    """Passa o lead (com a conversa inteira) pra outro vendedor. O histórico todo continua no
-    CRM: quem recebe abre a conversa e vê tudo, desde a 1ª mensagem. Com `trocar_numero` (ou o
-    recurso "passar_troca_numero" do cliente), as próximas mensagens saem pelo WhatsApp do novo vendedor."""
-    if not _can_transfer(user):
-        raise HTTPException(status_code=403, detail="Só o admin (ou quem tem a permissão em Equipe) passa leads pra outro vendedor")
+def _transfer(db: Session, tenant: Tenant, user: User, lead: Lead, target: User, trocar_numero: str = "") -> None:
+    """Passa o lead (com a conversa inteira) pro `target`, com a nota na conversa (sem commit)."""
     if features.has(tenant, "passar_troca_numero"):
         trocar_numero = "1"
-    lead = _lead_for_action(db, tenant, user, lead_id)
-    target = next((p for p in team_members(db, tenant.id, only_active=True) if p.id == para), None)
-    if target is None:
-        raise HTTPException(status_code=404, detail="Vendedor não encontrado")
     previous = lead.assigned_user.name if lead.assigned_user else "ninguém"
     previous_id = lead.assigned_user_id
     lead.assigned_user_id = target.id
@@ -1818,6 +1801,58 @@ def transfer_lead(
             db.refresh(lead)
             note += f" — próximas mensagens pelo WhatsApp {number.label}"
     _add_note(db, lead, note)
+
+
+@router.post("/leads/transferir-lote")
+def transfer_leads_batch(
+    lead_ids: List[str] = Form(...),
+    para: str = Form(...),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """↪ Passa várias conversas de uma vez (Inbox: ⋮ numa conversa ou "Selecionar várias"), sem abrir
+    cada uma. Mesma regra do passar de dentro da conversa; grupo e lead de outro (pra vendedor) ficam de fora."""
+    if not _can_transfer(user):
+        raise HTTPException(status_code=403, detail="Só o admin (ou quem tem a permissão em Equipe) passa leads pra outro vendedor")
+    target = next((p for p in team_members(db, tenant.id, only_active=True) if p.id == para), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Vendedor não encontrado")
+    query = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.id.in_(lead_ids[:500]), Lead.deleted_at.is_(None),
+                                  Lead.is_group.is_(False), or_(Lead.assigned_user_id != target.id, Lead.assigned_user_id.is_(None)))
+    if user.role != "admin":
+        query = query.filter(Lead.assigned_user_id == user.id)
+    moved = []
+    for lead in query.all():
+        _transfer(db, tenant, user, lead, target)
+        moved.append(lead.id)
+    db.commit()
+    for lead_id in moved:
+        inbox_state.mark_unread(db, target.id, lead_id)  # chega destacado no Inbox de quem recebeu
+    return JSONResponse({"ok": True, "n": len(moved), "para": target.name})
+
+
+@router.post("/leads/{lead_id}/transferir")
+def transfer_lead(
+    lead_id: str,
+    para: str = Form(...),
+    trocar_numero: str = Form(""),
+    ajax: str = Form(""),
+    voltar: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Passa o lead (com a conversa inteira) pra outro vendedor. O histórico todo continua no
+    CRM: quem recebe abre a conversa e vê tudo, desde a 1ª mensagem. Com `trocar_numero` (ou o
+    recurso "passar_troca_numero" do cliente), as próximas mensagens saem pelo WhatsApp do novo vendedor."""
+    if not _can_transfer(user):
+        raise HTTPException(status_code=403, detail="Só o admin (ou quem tem a permissão em Equipe) passa leads pra outro vendedor")
+    lead = _lead_for_action(db, tenant, user, lead_id)
+    target = next((p for p in team_members(db, tenant.id, only_active=True) if p.id == para), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Vendedor não encontrado")
+    _transfer(db, tenant, user, lead, target, trocar_numero)
     db.commit()
     inbox_state.mark_unread(db, target.id, lead.id)  # chega destacado no Inbox de quem recebeu
     if ajax:
