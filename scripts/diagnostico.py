@@ -5,6 +5,10 @@ e se os WhatsApps estão conectados. Não mostra o texto das mensagens e não mu
 Rodar no terminal do VPS (Web console da Hostinger):
     docker exec -it crm-app python -m scripts.diagnostico 21984127467
     docker exec -it crm-app python -m scripts.diagnostico "Lima"
+    docker exec -it crm-app python -m scripts.diagnostico 0388        # final do telefone (4 a 7 dígitos)
+
+Também confere no Evolution (últimos 3 dias) quantas mensagens com esse cliente passaram por cada
+WhatsApp e quantas delas o CRM tem, e se cada WhatsApp funciona de verdade (não só "conectado").
 """
 
 import os
@@ -36,6 +40,8 @@ def main() -> None:
         if len(digits) >= 8:
             variants = _phone_variants(digits) | _phone_variants(normalize_br_phone(digits))
             query = query.filter(or_(Lead.phone.in_(variants), Lead.phone.like(f"%{digits[-8:]}")))
+        elif len(digits) >= 4 and digits == term:
+            query = query.filter(Lead.phone.like(f"%{digits}"))
         else:
             query = query.filter(Lead.name.ilike(f"%{term}%"))
         leads = query.order_by(Lead.created_at).limit(20).all()
@@ -69,12 +75,49 @@ def main() -> None:
                 print(f"  conversa pelo {number.label if number else '?'} ({state}): {rows.get('in', 0)} do cliente, "
                       f"{rows.get('out', 0)} nossas, {rows.get('note', 0)} avisos · de {fmt(first)} até {fmt(last)}")
             print()
-        print("WhatsApps:")
-        for n in db.query(WhatsAppNumber).filter(WhatsAppNumber.is_active.is_(True)).order_by(WhatsAppNumber.label):
-            state = "conectado" if n.provider != "evolution" or n.connection_state == "open" else "DESCONECTADO"
-            print(f"  {n.label}: {state}")
+        ends = {(lead.phone or "")[-8:] for lead in leads if len(lead.phone or "") >= 8 and not lead.is_group}
+        tenants = {lead.tenant_id for lead in leads} or {None}
+        print("WhatsApps (CRM · Evolution · teste de verdade" + (" · mensagens com esse cliente nos últimos 3 dias" if ends else "") + "):")
+        numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.is_active.is_(True))
+        if None not in tenants:
+            numbers = numbers.filter(WhatsAppNumber.tenant_id.in_(tenants))
+        for n in numbers.order_by(WhatsAppNumber.label):
+            line = f"  {n.label}: CRM {'conectado' if n.provider != 'evolution' or n.connection_state == 'open' else 'DESCONECTADO'}"
+            if n.provider == "evolution":
+                line += " · " + _evolution(db, n, ends)
+            print(line)
     finally:
         db.close()
+
+
+def _evolution(db, number, ends: set) -> str:
+    """Estado no Evolution, teste que precisa da conexão de verdade e, se pedido, as mensagens com o
+    cliente que passaram por esse WhatsApp (e quantas o CRM tem)."""
+    import datetime
+
+    from app.services import evolution_client, history_sync, wa_health
+
+    try:
+        state = evolution_client.connection_state(number.evolution_instance)
+    except evolution_client.EvolutionError as exc:
+        return f"Evolution ERRO ({str(exc)[:60]})"
+    out = f"Evolution {state}"
+    if state == "open":
+        out += " · " + ("funciona" if wa_health._works(number.evolution_instance, number.phone_number) else "TRAVADO (zumbi)")
+    if not ends:
+        return out
+    until = datetime.datetime.utcnow()
+    try:
+        records = history_sync._records(number.evolution_instance, until - datetime.timedelta(days=3), until)
+    except evolution_client.EvolutionError as exc:
+        return out + f" · não deu pra ler as mensagens ({str(exc)[:50]})"
+    ids = [(r.get("key") or {}).get("id") for r in records
+           if history_sync._known_phone(db, r.get("key") or {}, r)[-8:] in ends]
+    ids = [i for i in ids if i]
+    if not ids:
+        return out + " · 0 mensagens com esse cliente"
+    have = {i for (i,) in db.query(Message.wa_message_id).filter(Message.wa_message_id.in_(ids))}
+    return out + f" · {len(ids)} mensagens com esse cliente, {len(have)} no CRM" + (f" (FALTAM {len(ids) - len(have)})" if len(have) < len(ids) else "")
 
 
 if __name__ == "__main__":
