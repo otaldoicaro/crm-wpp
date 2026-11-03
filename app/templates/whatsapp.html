@@ -80,7 +80,7 @@
 
     <div class="wa-actions">
       {% if n.connection_state == "open" %}
-        <form method="post" action="/whatsapp/{{ n.id }}/disconnect" onsubmit="return confirm('Desconectar este número do CRM? As conversas deixam de chegar aqui até conectar de novo.')">
+        <form method="post" action="/whatsapp/{{ n.id }}/disconnect" onsubmit="return confirm('Desconectar este número do CRM? As conversas deixam de chegar aqui até conectar de novo.\n\nDepois, no celular: WhatsApp → ⋮ (ou Configurações) → Aparelhos conectados → toque em cada aparelho e Desconectar. Aí sim Conectar agora e leia o QR code.')">
           <button class="btn ghost small" type="submit">Desconectar</button>
         </form>
       {% else %}
@@ -142,18 +142,21 @@
       fetch("/whatsapp/" + id + "/qr").then(function (r) { return r.json(); }).then(function (d) {
         if (d.state === "open") return done();
         if (d.state === "error") { qrBox.innerHTML = '<span class="muted"></span>'; qrBox.firstChild.textContent = "Erro: " + (d.error || "sem resposta"); return; }
-        if (d.qr_base64) qrBox.innerHTML = '<img alt="QR code" src="' + d.qr_base64 + '">';
-        else setTimeout(loadQr, 2000);  // o Evolution leva alguns segundos pra gerar o primeiro QR
+        if (d.qr_base64 && d.qr_base64 !== lastQr) {  // troca só quando o WhatsApp gerou um código novo
+          lastQr = d.qr_base64;
+          qrBox.innerHTML = '<img alt="QR code" src="' + d.qr_base64 + '">';
+        } else if (!d.qr_base64) setTimeout(loadQr, 2000);  // o Evolution leva alguns segundos pra gerar o primeiro QR
         if (d.pairing_code) { pairing.hidden = false; pairing.querySelector(".wa-code").textContent = d.pairing_code; }
       });
     }
+    var lastQr = "";
     function checkStatus() {
       fetch("/whatsapp/" + id + "/status").then(function (r) { return r.json(); }).then(function (d) {
         if (d.state === "open") done();
       });
     }
     loadQr();
-    qrTimer = setInterval(loadQr, 35000);
+    qrTimer = setInterval(loadQr, 10000);  // pega o código novo logo que o WhatsApp troca (~20 s); não reinicia a conexão
     statusTimer = setInterval(checkStatus, 3000);
   }
 

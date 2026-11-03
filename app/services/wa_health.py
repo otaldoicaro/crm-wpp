@@ -42,10 +42,12 @@ SILENT_MAX = datetime.timedelta(minutes=90)
 SILENT_GAPS = 4
 SILENT_MIN_PER_HOUR = 3  # só número que recebe, em média, 3+ mensagens por hora de atendimento
 WAIT_OPEN_SECONDS = 30
-RECONNECT_TEXT = ("O CRM tentou religar sozinho e não conseguiu. Entre em Meu WhatsApp → Desconectar, depois "
-                  "Conectar agora e leia o QR code com o celular.")
+# 🧘 modo calmo: o CRM nunca reinicia a conexão sozinho (cada reinício podia derrubar o número de vez ou
+# cortar o QR code no meio da leitura). Ele só confere, puxa as mensagens que escaparam e avisa.
+AUTO_RESTART = False
+RECONNECT_TEXT = ("Entre em Meu WhatsApp → Desconectar, depois Conectar agora e leia o QR code com o celular.")
 RESET_KEEP = datetime.timedelta(hours=12)  # depois de um Desconectar, a sessão antiga não volta: espera o QR
-WARN_EVERY = 60 * 60  # o aviso "travou" do mesmo número no máximo 1 vez por hora
+WARN_EVERY = 60 * 60  # o aviso "travou" do mesmo número no máximo 1 vez por hora (e só de novo depois de voltar)
 NIGHT_FILE = "/tmp/evolution-renovando.json"  # scripts/evolution_noite.py: Evolution reiniciando de madrugada
 NIGHT_PAUSE = 15 * 60  # o vigia não mexe em nada enquanto isso (no máximo 15 min, se o script morrer no meio)
 
@@ -53,7 +55,8 @@ _lock = threading.Lock()
 _healed: dict = {}  # instância -> quando reiniciou (monotonic)
 _silent: dict = {}  # instância -> quando reiniciou por "parou de receber"
 _silent_strikes: dict = {}  # instância -> quantas vezes seguidas reiniciou e continuou sem receber
-_warned: dict = {}  # instância -> quando avisou "travou"
+_warned: dict = {}  # instância -> quando avisou "travou" (sai daqui quando volta a funcionar)
+_silent_warned: set = set()  # instância que já teve o aviso "parou de receber" (sai quando chega mensagem)
 _imported: dict = {}  # sessão antiga -> quando puxou as mensagens dela e tentou apagar
 EXTRA_RETRY = 10 * 60  # sessão antiga: puxa as mensagens dela (e tenta apagar a desconectada) a cada 10 min
 
@@ -80,6 +83,8 @@ def _works(instance: str, phone: str) -> bool:
 def heal(number: WhatsAppNumber, why: str):
     """Reinicia a conexão do número e espera voltar funcionando. True = voltou (vale tentar de novo),
     False = não voltou (precisa de QR code), None = já reiniciou há pouco (HEAL_COOLDOWN): não fez nada."""
+    if not AUTO_RESTART:
+        return False
     instance = number.evolution_instance
     now = time.monotonic()
     with _lock:
@@ -428,21 +433,23 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
             # o vigia só reinicia; nunca cria sessão nova sozinho (a antiga podia voltar e ficar recebendo
             # sem o CRM ouvir). Não voltou: o vendedor desconecta e conecta (aí sim 100%, com QR code)
             with _lock:
-                warn = ok is False and time.monotonic() - _warned.get(number.evolution_instance, -WARN_EVERY) >= WARN_EVERY
+                warn = ok is False and number.evolution_instance not in _warned
                 if warn:
                     _warned[number.evolution_instance] = time.monotonic()
-            if warn:
-                logger.warning("wa_health: %s continua travado depois de reiniciar: precisa reconectar", number.label)
+            if warn:  # 1 aviso por problema: só avisa de novo depois que voltar a funcionar e travar outra vez
+                logger.warning("wa_health: %s travado: precisa reconectar", number.label)
                 _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} travou",
-                      RECONNECT_TEXT)
+                      "Diz conectado, mas não envia nem recebe. " + RECONNECT_TEXT)
             return "zumbi"
         return ""
+    _warned.pop(number.evolution_instance, None)  # funciona: um travamento novo volta a avisar
     tenant = db.get(Tenant, number.tenant_id)
     hours = parse_hours(tenant.business_hours if tenant else "")
     last = _last_inbound(db, number)
     instance = number.evolution_instance
     if last is not None and now - last < SILENT_MIN:
         _silent_strikes.pop(instance, None)
+        _silent_warned.discard(instance)
         return ""
     window = _silent_after(db, number, hours, now) if tenant is not None and last is not None else None
     if window is None or now - last < window:
@@ -458,12 +465,16 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
             strikes = _silent_strikes[instance] = _silent_strikes.get(instance, 0) + 1
         if strikes == 1:
             heal(number, "parou de receber mensagens")
-            catch_up(number.id)
+            catch_up(number.id)  # puxa do Evolution o que tiver escapado
             return "silencioso"
-        # já reiniciou e continua sem receber: só reconectando (QR) resolve
-        _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} parou de receber mensagens",
-              f"Há {int((now - last).total_seconds() // 60)} min não chega nenhuma mensagem nesse WhatsApp, enquanto os "
-              "outros recebem. " + RECONNECT_TEXT)
+        if instance in _silent_warned:
+            return ""  # já avisou: só avisa de novo depois de voltar a receber
+        _silent_warned.add(instance)
+        # pode ser só um horário parado desse vendedor: avisa só os admins, uma vez, pra conferir no celular
+        admins = [uid for uid in _admins_and_owner(db, number) if uid != number.owner_user_id]
+        _warn(db, number, admins, f"📵 {number.label} parou de receber mensagens?",
+              f"Há {int((now - last).total_seconds() // 60)} min não chega nenhuma mensagem nesse WhatsApp no CRM, "
+              "enquanto os outros recebem. Confira com o vendedor se chegou mensagem no celular. Se chegou: " + RECONNECT_TEXT)
         return "silencioso"
     return ""
 
