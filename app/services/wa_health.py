@@ -30,7 +30,7 @@ from app.services import evolution_client
 
 logger = logging.getLogger("wa_health")
 
-CHECK_SECONDS = 5 * 60
+CHECK_SECONDS = 60  # cada rodada: 2 consultas leves por número + 1 lista das sessões
 HEAL_COOLDOWN = 10 * 60
 SILENT_AFTER = datetime.timedelta(minutes=90)
 SILENT_COOLDOWN = 3 * 60 * 60
@@ -169,6 +169,61 @@ def owner_of_old_session(db, instance: str, event: str, state: str):
     if event == "connection.update":
         return None  # estado da sessão velha não muda o número
     return number
+
+
+def reconcile(db) -> dict:
+    """Sessões que sobraram no Evolution de cada número (de um "Desconectar 100%" em que a antiga não
+    saiu). Toda rodada:
+    - o número não está funcionando e uma sessão antiga dele está: volta a usar a antiga e puxa as mensagens;
+    - sessão antiga a mais (o número já funciona pela atual): puxa o que passou por ela (nada se perde)
+      e apaga, pra ficar uma sessão só por número.
+    Só mexe em sessão do mesmo número (mesmo nome de base e, quando dá pra saber, o mesmo telefone)."""
+    from app.services import history_sync
+
+    done = {}
+    if paused():
+        return done
+    try:
+        sessions = evolution_client.list_instances()
+    except evolution_client.EvolutionError:
+        return done
+    state_of = {name: state for name, state, _ in sessions}
+    numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.provider == "evolution", WhatsAppNumber.is_active.is_(True)).all()
+    used = {n.evolution_instance for n in db.query(WhatsAppNumber.evolution_instance)}
+    for number in numbers:
+        root, phone = instance_root(number.evolution_instance), (number.phone_number or "")[-8:]
+        extras = [(name, state) for name, state, owner in sessions
+                  if name not in used and instance_root(name) == root and (not phone or not owner or owner[-8:] == phone)]
+        if not extras:
+            continue
+        current = number.evolution_instance
+        current_ok = state_of.get(current) == "open" and _works(current, number.phone_number)
+        if not current_ok:
+            alive = next((name for name, state in extras if state == "open" and _works(name, number.phone_number)), None)
+            if alive is not None:
+                logger.warning("wa_health: %s voltou a usar a sessão %s (a %s não funciona)", number.label, alive, current)
+                number.evolution_instance, number.connection_state = alive, "open"
+                db.add(number)
+                db.commit()
+                used.add(alive)
+                catch_up(number.id)
+                done[number.label] = "voltou pra sessão antiga"
+            continue  # sem nenhuma funcionando: não apaga nada (o vendedor lê o QR na atual)
+        for name, state in extras:
+            if state == "open":
+                try:
+                    history_sync.sync_number(number.id, 1, apply=True, instance=name)  # nada se perde
+                except Exception:
+                    logger.exception("wa_health: falhou ao puxar as mensagens da sessão antiga %s", name)
+                    continue  # não apaga sem ter puxado
+            for action in (evolution_client.logout, evolution_client.delete_instance):
+                try:
+                    action(name)
+                except evolution_client.EvolutionError:
+                    pass
+            logger.warning("wa_health: sessão antiga %s de %s apagada (o número funciona pela %s)", name, number.label, current)
+            done[number.label] = "sessão antiga apagada"
+    return done
 
 
 def _admins_and_owner(db, number: WhatsAppNumber) -> list:
@@ -361,6 +416,11 @@ def run() -> dict:
     done = {}
     try:
         now = datetime.datetime.utcnow()
+        try:
+            done.update(reconcile(db))  # sessões que sobraram: nenhuma mensagem fica de fora
+        except Exception:
+            db.rollback()
+            logger.exception("wa_health: falhou ao conferir as sessões que sobraram")
         numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.provider == "evolution",
                                                   WhatsAppNumber.is_active.is_(True)).all()
         for number in numbers:

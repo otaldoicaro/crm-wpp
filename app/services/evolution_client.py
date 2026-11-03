@@ -162,6 +162,19 @@ def owner_phone(instance: str) -> str:
     return ""
 
 
+def list_instances() -> list:
+    """Todas as sessões do Evolution: [(nome, estado, número dono só dígitos)]."""
+    body = _request("GET", "/instance/fetchInstances")
+    out = []
+    for item in body if isinstance(body, list) else [body]:
+        data = item.get("instance", item)
+        name = data.get("name") or data.get("instanceName") or ""
+        jid = data.get("ownerJid") or data.get("owner") or ""
+        if name:
+            out.append((name, data.get("connectionStatus") or data.get("status") or "", jid.split("@")[0].split(":")[0]))
+    return out
+
+
 def restart(instance: str) -> None:
     """Reinicia a conexão do número no Evolution (sem QR code: usa a sessão salva). Resolve a conexão
     "zumbi" (diz open, mas o envio volta "Connection Closed"). v2 é POST; v1 era PUT."""

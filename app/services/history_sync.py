@@ -63,8 +63,8 @@ def _known_phone(db, key: dict, rec: dict) -> str:
     return known.phone if known else _digits(jid)
 
 
-def sync_number(number_id: str, days: int, apply: bool) -> dict:
-    """Devolve {"vistas", "ja_no_crm", "importar_cliente", "importar_nossas", "ignoradas",
+def sync_number(number_id: str, days: int, apply: bool, instance: str = "") -> dict:
+    """instance: ler de outra sessão do mesmo WhatsApp (ex: uma antiga, antes de apagar). Devolve {"vistas", "ja_no_crm", "importar_cliente", "importar_nossas", "ignoradas",
     "novos_leads", "leads": {nome: quantidade}}."""
     from app.routers.webhooks_evolution import _digits, _parse_content, _phone_from_key, _remember_lid
     from app.services.inbound import ingest_inbound, message_exists, record_outbound_from_phone
@@ -80,7 +80,7 @@ def sync_number(number_id: str, days: int, apply: bool) -> dict:
         # até 2 min atrás: a mensagem recém-chegada ainda pode estar entrando pelo webhook
         until = datetime.datetime.utcnow() - datetime.timedelta(minutes=2)
         since = until - datetime.timedelta(days=days)
-        records = _records(number.evolution_instance, since, until)
+        records = _records(instance or number.evolution_instance, since, until)
         records.sort(key=lambda r: int(r.get("messageTimestamp") or 0))
         # 1º aprende LID -> telefone com o período inteiro: a mensagem do cliente costuma trazer o
         # número junto; a nossa (do celular), não. Assim a nossa acha o lead mesmo vindo antes.
