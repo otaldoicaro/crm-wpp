@@ -232,7 +232,10 @@ def reconcile(db) -> dict:
         if not extras:
             continue
         current = number.evolution_instance
-        if not _just_reset(number):
+        # logo depois de um Desconectar, enquanto espera o QR, o número não volta pra sessão antiga. Depois
+        # que leu o QR (atual conectada), vale a regra de sempre: fica a sessão que recebe de verdade
+        # (ex: Guilherme leu o QR e a sessão nova recebia 3 mensagens em 2h; a antiga, 157)
+        if not _just_reset(number) or state_of.get(current) == "open":
             candidates = [current] if state_of.get(current) == "open" and _works(current, number.phone_number) else []
             candidates += [name for name, state in extras if state == "open" and _works(name, number.phone_number)]
             best = candidates[0] if candidates else current
@@ -264,9 +267,7 @@ def reconcile(db) -> dict:
                     history_sync.sync_number(number.id, 0.25, apply=True, instance=name)
                 except Exception:
                     logger.exception("wa_health: falhou ao puxar as mensagens da sessão antiga %s", name)
-                if _just_reset(number):  # alguém clicou Desconectar: aí sim tira a antiga
-                    _drop(name)
-                continue
+                continue  # 🧘 conectada: o CRM nunca desconecta sozinho (podia ser a que recebe)
             _drop(name)
     return done
 

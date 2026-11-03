@@ -48,6 +48,52 @@ def _records(instance: str, since: datetime.datetime, until: datetime.datetime) 
     return out
 
 
+def is_lid_phone(phone: str) -> bool:
+    """O "telefone" é na verdade um código LID (14+ dígitos; telefone com DDI tem no máximo 13)."""
+    return bool(phone) and phone.isdigit() and len(phone) >= 14
+
+
+def phone_from_chat(db, records: list) -> str:
+    """Telefone de uma conversa por LID descoberto pela própria conversa: se alguma mensagem dela
+    (ex: a que o vendedor mandou pelo CRM pro telefone) já está no CRM num lead com telefone de
+    verdade, é essa pessoa. Vazio se não der pra saber."""
+    from app.models import Conversation, Lead, Message
+
+    ids = [(r.get("key") or {}).get("id") for r in records]
+    ids = [i for i in ids if i]
+    if not ids:
+        return ""
+    rows = (db.query(Lead.phone).join(Conversation, Conversation.lead_id == Lead.id)
+            .join(Message, Message.conversation_id == Conversation.id)
+            .filter(Message.wa_message_id.in_(ids[:500])).distinct().all())
+    phones = {p for (p,) in rows if p and p.isdigit() and not is_lid_phone(p)}
+    return phones.pop() if len(phones) == 1 else ""  # mais de um telefone: ambíguo, não arrisca
+
+
+def lid_from_chat(db, instance: str, lid_jid: str) -> str:
+    """phone_from_chat perguntando ao Evolution as mensagens dessa conversa (as 50 mais novas)."""
+    try:
+        records = evolution_client.chat_messages(instance, lid_jid, 50)
+    except evolution_client.EvolutionError:
+        return ""
+    return phone_from_chat(db, records)
+
+
+_chat_misses: dict = {}  # código LID -> quando perguntou ao Evolution e não deu (não repete por 1h)
+
+
+def _lid_from_chat_cached(db, instance: str, lid_jid: str) -> str:
+    import time
+
+    now = time.monotonic()
+    if now - _chat_misses.get(lid_jid, -3600) < 3600:
+        return ""
+    phone = lid_from_chat(db, instance, lid_jid)
+    if not phone:
+        _chat_misses[lid_jid] = now
+    return phone
+
+
 def _known_phone(db, key: dict, rec: dict) -> str:
     """Telefone pelo que já se sabe (campo alternativo ou LID aprendido), sem chamar o Evolution."""
     from app.models import LidMap
@@ -92,6 +138,27 @@ def sync_number(number_id: str, days: int, apply: bool, instance: str = "") -> d
                 _remember_lid(db, jid, _digits(pn))
             elif jid.endswith("@s.whatsapp.net") and alt.endswith("@lid"):
                 _remember_lid(db, alt, _digits(jid))
+        # conversa por LID sem telefone conhecido: descobre pela própria conversa (uma mensagem dela
+        # que já está no CRM num lead de verdade). Sem isso a mensagem virava um lead "fantasma"
+        from app.models import LidMap
+
+        by_chat: dict = {}
+        for rec in records:
+            jid = (rec.get("key") or {}).get("remoteJid") or ""
+            if jid.endswith("@lid"):
+                by_chat.setdefault(jid, []).append(rec)
+        learned = 0
+        for jid, chat in by_chat.items():
+            if db.get(LidMap, _digits(jid)) is None:
+                phone = phone_from_chat(db, chat) or _lid_from_chat_cached(db, instance or number.evolution_instance, jid)
+                if phone:
+                    _remember_lid(db, jid, phone)
+                    learned += 1
+        if learned:
+            stats["lids_descobertos"] = learned
+            from app.services.lead_match import merge_lid_leads
+
+            merge_lid_leads(db)  # lead fantasma que já existia com esse código: junta no lead certo
         # contatos que mandaram mensagem no período: viram lead nesta rodada, então a mensagem
         # nossa que veio ANTES da 1ª deles também entra (fica pra depois de criar o lead)
         incoming = {}  # telefone -> nome no WhatsApp

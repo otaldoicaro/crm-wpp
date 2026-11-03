@@ -303,6 +303,13 @@ def resolve_lid(instance: str, lid_jid: str) -> str:
     return ""
 
 
+def chat_messages(instance: str, remote_jid: str, limit: int = 50) -> list:
+    """Mensagens guardadas no Evolution de uma conversa (ex: "123...@lid")."""
+    body = _request("POST", f"/chat/findMessages/{instance}", timeout=30,
+                    json={"where": {"key": {"remoteJid": remote_jid}}, "page": 1, "offset": limit})
+    return ((body or {}).get("messages") or {}).get("records") or []
+
+
 def find_message(instance: str, wa_id: str) -> dict:
     """Registro inteiro ({key, message, ...}) de uma mensagem guardada no Evolution; {} se não achar."""
     body = _request("POST", f"/chat/findMessages/{instance}", json={"where": {"key": {"id": wa_id}}, "page": 1, "offset": 1})

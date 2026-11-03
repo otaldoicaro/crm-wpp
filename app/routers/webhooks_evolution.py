@@ -125,6 +125,14 @@ def _phone_from_key(key: dict, data: dict, db: Optional[Session] = None, number:
             if phone:
                 _remember_lid(db, jid, phone)
                 return phone
+            from app.services.history_sync import lid_from_chat
+
+            # pela própria conversa: uma mensagem dela (ex: a que o vendedor mandou pro telefone) já
+            # está no CRM num lead de verdade. Sem isso nascia um lead "fantasma" com o código
+            phone = lid_from_chat(db, number.evolution_instance, jid)
+            if phone:
+                _remember_lid(db, jid, phone)
+                return phone
         _LID_MISSES[lid] = now
         logger.warning("evolution: conversa por LID sem telefone conhecido (%s); a importação de LIDs (a cada 15 min) resolve", lid)
     return _digits(jid)
