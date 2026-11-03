@@ -44,6 +44,8 @@ _lock = threading.Lock()
 _healed: dict = {}  # instância -> quando reiniciou (monotonic)
 _silent: dict = {}  # instância -> quando reiniciou por "parou de receber"
 _warned: dict = {}  # instância -> quando avisou "travou"
+_failed: dict = {}  # instância -> vezes seguidas que reiniciar não resolveu
+HARD_RESET_AFTER = 2  # o vigia só desconecta 100% depois de 2 rodadas seguidas sem conseguir religar
 
 
 def is_zombie_error(exc: Exception) -> bool:
@@ -135,6 +137,38 @@ def paused() -> bool:
         return time.time() - os.path.getmtime(NIGHT_FILE) < NIGHT_PAUSE
     except OSError:
         return False
+
+
+def instance_root(name: str) -> str:
+    return re.sub(r"-r[0-9a-f]{4}$", "", name or "")
+
+
+def owner_of_old_session(db, instance: str, event: str, state: str):
+    """Evento de uma sessão que o CRM largou no "Desconectar 100%" (ex: novaviseu-14 quando o número já
+    está em novaviseu-14-r3fa9, ou o contrário). Se chegou mensagem por ela e a atual do número não está
+    conectada, o número volta a usar ela (e puxa o que chegou nesse meio-tempo); se as duas estão
+    conectadas, as mensagens dela entram mesmo assim (o id da mensagem evita duplicar). Nunca descarta
+    mensagem de cliente. Devolve o número (ou None)."""
+    root = instance_root(instance)
+    number = next((n for n in db.query(WhatsAppNumber).filter(WhatsAppNumber.provider == "evolution",
+                                                               WhatsAppNumber.is_active.is_(True))
+                   if instance_root(n.evolution_instance) == root), None) if root else None
+    if number is None:
+        return None
+    # só mensagem prova que ela funciona: o zumbi também manda "open" (e aí o Conectar voltaria a pular o QR)
+    alive = event != "connection.update"
+    if alive and number.connection_state != "open":
+        logger.warning("wa_health: %s voltou a usar a sessão %s (a %s não está conectada)",
+                       number.label, instance, number.evolution_instance)
+        number.evolution_instance = instance
+        number.connection_state = "open"
+        db.add(number)
+        db.commit()
+        catch_up(number.id)
+        return number
+    if event == "connection.update":
+        return None  # estado da sessão velha não muda o número
+    return number
 
 
 def _admins_and_owner(db, number: WhatsAppNumber) -> list:
@@ -281,17 +315,21 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
         number.connection_state = "open"  # voltou (ex: depois de reiniciar o Evolution)
     try:  # consulta que precisa da conexão de verdade, sem mandar nada pra ninguém
         evolution_client.whatsapp_numbers(number.evolution_instance, [number.phone_number])
+        _failed.pop(number.evolution_instance, None)
     except evolution_client.EvolutionError as exc:
         if is_zombie_error(exc):
             ok = heal(number, "conexão zumbi")
             if ok:
                 catch_up(number.id)
             with _lock:
-                warn = ok is False and time.monotonic() - _warned.get(number.evolution_instance, -WARN_EVERY) >= WARN_EVERY
+                fails = _failed[number.evolution_instance] = _failed.get(number.evolution_instance, 0) + (ok is False)
+                warn = (ok is False and fails >= HARD_RESET_AFTER
+                        and time.monotonic() - _warned.get(number.evolution_instance, -WARN_EVERY) >= WARN_EVERY)
                 if warn:
                     _warned[number.evolution_instance] = time.monotonic()
-            if ok is False:
-                hard_reset(db, number)  # não voltou reiniciando: desconecta 100% pra o QR code aparecer
+            if ok is False and fails >= HARD_RESET_AFTER:
+                _failed.pop(number.evolution_instance, None)
+                hard_reset(db, number)  # não voltou reiniciando (2 vezes): desconecta 100% pra o QR code aparecer
             if warn:
                 logger.warning("wa_health: %s continua travado depois de reiniciar: precisa de QR code", number.label)
                 _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} travou",

@@ -513,11 +513,17 @@ def _process_event_db(db: Session, payload: dict) -> list:
         .filter(WhatsAppNumber.provider == "evolution", WhatsAppNumber.evolution_instance == instance)
         .first()
     )
-    if not number:
-        logger.warning("evolution: evento %s de instância desconhecida: %s", event, instance)
-        return []
-
     data = payload.get("data") or {}
+    if not number:
+        from app.services import wa_health
+
+        number = wa_health.owner_of_old_session(db, instance, event, data.get("state", "") if isinstance(data, dict) else "")
+        if number is None:
+            if event != "connection.update":
+                logger.warning("evolution: evento %s de instância desconhecida: %s", event, instance)
+            return []
+        if event == "connection.update":
+            return []  # já tratado (o número voltou a usar essa sessão)
 
     if event == "connection.update":
         state = data.get("state", "")
