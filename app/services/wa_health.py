@@ -10,8 +10,8 @@
 4. Voltou (religou sozinho ou alguém leu o QR code): puxa na hora do Evolution as mensagens do período
    que não entraram no CRM (catch_up).
 3. Parou de receber (o WhatsApp não entrega mais pro servidor, mas a conexão parece boa e passa no teste):
-   no horário de atendimento, número que costuma receber bastante, há SILENT_AFTER sem nenhuma mensagem de
-   cliente enquanto os outros WhatsApps recebem -> reinicia; continuou parado -> avisa o vendedor e os
+   no horário de atendimento, número que costuma receber bastante, sem nenhuma mensagem de cliente por um
+   tempo que depende do movimento dele (_silent_after: 10 min se recebe muito) enquanto os outros recebem -> reinicia; continuou parado -> avisa o vendedor e os
    admins pra reconectar (QR).
 Toda reinicialização respeita HEAL_COOLDOWN por número: nunca fica reiniciando em loop.
 """
@@ -34,8 +34,12 @@ logger = logging.getLogger("wa_health")
 
 CHECK_SECONDS = 60  # cada rodada: 2 consultas leves por número + 1 lista das sessões
 HEAL_COOLDOWN = 10 * 60
-SILENT_AFTER = datetime.timedelta(minutes=20)
-SILENT_COOLDOWN = 20 * 60  # entre um reinício por "parou de receber" e outro
+# "parou de receber": o tempo sem mensagem que já é estranho depende do movimento de cada WhatsApp
+# (4x o intervalo médio entre mensagens no horário de atendimento), entre SILENT_MIN e SILENT_MAX.
+# Ex: 30 mensagens/hora -> 10 min; 6/hora -> 40 min. Quem recebe menos de SILENT_MIN_PER_HOUR fica de fora.
+SILENT_MIN = datetime.timedelta(minutes=10)
+SILENT_MAX = datetime.timedelta(minutes=90)
+SILENT_GAPS = 4
 SILENT_MIN_PER_HOUR = 3  # só número que recebe, em média, 3+ mensagens por hora de atendimento
 WAIT_OPEN_SECONDS = 30
 RECONNECT_TEXT = ("O CRM tentou religar sozinho e não conseguiu. Entre em Meu WhatsApp → Desconectar, depois "
@@ -376,13 +380,17 @@ def catch_up(number_id: str) -> None:
     threading.Thread(target=go, daemon=True).start()
 
 
-def _receives_a_lot(db, number: WhatsAppNumber, hours: dict, now: datetime.datetime) -> bool:
+def _silent_after(db, number: WhatsAppNumber, hours: dict, now: datetime.datetime):
+    """Quanto tempo sem mensagem já é estranho pra ESTE WhatsApp (None = recebe pouco: não confere)."""
     week = now - datetime.timedelta(days=7)
     count = (db.query(Message.id).join(Conversation, Conversation.id == Message.conversation_id)
              .filter(Conversation.whatsapp_number_id == number.id, Message.direction == "in", Message.created_at >= week)
              .count())
     open_hours = sum((end - start) / 60 for start, end in hours.values()) or 1
-    return count / open_hours >= SILENT_MIN_PER_HOUR
+    per_hour = count / open_hours
+    if per_hour < SILENT_MIN_PER_HOUR:
+        return None
+    return min(SILENT_MAX, max(SILENT_MIN, datetime.timedelta(minutes=SILENT_GAPS * 60 / per_hour)))
 
 
 def _last_inbound(db, number: WhatsAppNumber):
@@ -433,15 +441,19 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
     hours = parse_hours(tenant.business_hours if tenant else "")
     last = _last_inbound(db, number)
     instance = number.evolution_instance
-    if last is not None and now - last < SILENT_AFTER:
+    if last is not None and now - last < SILENT_MIN:
         _silent_strikes.pop(instance, None)
         return ""
-    if (tenant is not None and is_open(tenant, now) and is_open(tenant, now - SILENT_AFTER)
-            and last is not None and _receives_a_lot(db, number, hours, now) and _others_receiving(db, number, now)):
+    window = _silent_after(db, number, hours, now) if tenant is not None and last is not None else None
+    if window is None or now - last < window:
+        if window is not None:
+            _silent_strikes.pop(instance, None)
+        return ""
+    if is_open(tenant, now) and is_open(tenant, now - window) and _others_receiving(db, number, now, window):
         # "parou de receber": diz conectado e passa no teste, mas não chega nada enquanto os outros recebem
         with _lock:
-            if time.monotonic() - _silent.get(instance, -SILENT_COOLDOWN) < SILENT_COOLDOWN:
-                return ""
+            if time.monotonic() - _silent.get(instance, -window.total_seconds()) < window.total_seconds():
+                return ""  # reiniciou há pouco: dá o mesmo tempo pra ver se voltou
             _silent[instance] = time.monotonic()
             strikes = _silent_strikes[instance] = _silent_strikes.get(instance, 0) + 1
         if strikes == 1:
@@ -456,12 +468,12 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
     return ""
 
 
-def _others_receiving(db, number: WhatsAppNumber, now: datetime.datetime) -> bool:
+def _others_receiving(db, number: WhatsAppNumber, now: datetime.datetime, window: datetime.timedelta) -> bool:
     """Outro WhatsApp do mesmo cliente recebeu mensagem agora há pouco (então não é só um horário parado)."""
     return (db.query(Message.id).join(Conversation, Conversation.id == Message.conversation_id)
             .join(WhatsAppNumber, WhatsAppNumber.id == Conversation.whatsapp_number_id)
             .filter(WhatsAppNumber.tenant_id == number.tenant_id, WhatsAppNumber.id != number.id,
-                    Message.direction == "in", Message.created_at >= now - SILENT_AFTER)
+                    Message.direction == "in", Message.created_at >= now - window)
             .first() is not None)
 
 
