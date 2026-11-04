@@ -116,7 +116,7 @@ def pick_number_for_click(db: Session, tenant_id: str) -> WhatsAppNumber | None:
     def eligible(n: WhatsAppNumber) -> bool:
         if n.provider == "evolution" and n.connection_state != "open":
             return False
-        if not n.phone_number or not n.owner_user_id:
+        if not n.phone_number or not n.owner_user_id or n.dispatch:
             return False
         owner = n.owner
         if not owner or not owner.is_active or not owner.accepting_leads or owner.on_leave:
@@ -126,7 +126,7 @@ def pick_number_for_click(db: Session, tenant_id: str) -> WhatsAppNumber | None:
     candidates = [n for n in numbers if eligible(n)]
     if not candidates:
         # ninguém disponível no rodízio: manda pra qualquer número conectado
-        candidates = [n for n in numbers if n.phone_number and (n.provider != "evolution" or n.connection_state == "open")]
+        candidates = [n for n in numbers if n.phone_number and not n.dispatch and (n.provider != "evolution" or n.connection_state == "open")]
     if not candidates:
         return None
 

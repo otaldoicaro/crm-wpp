@@ -1149,3 +1149,23 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .bulk-bar[hidden] { display: none; }
 .bulk-bar select { width: auto; }
 .ctx-menu hr.pass-sep[hidden] { display: none; }
+
+/* 🔎 Pipeline: procurar lead por nome ou telefone */
+.pipeline-search { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0 0 10px; }
+.pipeline-search input[type=search] { flex:1 1 260px; max-width:420px; }
+
+/* 🔎 Auditoria */
+.audit-layout { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:14px; align-items:start; }
+@media (max-width:1000px) { .audit-layout { grid-template-columns:1fr; } }
+.audit-table { width:100%; border-collapse:collapse; font-size:.88rem; }
+.audit-table th, .audit-table td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line, #e5e5e5); vertical-align:top; }
+.audit-table tr.on td { background:rgba(255,200,0,.12); }
+.audit-none { color:#c0392b; font-weight:600; }
+.audit-form { margin:8px 0; } .audit-form pre { white-space:pre-wrap; font-size:.85rem; }
+.audit-timeline { list-style:none; padding:0; margin:10px 0 0; }
+.audit-timeline li { display:grid; grid-template-columns:92px 1fr; gap:8px; padding:6px 0 6px 8px; border-left:3px solid #ccc; margin-bottom:4px; }
+.audit-when { color:var(--muted, #777); font-size:.82rem; }
+.audit-body { font-size:.86rem; white-space:pre-wrap; opacity:.85; }
+.audit-timeline .ev-entrada { border-color:#2d7ff9; } .audit-timeline .ev-out { border-color:#27ae60; }
+.audit-timeline .ev-in { border-color:#8e44ad; } .audit-timeline .ev-auto { border-color:#d9a400; }
+.audit-timeline .ev-falhou { border-color:#c0392b; }

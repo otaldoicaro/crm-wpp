@@ -156,9 +156,9 @@ def is_seller(user: User | None) -> bool:
 
 
 def seller_numbers(db, tenant_id: str) -> list:
-    """WhatsApps conectados de vendedores (nunca de admin), quem recebeu há mais tempo primeiro."""
+    """WhatsApps conectados de vendedores (nunca de admin nem de disparo), quem recebeu há mais tempo primeiro."""
     numbers = [n for n in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant_id, WhatsAppNumber.is_active.is_(True))
-               if _connected(n) and n.owner_user_id and is_seller(n.owner)]
+               if _connected(n) and n.owner_user_id and not n.dispatch and is_seller(n.owner)]
     oldest = datetime.datetime(1970, 1, 1)
     return sorted(numbers, key=lambda n: n.last_routed_at or oldest)
 
@@ -169,6 +169,12 @@ def assign_form_lead(db, lead: Lead) -> None:
     no Pipeline é quem manda a mensagem automática, pelo número dele. Ninguém assim: rodízio normal."""
     from app.services.distribution import _open_leads_by_user, assign_lead
 
+    if dispatch_numbers(db, lead.tenant_id):  # 📤 quem manda é o disparo: o vendedor não precisa estar conectado
+        agent = dispatch_seller(db, lead.tenant_id)
+        if agent is not None:
+            lead.assigned_user_id = agent.id
+            db.commit()
+            return
     load = _open_leads_by_user(db, lead.tenant_id)
     numbers = [n for n in seller_numbers(db, lead.tenant_id)
                if not (n.owner.max_open_leads and load.get(n.owner_user_id, 0) >= n.owner.max_open_leads)]
@@ -182,9 +188,62 @@ def assign_form_lead(db, lead: Lead) -> None:
     db.commit()
 
 
+def dispatch_numbers(db, tenant_id: str) -> list:
+    """📤 Números de disparo do cliente (conectados ou não)."""
+    return db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant_id, WhatsAppNumber.is_active.is_(True),
+                                           WhatsAppNumber.dispatch.is_(True)).all()
+
+
+def dispatch_seller(db, tenant_id: str) -> User | None:
+    """📤 Com disparo, o lead vai pro vendedor do rodízio (conectado ou não: ele responde pelo CRM, pelo
+    número de disparo), nunca admin: quem recebeu menos leads hoje; empate, quem tem menos leads abertos."""
+    from sqlalchemy import func
+
+    from app.services.distribution import _open_leads_by_user
+    from app.timeutil import local_to_utc
+
+    load = _open_leads_by_user(db, tenant_id)
+    midnight = local_to_utc(datetime.datetime.combine(to_local(datetime.datetime.utcnow()).date(), datetime.time.min))
+    today = dict(db.query(Lead.assigned_user_id, func.count(Lead.id)).filter(
+        Lead.tenant_id == tenant_id, Lead.created_at >= midnight, Lead.assigned_user_id.isnot(None)).group_by(Lead.assigned_user_id).all())
+    sellers = [u for u in db.query(User).filter(User.tenant_id == tenant_id).order_by(User.created_at)
+               if is_seller(u) and not (u.max_open_leads and load.get(u.id, 0) >= u.max_open_leads)]
+    return min(sellers, key=lambda u: (today.get(u.id, 0), load.get(u.id, 0))) if sellers else None
+
+
+def dispatch_sent_today(db, number: WhatsAppNumber) -> int:
+    """Quantas 1ªs mensagens este número mandou hoje (horário de Brasília)."""
+    from app.timeutil import local_to_utc
+
+    midnight = local_to_utc(datetime.datetime.combine(to_local(datetime.datetime.utcnow()).date(), datetime.time.min))
+    return (db.query(Conversation.id).join(Lead, Lead.id == Conversation.lead_id)
+            .filter(Conversation.whatsapp_number_id == number.id, Lead.auto_hello_at >= midnight).count())
+
+
+def pick_dispatch(db, tenant_id: str) -> WhatsAppNumber | None:
+    """Rodízio dos números de disparo: o conectado que mandou menos hoje, sem passar do limite do dia.
+    Todos no limite (ou desconectados): None — espera, nunca usa o WhatsApp do vendedor/loja."""
+    tenant = db.get(Tenant, tenant_id)
+    limit = max(1, tenant.dispatch_daily_limit or 30)
+    oldest = datetime.datetime(1970, 1, 1)
+    ready = [(dispatch_sent_today(db, n), n.last_routed_at or oldest, n) for n in dispatch_numbers(db, tenant_id) if _connected(n)]
+    ready = [r for r in ready if r[0] < limit]
+    return min(ready, key=lambda r: (r[0], r[1]))[2] if ready else None
+
+
 def number_for(db, lead: Lead) -> WhatsAppNumber | None:
-    """WhatsApp do vendedor do lead; lead de admin, sem vendedor, ou com o WhatsApp do vendedor
-    desconectado: o próximo vendedor do rodízio (e o lead passa pra ele)."""
+    """📤 Com número de disparo: o próximo do rodízio de disparo (o lead fica com o vendedor do rodízio,
+    que responde pelo CRM). Sem: WhatsApp do vendedor do lead; lead de admin, sem vendedor, ou com o
+    WhatsApp do vendedor desconectado: o próximo vendedor do rodízio (e o lead passa pra ele)."""
+    if dispatch_numbers(db, lead.tenant_id):
+        if not is_seller(lead.assigned_user):
+            from app.services import ownership
+
+            agent, previous = dispatch_seller(db, lead.tenant_id), lead.assigned_user_id
+            if agent is not None and agent.id != previous:
+                lead.assigned_user_id = agent.id
+                ownership.changed(db, lead, previous, "mensagem automática do formulário: rodízio de vendedores")
+        return pick_dispatch(db, lead.tenant_id)
     if lead.assigned_user_id and is_seller(lead.assigned_user):
         own = next((n for n in db.query(WhatsAppNumber).filter(
             WhatsAppNumber.tenant_id == lead.tenant_id, WhatsAppNumber.owner_user_id == lead.assigned_user_id,
@@ -241,17 +300,21 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
     if number is None:
         db.commit()  # pode ter passado o lead pro próximo do rodízio
         return "sem número"
-    if number.owner_user_id and number.owner_user_id != lead.assigned_user_id:
+    if number.owner_user_id and number.owner_user_id != lead.assigned_user_id and not number.dispatch:
         # regra: quem manda é sempre o responsável pelo lead (nunca sai do número de outra pessoa)
         from app.services import ownership
 
         previous = lead.assigned_user_id
         lead.assigned_user_id = number.owner_user_id
         ownership.changed(db, lead, previous, "mensagem automática sai sempre pelo WhatsApp do responsável")
-    seller = db.get(User, number.owner_user_id) if number.owner_user_id else lead.assigned_user
+    # 📤 número de disparo: assina o vendedor do lead (é ele quem responde pelo CRM)
+    seller = db.get(User, number.owner_user_id if number.owner_user_id and not number.dispatch else lead.assigned_user_id) \
+        if (number.owner_user_id or lead.assigned_user_id) else None
     text = message_for(tenant, lead, seller)
     sender = seller or SimpleNamespace(id=None)  # número compartilhado sem dono
     lead.auto_hello_at = datetime.datetime.utcnow()  # antes de mandar: nunca manda duas vezes
+    if number.dispatch:
+        number.last_routed_at = lead.auto_hello_at
     db.commit()
     ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, text)
     if ok is not False and used != lead.phone:
@@ -286,7 +349,7 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
         if has_specific(form_fields(lead.form_details)) else None
     if target is not None and (lead.stage is None or lead.stage.order < target.order):
         funnel.set_stage(lead, target)
-    who = seller.name if seller else number.label
+    who = f"disparo {number.label}" if number.dispatch else (seller.name if seller else number.label)
     db.add(Message(conversation_id=conversation.id, direction="note",
                    body=f"🤖 Mensagem automática do formulário enviada pelo WhatsApp de {who}"
                         + (f"; lead passou pra {target.name}" if target is not None else "") + "."))

@@ -20,6 +20,12 @@
 <div class="toast" role="status">🗑️ Lead excluído (fica na Lixeira, dá pra restaurar)</div>
 <script>history.replaceState(null, "", location.pathname); setTimeout(function () { var t = document.querySelector(".toast"); if (t) t.remove(); }, 4500);</script>
 {% endif %}
+<form method="get" action="/" class="pipeline-search">
+  <input type="hidden" name="seller" value="{{ seller }}">
+  <input type="search" name="q" value="{{ q }}" placeholder="🔎 Procurar lead por nome ou telefone" aria-label="Procurar lead">
+  <button class="btn small" type="submit">Procurar</button>
+  {% if q %}<span class="muted">{{ found }} lead(s) com “{{ q }}”, em qualquer período{% if found %}: veja em que etapa ele está{% endif %}. <a href="/">Limpar busca</a></span>{% endif %}
+</form>
 <div class="pipeline-filters">
   {% for key, label in date_range_labels %}
     {% if key != "custom" %}

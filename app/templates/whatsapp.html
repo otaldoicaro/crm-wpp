@@ -49,7 +49,14 @@
       <div>
         <div class="wa-label">{{ n.label }}</div>
         <div class="muted">{{ ("+" ~ n.phone_number) if n.phone_number else "número ainda não pareado" }}</div>
-        {% if not is_admin %}{% elif users %}
+        {% if is_admin %}
+        <form method="post" action="/whatsapp/{{ n.id }}/disparo" class="wa-owner">
+          <label class="check" title="Só manda a 1ª mensagem pros leads do formulário, em rodízio com os outros números de disparo. Fica fora do link /go. O vendedor do lead responde pelo CRM.">
+            <input type="checkbox" name="valor" value="1" {{ "checked" if n.dispatch }} onchange="if (!this.checked || confirm('Marcar como número de disparo?\n\nA 1ª mensagem pros leads do formulário passa a sair só pelos números de disparo (nunca mais pelo WhatsApp do vendedor ou da loja). Este número fica sem vendedor dono e sai do link /go.')) this.form.submit(); else this.checked = false;"> 📤 Número de disparo (1ª mensagem)
+          </label>
+        </form>
+        {% endif %}
+        {% if not is_admin or n.dispatch %}{% elif users %}
         <form method="post" action="/whatsapp/{{ n.id }}/owner" class="wa-owner">
           <label>Vendedor dono
             <select name="owner_user_id" onchange="this.form.submit()">

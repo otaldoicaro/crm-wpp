@@ -11,6 +11,7 @@ from app.db import SessionLocal, setup_text_search, sync_indexes, sync_schema
 from app.services import archiver, evolution_client, followup, funnel, history_sync, media_store, meta_spend, people, response_times
 from app.routers import (
     admin_setup,
+    audit,
     auth_router,
     bridge,
     quick_replies,
@@ -134,6 +135,7 @@ app.include_router(auth_router.router)
 app.include_router(dashboard.router)
 app.include_router(whatsapp_connect.router)
 app.include_router(team.router)
+app.include_router(audit.router)
 app.include_router(quick_replies.router)
 
 

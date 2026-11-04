@@ -141,11 +141,12 @@ def pipeline_view(
     seller: str = "",
     col: str = "",
     n: int = PIPELINE_COL_LIMIT,
+    q: str = "",
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    """Quadro do Pipeline. Por padrão só leads que chegaram nos últimos 30 dias, sem
+    """Quadro do Pipeline. 🔎 q = procura o lead por nome ou telefone em qualquer período. Por padrão só leads que chegaram nos últimos 30 dias, sem
     arquivados, e no máximo 30 cartões por coluna (o total aparece no topo da coluna)."""
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
     # filtros lembrados: voltar pelo menu "Pipeline" abre do jeito que a pessoa deixou
@@ -170,9 +171,13 @@ def pipeline_view(
         Lead.tenant_id == tenant.id, Lead.archived_at.is_(None), Lead.deleted_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS),
         Lead.is_group.is_(False),
     )
-    if range_from:
+    q = q.strip()[:80]
+    if q:  # 🔎 procurar um lead: em qualquer período, pra ver em que etapa ele está
+        digits = "".join(ch for ch in q if ch.isdigit())
+        base = base.filter(or_(Lead.name.ilike(f"%{q}%"), *([Lead.phone.like(f"%{digits}%")] if len(digits) >= 4 else [])))
+    if range_from and not q:
         base = base.filter(Lead.created_at >= range_from)
-    if range_to:
+    if range_to and not q:
         base = base.filter(Lead.created_at <= range_to)
     if user.role != "admin":
         seller = user.id  # cada vendedor vê só o pipeline dele
@@ -239,6 +244,8 @@ def pipeline_view(
             "avisos": INBOX_AVISOS,
             "fav": fav,
             "etiqueta": etiqueta,
+            "q": q,
+            "found": sum(totals.values()) if q else 0,
         },
     )
     response.set_cookie("pipeline_ordem", ordem, httponly=True, samesite="lax")
@@ -758,6 +765,8 @@ async def save_deadlines(
             tenant.business_hours = str(form.get("business_hours", "")).strip()[:200] or response_times.DEFAULT_HOURS
         tenant.auto_hello_enabled = form.get("auto_hello_enabled") == "1"
         tenant.auto_hello_minutes = max(1, min(60, hours("auto_hello_minutes", 3) or 3))
+        if "dispatch_daily_limit" in form:
+            tenant.dispatch_daily_limit = max(1, min(200, hours("dispatch_daily_limit", 30) or 30))
         text = str(form.get("auto_hello_text", "")).replace("\r\n", "\n").strip()
         default = first_contact.default_text(tenant).replace("{empresa}", tenant.name)
         tenant.auto_hello_text = "" if text == default else text[:1500]  # igual ao padrão: segue o padrão

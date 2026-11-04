@@ -232,6 +232,25 @@ def set_owner(
     return RedirectResponse(url="/whatsapp", status_code=302)
 
 
+@router.post("/whatsapp/{number_id}/disparo")
+def set_dispatch(
+    number_id: str,
+    valor: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """📤 Número de disparo: só manda a 1ª mensagem do formulário (rodízio), fora do link /go."""
+    _require_admin(user)
+    number = _get_number(db, tenant, user, number_id)
+    number.dispatch = valor == "1"
+    if number.dispatch:
+        number.owner_user_id = None  # é do time: quem responde é o vendedor do lead, pelo CRM
+    db.add(number)
+    db.commit()
+    return RedirectResponse(url="/whatsapp", status_code=302)
+
+
 @router.post("/whatsapp/{number_id}/remover")
 def remove_number(
     number_id: str,

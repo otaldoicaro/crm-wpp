@@ -141,6 +141,25 @@ def main() -> None:
             print(f"  {n:4d} · {name}")
         moving = [l for l in leads if not first_contact.is_seller(l.assigned_user)]
         sellers = first_contact.seller_numbers(db, tenant.id)
+        dispatch = first_contact.dispatch_numbers(db, tenant.id)
+        if dispatch:  # 📤 sai só pelos números de disparo; o lead continua com o vendedor (responde pelo CRM)
+            ready = [n for n in dispatch if first_contact._connected(n)]
+            limit = max(1, tenant.dispatch_daily_limit or 30)
+            per_number = min(per_number, limit)
+            print(f"\n📤 Números de disparo: {', '.join(n.label + ('' if first_contact._connected(n) else ' (desconectado)') for n in dispatch)}."
+                  f"\n   A mensagem sai só por eles (até {limit} por número por dia), nunca pelo WhatsApp do vendedor."
+                  + (f"\n   {len(moving)} lead(s) com admin / sem vendedor vão pro próximo vendedor do rodízio." if moving else ""))
+            if not leads:
+                return
+            days_needed = -(-len(leads) // max(1, per_number * max(1, len(ready))))
+            print(f"\nRitmo: 1 mensagem a cada {PAUSE[0]}-{PAUSE[1]}s (≈ {days_needed} dia(s) pra todos com {len(ready)} número(s) conectado(s)).")
+            sample = leads[0]
+            print("\nExemplo de mensagem (" + (sample.name or sample.phone) + "):\n")
+            print("  " + first_contact.message_for(tenant, sample, sample.assigned_user).replace("\n", "\n  "))
+            if not apply_changes:
+                print("\nNada foi enviado. Pra mandar, rode de novo com --aplicar no final.")
+                return
+            moving = []
         if moving:
             who = Counter((l.assigned_user.name + (" (admin)" if l.assigned_user.role == "admin" else " (fora do rodízio)"))
                           if l.assigned_user else "sem vendedor" for l in moving)
@@ -150,7 +169,7 @@ def main() -> None:
                 print(f"       {n:4d} · {name}")
         if not leads:
             return
-        plan = balance(leads, sellers, "--equilibrar" in sys.argv)
+        plan = {} if dispatch else balance(leads, sellers, "--equilibrar" in sys.argv)
         if plan:
             after = Counter(l.assigned_user_id for l in leads)
             for lead_id, owner in plan.items():
@@ -163,16 +182,17 @@ def main() -> None:
             busiest = max((n for o, n in after.items() if o in names), default=0)
             if busiest > per_number and "--equilibrar" not in sys.argv:
                 print(f"  (alguém fica com mais de {per_number}: o excesso sai no dia seguinte. Com --equilibrar, divide tudo por igual.)")
-        days_needed = -(-len(leads) // max(1, per_number * max(1, len(sellers))))
-        print(f"\nRitmo: 1 mensagem a cada {PAUSE[0]}-{PAUSE[1]}s, até {per_number} por WhatsApp por dia "
-              f"(≈ {days_needed} dia(s) pra todos, se os WhatsApps estiverem conectados).")
-        sample = leads[0]
-        seller = sample.assigned_user if first_contact.is_seller(sample.assigned_user) else (sellers[0].owner if sellers else None)
-        print("\nExemplo de mensagem (" + (sample.name or sample.phone) + "):\n")
-        print("  " + first_contact.message_for(tenant, sample, seller).replace("\n", "\n  "))
-        if not apply_changes:
-            print("\nNada foi enviado nem redistribuído. Pra mandar, rode de novo com --aplicar no final.")
-            return
+        if not dispatch:  # (com disparo, o resumo e o exemplo já saíram lá em cima)
+            days_needed = -(-len(leads) // max(1, per_number * max(1, len(sellers))))
+            print(f"\nRitmo: 1 mensagem a cada {PAUSE[0]}-{PAUSE[1]}s, até {per_number} por WhatsApp por dia "
+                  f"(≈ {days_needed} dia(s) pra todos, se os WhatsApps estiverem conectados).")
+            sample = leads[0]
+            seller = sample.assigned_user if first_contact.is_seller(sample.assigned_user) else (sellers[0].owner if sellers else None)
+            print("\nExemplo de mensagem (" + (sample.name or sample.phone) + "):\n")
+            print("  " + first_contact.message_for(tenant, sample, seller).replace("\n", "\n  "))
+            if not apply_changes:
+                print("\nNada foi enviado nem redistribuído. Pra mandar, rode de novo com --aplicar no final.")
+                return
         # trava: dois envios ao mesmo tempo poderiam mandar a mesma mensagem 2x pro mesmo cliente
         lock = open("/tmp/chamar_sem_conversa.lock", "w")
         try:
@@ -210,6 +230,10 @@ def main() -> None:
                     results["já tinha conversa"] += 1  # a pessoa chamou nesse meio tempo, ou já recebeu
                     continue
                 number = first_contact.number_for(db, lead)
+                if number is None and dispatch:  # 📤 disparo no limite do dia (ou desconectado): fica pra amanhã
+                    db.commit()
+                    later.append(lead_id)
+                    continue
                 if number is None:
                     db.commit()
                     results["sem WhatsApp conectado"] += 1

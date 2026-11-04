@@ -87,6 +87,8 @@ class Tenant(Base):
     # Texto vazio = o padrão (first_contact.DEFAULT_TEXT). Configurável em /prazos.
     auto_hello_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     auto_hello_minutes: Mapped[int] = mapped_column(Integer, default=3)
+    # 📤 números de disparo: no máximo X primeiras mensagens por número por dia
+    dispatch_daily_limit: Mapped[int] = mapped_column(Integer, default=30)
     auto_hello_text: Mapped[str] = mapped_column(Text, default="")
     # pra quem não disse a peça/carro no formulário; vazio = a 1ª mensagem do ramo (segments first_message)
     auto_hello_generic_text: Mapped[str] = mapped_column(Text, default="")
@@ -175,6 +177,9 @@ class WhatsAppNumber(Base):
     reset_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     last_routed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 📤 número de disparo: só manda a 1ª mensagem pros leads do formulário (rodízio entre eles); fica fora
+    # do link /go e do rodízio de vendedor. Com algum marcado, o WhatsApp do vendedor/loja nunca faz 1º contato
+    dispatch: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="whatsapp_numbers")

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Auditoria{% endblock %}
+{% block content %}
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">🔎 Auditoria</h2>
+    <span class="muted">Quando cada lead entrou e cada contato que ele recebeu. Só admin vê esta tela.</span>
+  </div>
+</div>
+<form method="get" action="/auditoria" class="pipeline-search">
+  <input type="search" name="q" value="{{ q }}" placeholder="Procurar lead por nome ou telefone" aria-label="Procurar lead">
+  <button class="btn small" type="submit">Procurar</button>
+  {% if q %}<a class="muted" href="/auditoria?periodo={{ periodo }}">Limpar busca</a>{% endif %}
+</form>
+{% if not q %}
+<nav class="dash-tabs">
+  {% for key, label in periods %}<a class="dash-tab {{ 'on' if periodo == key }}" href="/auditoria?periodo={{ key }}">{{ label }}</a>{% endfor %}
+</nav>
+{% endif %}
+
+<div class="audit-layout">
+  <div class="card audit-list">
+    <p class="muted" style="margin:0 0 8px">{{ leads|length }} lead(s){% if leads|length >= limit %} (mostrando os {{ limit }} mais novos){% endif %}{% if q %} com “{{ q }}”{% endif %}</p>
+    <div class="table-wrap">
+    <table class="audit-table">
+      <thead><tr><th>Entrou</th><th>Lead</th><th>Origem</th><th>Vendedor · etapa</th><th>1º contato</th><th>Recebeu</th><th>Respondeu</th></tr></thead>
+      <tbody>
+      {% for l in leads %}{% set s = summaries.get(l.id, {}) %}
+      <tr class="{{ 'on' if selected and selected.id == l.id }}">
+        <td>{{ l.created_at|hora("%d/%m %H:%M") }}</td>
+        <td><a href="/auditoria?lead={{ l.id }}&periodo={{ periodo }}{{ '&q=' ~ q if q }}"><b>{{ l.name or l.phone }}</b></a><div class="muted">{{ l.phone }}</div></td>
+        <td>{{ platform_of(l) }}</td>
+        <td>{{ l.assigned_user.name if l.assigned_user else "—" }}<div class="muted">{{ l.stage.name if l.stage else "" }}</div></td>
+        <td>{% if s.first_out %}{{ s.first_out|hora("%d/%m %H:%M") }}{% set mins = ((s.first_out - l.created_at).total_seconds() // 60)|int %}<div class="muted">{{ "na hora" if mins < 1 else (mins ~ " min depois" if mins < 120 else (mins // 60) ~ "h depois") }}</div>{% else %}<span class="audit-none">nenhum</span>{% endif %}</td>
+        <td>{{ s.outs or 0 }} msg</td>
+        <td>{{ "✅ sim" if s.ins else "—" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="muted">Nenhum lead {{ "com essa busca" if q else "nesse período" }}.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  {% if selected %}
+  <div class="card audit-detail">
+    <div class="recado-head">
+      <div><b style="font-size:1.05rem">{{ selected.name or selected.phone }}</b>
+        <div class="muted">{{ selected.phone }} · {{ selected_platform }} · {{ selected.assigned_user.name if selected.assigned_user else "sem vendedor" }}{% if selected.stage %} · {{ selected.stage.name }}{% endif %}</div></div>
+      <a class="btn small ghost" href="/leads/{{ selected.id }}">Ficha do lead →</a>
+    </div>
+    {% if selected.form_details %}<details class="audit-form"><summary>📝 Formulário que ele preencheu</summary><pre>{{ selected.form_details }}</pre></details>{% endif %}
+    {% if owner_history %}<details class="audit-form"><summary>↪ Trocas de vendedor ({{ owner_history|length }})</summary><ul>{% for h in owner_history %}<li>{{ h }}</li>{% endfor %}</ul></details>{% endif %}
+    <ol class="audit-timeline">
+      {% for when, kind, title, body in timeline %}
+      <li class="ev-{{ kind }}"><span class="audit-when">{{ when|hora("%d/%m %H:%M") }}</span>
+        <div><b>{{ title }}</b>{% if body %}<div class="audit-body">{{ body[:400] }}{% if body|length > 400 %}…{% endif %}</div>{% endif %}</div></li>
+      {% endfor %}
+    </ol>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
