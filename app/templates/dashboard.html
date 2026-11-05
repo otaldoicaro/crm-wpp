@@ -3,8 +3,9 @@
 {% block title %}Dashboard{% endblock %}
 {% block body_attrs %}data-keep-window{% endblock %}
 {% block content %}
+{% set own_traffic = segment_for(tenant).menu_trafego %}{# Tráfego numa aba do menu, fora do Dashboard #}
 <div class="kanban-toolbar">
-  <h2 style="margin:0">Dashboard</h2>
+  <h2 style="margin:0">{{ "Tráfego" if own_traffic and aba == "trafego" else "Dashboard" }}</h2>
   <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px;">
     {% for key, label in date_range_labels %}
       {% if key != "custom" %}
@@ -61,11 +62,13 @@
       {{ m.seller_options(sellers, seller) }}
     </select>
   </label>
+  {% if not own_traffic or aba == "trafego" %}
   <label title="Pela etiqueta no nome da campanha (conv-form / conv-wpp) ou pela plataforma">Canal
     <select name="canal" onchange="this.form.submit()" class="{{ 'filter-on' if canal }}">
       {% for key, label in channel_options %}<option value="{{ key }}" {{ "selected" if canal == key }}>{{ label }}</option>{% endfor %}
     </select>
   </label>
+  {% endif %}
 </form>
 {% else %}
 <div class="section-title"><h3 style="margin:0">Números gerais da equipe</h3></div>
@@ -73,9 +76,9 @@
 
 {# abas: Comercial (todo dia) · Tráfego · Clientes (admin). Período e vendedor valem pra todas #}
 {% set tab_qs = "date_range=" ~ (date_range|urlencode) ~ "&date_from=" ~ (date_from|urlencode) ~ "&date_to=" ~ (date_to|urlencode) ~ "&seller=" ~ (seller|urlencode) ~ "&canal=" ~ (canal|urlencode) %}
-{% if is_admin %}
+{% if is_admin and not (own_traffic and aba == "trafego") %}
 <nav class="dash-tabs">
-  {% for key, label in (("comercial", "📊 Comercial"), ("trafego", "📣 Tráfego"), ("clientes", "🔁 Clientes")) %}
+  {% for key, label in ((("comercial", "📊 Comercial"), ("clientes", "🔁 Clientes")) if own_traffic else (("comercial", "📊 Comercial"), ("trafego", "📣 Tráfego"), ("clientes", "🔁 Clientes"))) %}
   <a class="dash-tab {{ 'on' if aba == key }}" href="/dashboard?aba={{ key }}&{{ tab_qs }}">{{ label }}</a>
   {% endfor %}
 </nav>

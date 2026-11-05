@@ -21,7 +21,7 @@ from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app import features
+from app import features, segments
 from app.services import after_hours, autofollow, autostage, car_deal, channels, comments, deals, handover, invalid_contact, notify, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
@@ -3121,7 +3121,7 @@ def dashboard_view(
         {
             "tenant": tenant,
             "user": user,
-            "active_nav": "dashboard",
+            "active_nav": "trafego" if aba == "trafego" and segments.segment_for(tenant).get("menu_trafego") else "dashboard",
             "total_leads": total_leads,
             "new_24h": new_24h,
             "open_no_contact_24h": open_no_contact_24h,

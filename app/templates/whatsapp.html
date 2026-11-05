@@ -3,6 +3,12 @@
 {% block title %}WhatsApp{% endblock %}
 {% block content %}
 {% set is_admin = user.role == "admin" %}
+{% if segment_for(tenant).menu_equipe_whatsapp and user.role == "admin" %}
+<nav class="dash-tabs">
+  <a class="dash-tab {{ 'on' if active_nav == 'equipe' }}" href="/equipe">👥 Pessoas</a>
+  <a class="dash-tab {{ 'on' if active_nav == 'whatsapp' }}" href="/whatsapp">📱 WhatsApp</a>
+</nav>
+{% endif %}
 <div class="kanban-toolbar">
   <div>
     <h2 style="margin:0">{{ "WhatsApp" if is_admin else "Meu WhatsApp" }}</h2>

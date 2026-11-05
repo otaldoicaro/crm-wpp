@@ -123,6 +123,9 @@ SEGMENTS = {
         # venda consultiva: Pipeline só com o filtro ⭐ Favoritas; Inbox sem "Venda a confirmar" e sem
         # "Follow-up interessado" (preço/comprovante), e a aba 🔥 vira 📄 Propostas (etapa Proposta enviada)
         "consultive": True,
+        # menu: Equipe e WhatsApp numa aba só ("Equipe", com sub-abas) e Tráfego fora do Dashboard (aba própria)
+        "menu_equipe_whatsapp": True,
+        "menu_trafego": True,
         # textos dos recursos automáticos (todos desligados por padrão; se ligar, não falam de peça)
         "autofu_text1": "Oi! Passando pra saber se ainda faz sentido a gente conversar sobre o crescimento da sua empresa. 🚀\n\n"
                         "🙂 Se quiser marcar o diagnóstico ou tiver alguma dúvida, me chama aqui.",

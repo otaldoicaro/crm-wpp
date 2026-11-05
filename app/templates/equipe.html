@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Equipe{% endblock %}
 {% block content %}
+{% if segment_for(tenant).menu_equipe_whatsapp and user.role == "admin" %}
+<nav class="dash-tabs">
+  <a class="dash-tab {{ 'on' if active_nav == 'equipe' }}" href="/equipe">👥 Pessoas</a>
+  <a class="dash-tab {{ 'on' if active_nav == 'whatsapp' }}" href="/whatsapp">📱 WhatsApp</a>
+</nav>
+{% endif %}
 <div class="kanban-toolbar">
   <div>
     <h2 style="margin:0">Equipe</h2>
