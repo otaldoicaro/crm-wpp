@@ -9,14 +9,43 @@ copie um bloco abaixo, troque as cores/logo e depois mude o `theme` do tenant
 from markupsafe import Markup
 
 THEMES = {
-    # Agência Junta: escuro, amarelo-limão (manual da marca, p.17-20); fontes da LP nova (Google Fonts):
-    # Archivo expandido nos títulos, Urbanist no texto, Geist Mono nas etiquetas
+    # Agência Junta: amarelo-limão + preto (manual da marca, p.17-20); fontes da LP nova (Google Fonts):
+    # Archivo expandido nos títulos, Urbanist no texto, Geist Mono nas etiquetas.
+    # Claro por padrão ("light_vars"); cada pessoa troca pra escuro no ☀️/🌙 do topo ("vars")
     "junta": {
         "fonts_href": "https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Urbanist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap",
         "favicon": "/static/brand/favicon.svg",
         "theme_color": "#000000",
         "logo_topbar": Markup('<img class="logo-img" src="/static/brand/logo-horizontal-amarelo.svg" alt="Junta">'),
-        "logo_login": Markup('<img class="logo-img" src="/static/brand/logo-horizontal-amarelo.svg" alt="Junta">'),
+        "logo_login": Markup('<img class="logo-img so-claro" src="/static/brand/logo-horizontal-preto.svg" alt="Junta">'
+                             '<img class="logo-img so-escuro" src="/static/brand/logo-horizontal-amarelo.svg" alt="Junta">'),
+        "light_vars": {
+            "--y-soft": "#F8FAC8",
+            "--bg": "#F2F2F2",
+            "--body-bg": "#F2F2F2",
+            "--panel": "#FFFFFF",
+            "--panel-2": "#F7F7F5",
+            "--panel-3": "#ECECEA",
+            "--col-bg": "#E8E8E5",
+            "--card-bg": "#FFFFFF",
+            "--input-bg": "#FFFFFF",
+            "--line": "rgba(13, 13, 13, .12)",
+            "--muted": "rgba(13, 13, 13, .60)",
+            "--text": "#0D0D0D",
+            "--link": "#0D0D0D",
+            "--link-decoration": "underline",
+            "--accent-ring": "#0D0D0D",
+            "--chat-bg": "#F2F2F2",
+            "--chat-dot": "rgba(13, 13, 13, .04)",
+            "--bubble-in": "#FFFFFF",
+            "--danger": "#C8102E",
+            "--danger-bg": "#FDE8EB",
+            "--success": "#1C9E4B",
+            "--success-bg": "#E3F5E9",
+            "--info": "#1B6BFF",
+            "--info-bg": "#E6EEFF",
+            "--btn-shadow": "0 3px 0 #0D0D0D",
+        },
         "vars": {
             "--y": "#ecf23d",
             "--y-dark": "#c5cb12",
@@ -172,4 +201,8 @@ def theme_for(tenant) -> dict:
 
 def theme_css(theme: dict) -> Markup:
     body = "; ".join(f"{name}: {value}" for name, value in theme["vars"].items())
-    return Markup(f":root {{ {body} }}")
+    css = f":root {{ {body} }}"
+    if theme.get("light_vars"):  # tema com claro/escuro: claro, a não ser que a pessoa escolha escuro
+        light = "; ".join(f"{name}: {value}" for name, value in theme["light_vars"].items())
+        css += f' :root:not([data-modo="escuro"]) {{ {light} }}'
+    return Markup(css)

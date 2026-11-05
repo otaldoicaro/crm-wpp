@@ -95,6 +95,7 @@ SEGMENTS = {
         ],
         "loss_placeholder": "Ex: gostou da proposta, mas só tem verba a partir de março",
         "sale_kind": "contratação de serviços de marketing (mensalidade ou projeto)",
+        "receipt_is_sale": False,  # a venda é o contrato assinado: comprovante de pagamento não vira venda
         "form_summary": "ver empresa, faturamento e verba",
         "first_message": "Olá{nome}! Tudo bem? Aqui é {vendedor}, da {empresa}. Vi que você pediu o diagnóstico "
                          "gratuito! Me conta rapidinho como a sua empresa vende hoje e onde quer crescer, "
@@ -102,7 +103,20 @@ SEGMENTS = {
         "auto_hello_text": "Olá, {nome}! Tudo bem? Aqui é {vendedor}, da {empresa}. Vi que você pediu o diagnóstico "
                            "gratuito! Me conta rapidinho como a sua empresa vende hoje e onde quer crescer, "
                            "que eu já marco uma conversa com você 😉",
-        "auto_hello_stage": "Em atendimento",  # o formulário não diz se vai contratar: o comercial qualifica
+        "auto_hello_stage": "Lead",  # o formulário não diz se vai contratar: o comercial qualifica
+        # etapas do funil de quem é criado nesse ramo (venda consultiva, com reuniões); sem "Em atendimento":
+        # o lead fica em "Lead" até o vendedor passar pra Triagem. "Proposta enviada" é a etapa de
+        # oportunidade (funnel.NEGOTIATION_NAMES) e a Venda conta no contrato assinado
+        "stages": [
+            ("Lead sem conversa", "", False, False),
+            ("Lead", "", False, False),
+            ("Triagem (R1)", "", False, False),
+            ("Qualificado", "Qualified", False, False),
+            ("R2 Agendada", "", False, False),
+            ("Proposta enviada", "", False, False),
+            ("Venda", "Purchase", True, False),
+            ("Perdido", "", False, True),
+        ],
         # textos dos recursos automáticos (todos desligados por padrão; se ligar, não falam de peça)
         "autofu_text1": "Oi! Passando pra saber se ainda faz sentido a gente conversar sobre o crescimento da sua empresa. 🚀\n\n"
                         "🙂 Se quiser marcar o diagnóstico ou tiver alguma dúvida, me chama aqui.",

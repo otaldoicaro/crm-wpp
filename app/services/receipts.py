@@ -133,9 +133,11 @@ def worth_checking(lead) -> bool:
     recente: o cliente que leva mais de um item às vezes paga cada um separado. A leitura grátis é leve."""
     import datetime
 
+    from app import segments
+
     stage = lead.stage
-    if lead.is_group or stage is None:
-        return False
+    if lead.is_group or stage is None or not segments.segment_for(lead.tenant).get("receipt_is_sale", True):
+        return False  # ramo em que a venda é outra coisa (agência: contrato assinado)
     if stage.is_won:
         return bool(lead.closed_at and datetime.datetime.utcnow() - lead.closed_at <= datetime.timedelta(days=ADD_ON_DAYS))
     return True

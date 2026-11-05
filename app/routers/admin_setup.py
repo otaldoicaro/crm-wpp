@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.auth import hash_password
 from app.config import ADMIN_SETUP_TOKEN
 from app.db import SessionLocal
-from app.models import CampaignSpend, PipelineStage, Tenant, User, WhatsAppNumber
+from app.models import CampaignSpend, Lead, PipelineStage, Tenant, User, WhatsAppNumber
 from app.segments import SEGMENTS
 from app.themes import THEMES
 
@@ -42,6 +42,26 @@ class BootstrapIn(BaseModel):
     theme: str = ""  # chave de app/themes.py (ex: "junta", "novaviseu"); vazio = não muda
     segment: str = ""  # ramo, chave de app/segments.py (ex: "autopecas", "seminovos"); vazio = não muda
     whatsapp: Optional[WhatsAppNumberIn] = None
+
+
+DEFAULT_STAGES = [  # (nome, evento de conversão, ganho, perdido)
+    ("Lead sem conversa", "", False, False),
+    ("Novo", "", False, False),
+    ("Em atendimento", "", False, False),
+    ("Qualificado", "Qualified", False, False),
+    ("Negociando", "", False, False),
+    ("Ganho", "Purchase", True, False),
+    ("Perdido", "", False, True),
+]
+
+
+def _create_stages(db: Session, tenant: Tenant, segment: str) -> None:
+    """Etapas do funil de um cliente novo: as do ramo (segments.py, "stages") ou as padrão."""
+    stages = SEGMENTS.get(segment, {}).get("stages") or DEFAULT_STAGES
+    for order, (name, event_name, is_won, is_lost) in enumerate(stages):
+        db.add(PipelineStage(tenant_id=tenant.id, name=name, order=order, conversion_event_name=event_name,
+                             is_won=is_won, is_lost=is_lost))
+    db.commit()
 
 
 def _require_setup_enabled(x_setup_token: Optional[str]):
@@ -69,27 +89,7 @@ def bootstrap_tenant(payload: BootstrapIn, x_setup_token: Optional[str] = Header
             db.refresh(tenant)
             created_tenant = True
 
-            default_stages = [
-                ("Lead sem conversa", 0, "", False, False),
-                ("Novo", 1, "", False, False),
-                ("Em atendimento", 2, "", False, False),
-                ("Qualificado", 3, "Qualified", False, False),
-                ("Negociando", 4, "", False, False),
-                ("Ganho", 5, "Purchase", True, False),
-                ("Perdido", 6, "", False, True),
-            ]
-            for name, order, event_name, is_won, is_lost in default_stages:
-                db.add(
-                    PipelineStage(
-                        tenant_id=tenant.id,
-                        name=name,
-                        order=order,
-                        conversion_event_name=event_name,
-                        is_won=is_won,
-                        is_lost=is_lost,
-                    )
-                )
-            db.commit()
+            _create_stages(db, tenant, payload.segment)
 
         if payload.custom_domain:
             tenant.custom_domain = payload.custom_domain.strip().lower()
@@ -105,6 +105,13 @@ def bootstrap_tenant(payload: BootstrapIn, x_setup_token: Optional[str] = Header
             tenant.segment = payload.segment
             db.add(tenant)
             db.commit()
+            # cliente que ainda não tem nenhum lead e cujas etapas não são as do ramo: refaz no padrão do ramo
+            wanted = [s[0] for s in SEGMENTS[payload.segment].get("stages") or DEFAULT_STAGES]
+            current = [s.name for s in db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order)]
+            if (not created_tenant and current != wanted
+                    and db.query(Lead.id).filter(Lead.tenant_id == tenant.id).first() is None):
+                db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).delete()
+                _create_stages(db, tenant, payload.segment)
 
         admin = (
             db.query(User)

@@ -20,7 +20,7 @@ logger = logging.getLogger("funnel")
 
 NEGOTIATION_NAME = "Negociando"
 # a mesma etapa com outros nomes; "Agendamento" = recurso "agendamentos" (visita marcada na loja)
-NEGOTIATION_NAMES = (NEGOTIATION_NAME, "Negociação", "Negociacao", "Oportunidade", "Agendamento")
+NEGOTIATION_NAMES = (NEGOTIATION_NAME, "Negociação", "Negociacao", "Oportunidade", "Agendamento", "Proposta enviada")
 SCHEDULE_NAME = "Agendamento"
 COLD_NAME = "Lead frio"  # recurso "lead_frio": o cliente parou de responder
 NO_CHAT_NAME = "Lead sem conversa"  # 1ª etapa: chegou (formulário/link) e ainda não falou no WhatsApp

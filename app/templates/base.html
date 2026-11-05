@@ -8,6 +8,7 @@
   <title>{% block title %}CRM{% endblock %} · {{ tenant.name if tenant else "" }}</title>
   <link rel="icon" href="{{ theme.favicon }}" type="image/svg+xml">
   {% if theme.fonts_href %}<link rel="stylesheet" href="{{ theme.fonts_href }}">{% endif %}
+  {% if theme.light_vars %}<script>try { if (localStorage.getItem("modo") === "escuro") document.documentElement.dataset.modo = "escuro"; } catch (e) {}</script>{% endif %}
   <script>if (window.self !== window.top) document.documentElement.classList.add("embedded");  /* aberto dentro de outra tela (ex: conversa na tela da campanha): sem menu */</script>
   <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
   <style>{{ theme_css(theme) }}</style>
@@ -46,6 +47,7 @@
       <span>{{ tenant.name }} · {{ user.name }}</span>
       {% if user.read_only %}<span class="role-badge agent">👀 Só visualização</span>{% else %}
       <span class="role-badge {{ 'admin' if user.role == 'admin' else 'agent' }}">{{ "Admin" if user.role == "admin" else "Vendedor" }}</span>{% endif %}
+      {% if theme.light_vars %}<button type="button" class="btn ghost small modo-toggle" title="Trocar entre tela clara e escura" onclick="var r = document.documentElement, e = r.dataset.modo !== 'escuro'; if (e) r.dataset.modo = 'escuro'; else delete r.dataset.modo; try { localStorage.setItem('modo', e ? 'escuro' : 'claro'); } catch (x) {}"><span class="so-claro">🌙 Escuro</span><span class="so-escuro">☀️ Claro</span></button>{% endif %}
       <form method="post" action="/logout"><button class="btn ghost small" type="submit">Sair</button></form>
     </div>
   </header>

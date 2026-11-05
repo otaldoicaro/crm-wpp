@@ -14,7 +14,7 @@ no topo da conversa "💡 parece que ... — confirmar?" e o vendedor confirma o
 As frases acima são do ramo autopeças; cada ramo (tenant.segment) tem as suas em
 RULES_BY_SEGMENT. Seminovos: troca, visita, test drive, entrada/financiamento (qualificado),
 contrato/sinal (ganho), crédito negado, avaliação da troca, carro já vendido (perdido).
-Agência: pediu proposta / marcou reunião (qualificado), contrato assinado / 1º pagamento (ganho),
+Agência: pediu proposta / marcou reunião (qualificado), contrato assinado (ganho),
 "vamos fazer interno", outra agência, sem verba, não é o momento (perdido).
 
 Tudo grátis: regras de texto, sem IA. Cada tipo descartado não volta a ser sugerido no mesmo
@@ -154,12 +154,11 @@ RULES_SEMINOVOS = [
 ]
 
 RULES_AGENCIA = [
-    ("ganho", "in", ("contrato assinado", "assinei o contrato", "ja assinei", "pode mandar o contrato",
-                     "pode enviar o contrato", "manda o contrato", "vamos fechar", "quero fechar", "pode fechar",
-                     "fechado entao", "negocio fechado", "vamos comecar", "podemos comecar") + PAID_IN, ""),
-    ("ganho", "out", ("contrato assinado", "seja bem vindo", "seja bem-vindo", "bem vindo a junta",
-                      "bem-vindo a junta", "boas vindas", "reuniao de onboarding", "reuniao de kickoff",
-                      "kickoff") + PAID_OUT, ""),
+    # a venda conta no contrato assinado (pagamento e "vamos fechar" não bastam)
+    ("ganho", "in", ("contrato assinado", "assinei o contrato", "ja assinei", "acabei de assinar",
+                     "segue o contrato assinado", "contrato ja assinado", "assinamos o contrato", "ja assinamos"), ""),
+    ("ganho", "out", ("contrato assinado", "recebemos o contrato assinado", "recebi o contrato assinado",
+                      "obrigado pela assinatura", "contrato ja esta assinado"), ""),
     ("perdido", "in", ("fechamos com outra agencia", "fechei com outra agencia", "fechamos com outra empresa",
                        "ja temos agencia", "ja tenho agencia", "vamos continuar com a nossa agencia",
                        "ficar com a atual"), "Fechou com outra agência"),
@@ -178,7 +177,8 @@ RULES_AGENCIA = [
     ("qualificado", "in", ("manda a proposta", "pode mandar a proposta", "envia a proposta", "quero uma proposta",
                            "quero a proposta", "quanto custa", "qual o investimento", "qual o valor",
                            "podemos marcar", "vamos marcar", "pode marcar", "quero marcar", "agendar uma reuniao",
-                           "marcar uma reuniao", "marcar uma call", "agendar uma call"), ""),
+                           "marcar uma reuniao", "marcar uma call", "agendar uma call", "pode mandar o contrato",
+                           "pode enviar o contrato", "manda o contrato", "vamos fechar", "quero fechar"), ""),
     ("qualificado", "out", ("reuniao marcada", "reuniao agendada", "call marcada", "call agendada",
                             "segue a proposta", "segue nossa proposta", "enviei a proposta", "te mandei a proposta",
                             "segue o link da reuniao", "link da reuniao", "convite da reuniao"), ""),
