@@ -320,6 +320,12 @@ def check_message(message_id: str) -> None:
         lead.receipt_amount = amount
         lead.receipt_info = describe(result)
         lead.receipt_candidates = ",".join(str(v) for v in (result.get("candidates") or [])[:4])[:120]
+        from app import features
+
+        if features.has(lead.tenant, "funil_manual"):  # ✋ venda consultiva: o vendedor confirma a venda
+            lead.receipt_status = "pending"
+            db.commit()
+            return
         # mandou comprovante = venda: fecha sempre; sem certeza do valor, o vendedor só confere
         why = "comprovante de pagamento" + (" (valor bate com o preço enviado)" if result.get("matches_quote") else "")
         close_as_sale(db, lead, amount, describe(result), result.get("confidence") == "alta", why)

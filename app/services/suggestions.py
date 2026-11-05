@@ -27,7 +27,7 @@ import unicodedata
 from typing import Optional
 
 from app import segments
-from app.models import Lead
+from app.models import Lead, Tenant
 
 KIND_LABEL = {
     "qualificado": "Parece qualificado",
@@ -250,8 +250,12 @@ def on_message(lead: Lead, body: str, outbound: bool) -> None:
         return
     from app.services import autostage
 
+    from app import features
+
     db = autostage.lead_session(lead)
-    if kind in autostage.AUTO_KINDS and db is not None and autostage.apply(
+    tenant = lead.tenant or (db.get(Tenant, lead.tenant_id) if db is not None and lead.tenant_id else None)
+    manual = features.has(tenant, "funil_manual")  # ✋ venda consultiva: só sugere
+    if kind in autostage.AUTO_KINDS and db is not None and not manual and autostage.apply(
         db, lead, kind, reason=reason, why=("dados do veículo" if phrase == "dados do veículo" else f"frase “{phrase}”"),
         outbound=outbound, body=body, phrase=phrase,
     ):

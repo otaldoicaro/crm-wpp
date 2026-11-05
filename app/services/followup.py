@@ -203,7 +203,7 @@ def on_outbound_text(db, lead: Lead, body: str) -> None:
     lead.quoted_value, lead.quoted_at = value, _now()
     from app import features
 
-    if features.has(lead.tenant, "agendamentos"):  # a etapa é a visita marcada, não o preço
+    if features.has(lead.tenant, "agendamentos") or features.has(lead.tenant, "funil_manual"):  # a etapa é a visita marcada / o vendedor que decide
         db.add(lead)
         return
     stages = funnel._stages(db, lead.tenant_id)

@@ -21,11 +21,16 @@ FEATURES = {
                        "(qualquer assunto). Sem 2ª mensagem e sem Perdido automático (no horário de atendimento, texto abaixo)",
     "mensagem_fora_horario": "🌙 Mensagem fora do horário: o cliente escreveu com a loja fechada → resposta automática do "
                              "WhatsApp do vendedor pedindo o que ele precisa e avisando que voltamos “amanhã cedo” (texto abaixo)",
+    "funil_manual": "✋ Funil manual (venda consultiva): o CRM só passa Lead sem conversa → Novo → Em atendimento. "
+                    "Qualificado, Ganho e Perdido pelas frases da conversa viram 💡 sugestão pro vendedor confirmar; "
+                    "preço enviado não leva pra Negociando; comprovante vira “confirmar venda” (não fecha sozinho); "
+                    "sem Perdido automático por 7 dias parado",
     "transcrever_audios": "🎙️ Transcrever os áudios do WhatsApp (o texto aparece embaixo do áudio e entra nas regras "
                           "automáticas e na busca). Custo no Groq: ~US$ 0,04 por hora de áudio",
 }
 DEFAULTS_BY_SEGMENT = {
     "seminovos": ("pagamento_parcelado", "visita_negociando"),
+    "agencia": ("funil_manual",),
 }
 
 

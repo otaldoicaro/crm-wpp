@@ -213,8 +213,8 @@ def lose_silent_leads(db, days: int = LOST_AFTER_DAYS, now: Optional[datetime.da
     last_msg = dict(db.query(Conversation.lead_id, func.max(Conversation.last_message_at)).group_by(Conversation.lead_id).all())
     done = []
     for tenant in db.query(Tenant).all():
-        if features.has(tenant, "lead_frio"):
-            continue  # ❄️ esse cliente usa Lead frio (cool_silent_leads) em vez de Perdido
+        if features.has(tenant, "lead_frio") or features.has(tenant, "funil_manual"):
+            continue  # ❄️ esse cliente usa Lead frio (cool_silent_leads) / ✋ funil manual: o vendedor decide
         stages = funnel._stages(db, tenant.id)
         lost = next((st for st in stages if st.is_lost), None)
         service = funnel.in_service_stage(stages)
