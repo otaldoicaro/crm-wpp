@@ -77,6 +77,45 @@ SEGMENTS = {
         "agenda_reminder_text": "Oi {nome}! Passando pra lembrar da sua visita hoje às {hora} pra ver o {carro}. Te espero aqui! 😉",
         "auto_hello_stage": "Em atendimento",  # formulário de carro não diz se vai comprar: o time já falou
     },
+    # agência de marketing (vende serviço: tráfego, CRM, LPs…); os leads são empresas
+    "agencia": {
+        "label": "Agência de marketing",
+        "loss_reasons": [
+            "Preço",
+            "Sem verba no momento",
+            "Vai fazer interno",
+            "Fechou com outra agência",
+            "Timing / não é o momento",
+            "Fora do perfil (faturamento abaixo do mínimo)",
+            "Desistiu / só pesquisando",
+            REFUND_REASON,
+            NO_REPLY_REASON,
+            INVALID_REASON,
+            "Outro",
+        ],
+        "loss_placeholder": "Ex: gostou da proposta, mas só tem verba a partir de março",
+        "sale_kind": "contratação de serviços de marketing (mensalidade ou projeto)",
+        "form_summary": "ver empresa, faturamento e verba",
+        "first_message": "Olá{nome}! Tudo bem? Aqui é {vendedor}, da {empresa}. Vi que você pediu o diagnóstico "
+                         "gratuito! Me conta rapidinho como a sua empresa vende hoje e onde quer crescer, "
+                         "que eu já marco uma conversa com você 😉",
+        "auto_hello_text": "Olá, {nome}! Tudo bem? Aqui é {vendedor}, da {empresa}. Vi que você pediu o diagnóstico "
+                           "gratuito! Me conta rapidinho como a sua empresa vende hoje e onde quer crescer, "
+                           "que eu já marco uma conversa com você 😉",
+        "auto_hello_stage": "Em atendimento",  # o formulário não diz se vai contratar: o comercial qualifica
+        # textos dos recursos automáticos (todos desligados por padrão; se ligar, não falam de peça)
+        "autofu_text1": "Oi! Passando pra saber se ainda faz sentido a gente conversar sobre o crescimento da sua empresa. 🚀\n\n"
+                        "🙂 Se quiser marcar o diagnóstico ou tiver alguma dúvida, me chama aqui.",
+        "after_hours_text": "Olá, {nome}! Tudo bem? Aqui é {vendedor}, da {empresa}. 😊\n\n"
+                            "No momento estamos fora do horário de atendimento ({horario}).\n\n"
+                            "Já me conta aqui o que a sua empresa vende e onde quer crescer, que {retorno}, "
+                            "assim que eu voltar, já te respondo.\n\n"
+                            "Só aguardar! 🙏",
+        "after_hours_detail_text": "",
+        "agenda_confirm_text": "{nome}, nossa reunião está confirmada! 📅 {data} às {hora}\n"
+                               "Qualquer imprevisto, é só me avisar por aqui 😉",
+        "agenda_reminder_text": "Oi {nome}! Passando pra lembrar da nossa reunião hoje às {hora}. Até já! 😉",
+    },
 }
 DEFAULT_SEGMENT = "autopecas"
 

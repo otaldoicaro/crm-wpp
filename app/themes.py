@@ -9,9 +9,10 @@ copie um bloco abaixo, troque as cores/logo e depois mude o `theme` do tenant
 from markupsafe import Markup
 
 THEMES = {
-    # Agência Junta: escuro, amarelo-limão, Stapel + Gilroy (manual da marca, p.17-20)
+    # Agência Junta: escuro, amarelo-limão (manual da marca, p.17-20); fontes da LP nova (Google Fonts):
+    # Archivo expandido nos títulos, Urbanist no texto, Geist Mono nas etiquetas
     "junta": {
-        "fonts_href": "",
+        "fonts_href": "https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Urbanist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap",
         "favicon": "/static/brand/favicon.svg",
         "theme_color": "#000000",
         "logo_topbar": Markup('<img class="logo-img" src="/static/brand/logo-horizontal-amarelo.svg" alt="Junta">'),
@@ -24,15 +25,15 @@ THEMES = {
             "--ink": "#0d0d0d",
             "--bg": "#0d0d0d",
             "--body-bg": "radial-gradient(900px 480px at 85% -10%, rgba(236, 242, 61, .10), transparent 60%) fixed, linear-gradient(#0d0d0d, #070707) fixed",
-            "--panel": "#181818",
-            "--panel-2": "#202020",
+            "--panel": "#141414",
+            "--panel-2": "#1c1c1c",
             "--panel-3": "#262626",
-            "--col-bg": "#181818",
-            "--card-bg": "#202020",
+            "--col-bg": "#141414",
+            "--card-bg": "#1c1c1c",
             "--input-bg": "#0b0b0b",
             "--line": "rgba(255, 255, 255, .10)",
             "--muted": "rgba(255, 255, 255, .60)",
-            "--text": "#f5f5f5",
+            "--text": "#F2F2F2",
             "--link": "#ecf23d",
             "--link-decoration": "none",
             "--topbar-bg": "#000",
@@ -52,9 +53,9 @@ THEMES = {
             "--radius": "14px",
             "--btn-radius": "10px",
             "--btn-shadow": "0 3px 0 #c5cb12",
-            "--title": '"Stapel Semi Expanded", "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif',
-            "--font": '"Gilroy", "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif',
-            "--title-weight": "600",
+            "--title": '"Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif',
+            "--font": '"Urbanist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif',
+            "--title-weight": "700",
             "--title-transform": "none",
         },
     },

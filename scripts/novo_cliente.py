@@ -20,7 +20,7 @@ import urllib.request
 IN_SERVER = bool(os.environ.get("ADMIN_SETUP_TOKEN"))
 CRM_URL = f"http://localhost:{os.environ.get('PORT', '8000')}" if IN_SERVER else "https://crm.novaviseu.com.br"  # qualquer endereço do VPS serve
 THEMES = ["junta", "novaviseu", "conexao"]
-SEGMENTS = ["autopecas", "seminovos"]  # ramo: motivos de perda e sugestões de etapa (app/segments.py)
+SEGMENTS = ["autopecas", "seminovos", "agencia"]  # ramo: motivos de perda e sugestões de etapa (app/segments.py)
 
 
 def ask(label: str, default: str = "") -> str:

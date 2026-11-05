@@ -14,6 +14,8 @@ no topo da conversa "💡 parece que ... — confirmar?" e o vendedor confirma o
 As frases acima são do ramo autopeças; cada ramo (tenant.segment) tem as suas em
 RULES_BY_SEGMENT. Seminovos: troca, visita, test drive, entrada/financiamento (qualificado),
 contrato/sinal (ganho), crédito negado, avaliação da troca, carro já vendido (perdido).
+Agência: pediu proposta / marcou reunião (qualificado), contrato assinado / 1º pagamento (ganho),
+"vamos fazer interno", outra agência, sem verba, não é o momento (perdido).
 
 Tudo grátis: regras de texto, sem IA. Cada tipo descartado não volta a ser sugerido no mesmo
 negócio."""
@@ -151,8 +153,41 @@ RULES_SEMINOVOS = [
     ("outro", "in", OTHER_PHRASES, ""),
 ]
 
+RULES_AGENCIA = [
+    ("ganho", "in", ("contrato assinado", "assinei o contrato", "ja assinei", "pode mandar o contrato",
+                     "pode enviar o contrato", "manda o contrato", "vamos fechar", "quero fechar", "pode fechar",
+                     "fechado entao", "negocio fechado", "vamos comecar", "podemos comecar") + PAID_IN, ""),
+    ("ganho", "out", ("contrato assinado", "seja bem vindo", "seja bem-vindo", "bem vindo a junta",
+                      "bem-vindo a junta", "boas vindas", "reuniao de onboarding", "reuniao de kickoff",
+                      "kickoff") + PAID_OUT, ""),
+    ("perdido", "in", ("fechamos com outra agencia", "fechei com outra agencia", "fechamos com outra empresa",
+                       "ja temos agencia", "ja tenho agencia", "vamos continuar com a nossa agencia",
+                       "ficar com a atual"), "Fechou com outra agência"),
+    ("perdido", "in", ("vamos fazer interno", "vou fazer interno", "fazer internamente", "time interno",
+                       "equipe interna", "contratar alguem interno", "contratamos um analista"), "Vai fazer interno"),
+    ("perdido", "in", ("sem verba", "nao temos verba", "nao tenho verba", "sem orcamento", "nao temos orcamento",
+                       "cortamos o marketing", "corte de custos"), "Sem verba no momento"),
+    ("perdido", "in", ("muito caro", "ta caro", "esta caro", "caro demais", "fora do meu orcamento",
+                       "fora do nosso orcamento", "achei mais barato"), "Preço"),
+    ("perdido", "in", ("nao e o momento", "mais pra frente", "ano que vem", "proximo semestre", "proximo trimestre",
+                       "fica pra proxima", "fica para proxima", "outra hora", "por enquanto nao", "no momento nao"),
+       "Timing / não é o momento"),
+    ("perdido", "in", ("desisti", "deixa pra la", "so pesquisando", "so cotando", "vou ver e te aviso",
+                       "qualquer coisa eu chamo", "qualquer coisa te chamo", "qualquer coisa eu volto",
+                       "qualquer coisa volto"), "Desistiu / só pesquisando"),
+    ("qualificado", "in", ("manda a proposta", "pode mandar a proposta", "envia a proposta", "quero uma proposta",
+                           "quero a proposta", "quanto custa", "qual o investimento", "qual o valor",
+                           "podemos marcar", "vamos marcar", "pode marcar", "quero marcar", "agendar uma reuniao",
+                           "marcar uma reuniao", "marcar uma call", "agendar uma call"), ""),
+    ("qualificado", "out", ("reuniao marcada", "reuniao agendada", "call marcada", "call agendada",
+                            "segue a proposta", "segue nossa proposta", "enviei a proposta", "te mandei a proposta",
+                            "segue o link da reuniao", "link da reuniao", "convite da reuniao"), ""),
+    ("outro", "in", OTHER_PHRASES, ""),
+]
+
 # por ramo: frases e se dados do carro (placa, modelo + ano, chassi) contam como qualificado
-RULES_BY_SEGMENT = {"autopecas": (RULES_AUTOPECAS, True), "seminovos": (RULES_SEMINOVOS, False)}
+RULES_BY_SEGMENT = {"autopecas": (RULES_AUTOPECAS, True), "seminovos": (RULES_SEMINOVOS, False),
+                    "agencia": (RULES_AGENCIA, False)}
 RULES = RULES_AUTOPECAS  # nome antigo
 
 

@@ -1169,3 +1169,10 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .audit-timeline .ev-entrada { border-color:#2d7ff9; } .audit-timeline .ev-out { border-color:#27ae60; }
 .audit-timeline .ev-in { border-color:#8e44ad; } .audit-timeline .ev-auto { border-color:#d9a400; }
 .audit-timeline .ev-falhou { border-color:#c0392b; }
+
+/* ---------- tema junta: detalhes da LP nova (Archivo expandido nos títulos, Geist Mono nas etiquetas) ---------- */
+[data-tema="junta"] h1, [data-tema="junta"] h2, [data-tema="junta"] h3,
+[data-tema="junta"] .stat-card .stat-value { font-stretch: 125%; letter-spacing: -.015em; }
+[data-tema="junta"] .kanban-col-head h3 { font-family: "Geist Mono", ui-monospace, monospace; font-stretch: normal; font-weight: 500; font-size: .78rem; letter-spacing: .1em; }
+[data-tema="junta"] .stat-card .stat-label { font-family: "Geist Mono", ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; font-size: .72rem; }
+[data-tema="junta"] .card { border-radius: 18px; }
