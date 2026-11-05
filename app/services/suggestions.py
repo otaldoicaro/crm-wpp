@@ -78,7 +78,8 @@ RULES_AUTOPECAS = [
                      "passo ai pra buscar", "passo ai pegar", "ja estou indo", "to indo buscar", "pode separar",
                      "fechado entao", "pode fechar", "vou levar") + PAID_IN, ""),
     ("ganho", "out", ("pedido confirmado", "codigo de rastreio", "codigo de rastreamento",
-                      "saiu para entrega", "saiu pra entrega", "ja esta separado", "ja separei", "separado pra voce",
+                      "saiu para entrega", "saiu pra entrega", "ja esta separado", "ja separei", "separei pra voce",
+                      "ja ta separado", "esta separado pra voce", "ta separado pra voce",
                       "pode vir buscar", "pode vir retirar") + PAID_OUT, ""),
     ("perdido", "in", ("ja comprei", "comprei em outro", "comprei em outra", "consegui em outro", "consegui em outra",
                        "ja consegui", "achei em outro", "ja achei", "ja resolvi"), "Comprou em outro lugar / concorrente"),
@@ -155,17 +156,27 @@ RULES_BY_SEGMENT = {"autopecas": (RULES_AUTOPECAS, True), "seminovos": (RULES_SE
 RULES = RULES_AUTOPECAS  # nome antigo
 
 
+# oferta do time ("se tiver interesse, já deixo separado pra você"): não é venda fechada
+OFFER_PHRASES = ("se tiver interesse", "caso tenha interesse", "se ainda tiver interesse", "se quiser", "se preferir",
+                 "se fizer sentido", "me da um retorno", "me de um retorno", "me retorna", "me avisa", "qualquer duvida",
+                 "consigo fazer", "consigo te fazer", "posso fazer", "ainda tem interesse", "passando para saber",
+                 "passando pra saber")
+
+
 def detect(text: str, outbound: bool, segment: str = segments.DEFAULT_SEGMENT) -> Optional[tuple]:
     """(tipo, frase achada, motivo de perda) da regra mais forte que bate, ou None."""
     plain = _norm(text)
     if not plain:
         return None
+    offer = outbound and _any(plain, OFFER_PHRASES)
     rules, vehicle_data = RULES_BY_SEGMENT.get(segment, RULES_BY_SEGMENT[segments.DEFAULT_SEGMENT])
     who = "out" if outbound else "in"
     best = None
     for kind, side, phrases, reason in rules:
         if side != who:
             continue
+        if kind == "ganho" and offer:
+            continue  # 💬 mensagem de oferta/follow-up do time: ainda não fechou nada
         found = _any(plain, phrases)
         if found and (best is None or PRIORITY[kind] > PRIORITY[best[0]]):
             best = (kind, found, reason)
@@ -185,6 +196,8 @@ def _applies(lead: Lead, kind: str) -> bool:
         return False
     if kind == "outro":
         return lead.tag != "outro"
+    if lead.tag in ("outro", "time"):
+        return False  # Time/Outro não é venda: nada de "parece que fechou / perdeu / qualificado"
     if stage.is_won or stage.is_lost:
         return False
     if kind == "qualificado":

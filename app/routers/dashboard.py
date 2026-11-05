@@ -1143,6 +1143,9 @@ def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
         "comentario": Lead.id.in_(db.query(LeadComment.lead_id).filter(
             LeadComment.tenant_id == tenant.id, LeadComment.parent_id.is_(None), LeadComment.resolved_at.is_(None))),
     }
+    # contato Time/Outro não é venda: fica fora de Interessados, venda a confirmar e dos outros avisos de venda
+    sales = Lead.tag.notin_(NOT_SALES_TAGS)
+    by_kind = {k: (v if k in ("outro", "comentario") else and_(v, sales)) for k, v in by_kind.items()}
     if aviso == "qualquer":
         return or_(*by_kind.values())
     return by_kind.get(aviso)

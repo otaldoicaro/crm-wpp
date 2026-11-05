@@ -62,7 +62,7 @@ def detect(text: str) -> Optional[str]:
 def on_inbound(lead: Lead, body: str, when: Optional[datetime.datetime] = None) -> bool:
     """Cliente escreveu depois de receber preço: tem cara de quem quer comprar? Marca o lead."""
     stage = lead.stage
-    if lead.is_group or stage is None or stage.is_won or stage.is_lost or not lead.quoted_at:
+    if lead.is_group or stage is None or stage.is_won or stage.is_lost or not lead.quoted_at or lead.tag in ("outro", "time"):
         return False
     when = when or datetime.datetime.utcnow()
     if when < lead.quoted_at or not detect(body):
