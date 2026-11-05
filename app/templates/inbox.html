@@ -16,8 +16,9 @@
     <a data-reset-scroll class="{{ 'on' if tab == 'todas' }}" href="{{ path }}?lidas=&aviso=">Todas</a>
     <a data-reset-scroll class="{{ 'on' if tab == 'naolidas' }}" href="{{ path }}?lidas=naolidas&aviso=">Não lidas <span class="unread-total {{ 'zero' if not status_counts.naolidas }}" data-status="naolidas">{{ status_counts.naolidas }}</span></a>
     {% set agenda_tab = has_feature(tenant, 'agendamentos') %}
-    <a data-reset-scroll class="tab-hot {{ 'on' if tab == 'interesse' }}" href="{{ path }}?lidas=&aviso=interesse" title="{{ 'Leads na etapa Agendamento (visita marcada)' if agenda_tab else ('Leads na etapa Negociando' if has_feature(tenant, 'interessados_negociando') else 'Viram o preço e responderam com interesse (“como faço?”, “qual o pix?”): follow-up já!') }}">{{ "📅 Agendamentos" if agenda_tab else "🔥 Interessados" }} <span class="unread-total {{ 'zero' if not status_counts.interesse }}" data-status="interesse">{{ status_counts.interesse }}</span></a>
-    <a data-reset-scroll class="tab-sale {{ 'on' if tab == 'venda' }}" href="{{ path }}?lidas=&aviso=venda" title="Comprovante que o CRM não confirmou sozinho, ou cliente que disse que vem buscar / paga na entrega: marque Ganho ou Perdido">💰 Venda a confirmar <span class="unread-total {{ 'zero' if not status_counts.venda }}" data-status="venda">{{ status_counts.venda }}</span></a>
+    {% set consultive = segment_for(tenant).consultive %}{# venda consultiva: aba das propostas, sem "Venda a confirmar" #}
+    <a data-reset-scroll class="tab-hot {{ 'on' if tab == 'interesse' }}" href="{{ path }}?lidas=&aviso=interesse" title="{{ 'Leads na etapa Proposta enviada' if consultive else ('Leads na etapa Agendamento (visita marcada)' if agenda_tab else ('Leads na etapa Negociando' if has_feature(tenant, 'interessados_negociando') else 'Viram o preço e responderam com interesse (“como faço?”, “qual o pix?”): follow-up já!')) }}">{{ "📄 Propostas" if consultive else ("📅 Agendamentos" if agenda_tab else "🔥 Interessados") }} <span class="unread-total {{ 'zero' if not status_counts.interesse }}" data-status="interesse">{{ status_counts.interesse }}</span></a>
+    {% if not consultive %}<a data-reset-scroll class="tab-sale {{ 'on' if tab == 'venda' }}" href="{{ path }}?lidas=&aviso=venda" title="Comprovante que o CRM não confirmou sozinho, ou cliente que disse que vem buscar / paga na entrega: marque Ganho ou Perdido">💰 Venda a confirmar <span class="unread-total {{ 'zero' if not status_counts.venda }}" data-status="venda">{{ status_counts.venda }}</span></a>{% endif %}
   </nav>
   {# filtros extras: numa gaveta; quando tem algum ligado, o botão fica amarelo e aparecem as etiquetas #}
   {% set f = [] %}
@@ -47,8 +48,10 @@
     </div>
     <div class="fp-group"><b>Avisos</b>
       <label><input type="radio" name="aviso" value="" {{ "checked" if not aviso }}> Nenhum</label>
+      {% if not consultive %}
       <label class="fp-hot"><input type="radio" name="aviso" value="interesse" {{ "checked" if aviso == "interesse" }}> 🔥 Follow-up interessado</label>
       <label><input type="radio" name="aviso" value="venda" {{ "checked" if aviso == "venda" }}> 💰 Venda a confirmar</label>
+      {% endif %}
       <label><input type="radio" name="aviso" value="comentario" {{ "checked" if aviso == "comentario" }}> 💬 Com recado em aberto</label>
       <label><input type="radio" name="aviso" value="sem_motivo" {{ "checked" if aviso == "sem_motivo" }}> ⚠️ Perdido sem motivo</label>
     </div>

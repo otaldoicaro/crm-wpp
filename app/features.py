@@ -30,7 +30,7 @@ FEATURES = {
 }
 DEFAULTS_BY_SEGMENT = {
     "seminovos": ("pagamento_parcelado", "visita_negociando"),
-    "agencia": ("funil_manual",),
+    "agencia": ("funil_manual", "interessados_negociando"),
 }
 
 

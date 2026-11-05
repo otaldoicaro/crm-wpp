@@ -297,6 +297,7 @@ def setup(db) -> None:
         db.flush()
     db.commit()
     for tenant in db.query(Tenant).all():
+        _sync_segment_stages(db, tenant)
         _create_no_chat_stage(db, tenant)
         apply_features(db, tenant)
     terminal = [st.id for st in db.query(PipelineStage).filter(PipelineStage.is_won | PipelineStage.is_lost)]
@@ -353,6 +354,32 @@ def apply_features(db, tenant: Tenant) -> None:
             if st.order > cold.order:
                 st.order -= 1
         logger.info("funil: etapa %s removida em %s (%s leads voltaram pra %s)", COLD_NAME, tenant.name, moved, back.name)
+    db.commit()
+
+
+def _sync_segment_stages(db, tenant: Tenant) -> None:
+    """Etapas que o ramo renomeou ou tirou (segments.py, "stage_renames" / "stage_removed"): ajusta os
+    clientes criados antes. Os leads de uma etapa tirada vão pra etapa indicada."""
+    seg = segments.segment_for(tenant)
+    renames, removed = seg.get("stage_renames") or {}, seg.get("stage_removed") or {}
+    if not renames and not removed:
+        return
+    for old, new in renames.items():
+        stages = _stages(db, tenant.id)
+        stage = stage_named(stages, old)
+        if stage is not None and stage_named(stages, new) is None:
+            stage.name = new
+            logger.info("funil: etapa %s virou %s em %s", old, new, tenant.name)
+    db.flush()
+    for old, target_name in removed.items():
+        stages = _stages(db, tenant.id)
+        stage, target = stage_named(stages, old), stage_named(stages, target_name)
+        if stage is None or target is None:
+            continue
+        moved = db.query(Lead).filter(Lead.stage_id == stage.id).update(
+            {Lead.stage_id: target.id, Lead.updated_at: Lead.updated_at}, synchronize_session=False)
+        db.delete(stage)
+        logger.info("funil: etapa %s tirada de %s (%s leads foram pra %s)", old, tenant.name, moved, target_name)
     db.commit()
 
 
