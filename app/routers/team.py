@@ -22,8 +22,8 @@ from app.auth import create_session_token, hash_password
 from app.config import SESSION_COOKIE_NAME
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
-from app.models import Conversation, Lead, Message, PipelineStage, Tenant, User, WhatsAppNumber
-from app.services import handover, ownership
+from app.models import Conversation, Lead, Message, PipelineStage, SellerTeam, Tenant, User, WhatsAppNumber
+from app.services import handover, ownership, teams
 from app.services import evolution_client
 from app.services.distribution import assign_lead
 from app.tenancy import DEBUG, public_url
@@ -82,6 +82,7 @@ def team_page(
             numbers_by_owner.setdefault(n.owner_user_id, []).append(n)
     shared_numbers = [n for n in numbers if not n.owner_user_id]
     connected_total = sum(1 for n in numbers if n.provider != "evolution" or n.connection_state == "open")
+    seller_teams = teams.tenant_teams(db, tenant.id)
     return templates.TemplateResponse(
         request,
         "equipe.html",
@@ -98,6 +99,8 @@ def team_page(
             "shared_numbers": shared_numbers,
             "numbers_total": len(numbers),
             "connected_total": connected_total,
+            "seller_teams": seller_teams,
+            "teams_by_id": {t.id: t for t in seller_teams},
             "invite_link": f"{public_url(tenant)}/convite/{_ensure_invite_token(db, tenant)}",
         },
     )
@@ -168,6 +171,75 @@ def create_viewer(
     ))
     db.commit()
     return RedirectResponse(url="/equipe?salvo=1", status_code=302)
+
+
+def _tenant_team(db: Session, tenant: Tenant, team_id: str) -> SellerTeam:
+    team = db.get(SellerTeam, team_id)
+    if not team or team.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail="Equipe não encontrada")
+    return team
+
+
+@router.post("/equipes/nova")
+def team_group_new(
+    nome: str = Form(...),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """👥 Cria uma equipe de vendedores (os membros são marcados depois, na própria tela)."""
+    _require_admin(user)
+    name = " ".join(nome.split())[:80]
+    if not name:
+        return RedirectResponse(url="/equipe?erro=" + quote("Dê um nome pra equipe.") + "#equipes", status_code=302)
+    db.add(SellerTeam(tenant_id=tenant.id, name=name))
+    db.commit()
+    return RedirectResponse(url="/equipe?salvo=1#equipes", status_code=302)
+
+
+@router.post("/equipes/{team_id}/salvar")
+async def team_group_save(
+    team_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """Nome e vendedores da equipe. Quem é marcado aqui sai da equipe em que estava (uma por pessoa)."""
+    _require_admin(user)
+    form = await request.form()
+    name = " ".join(str(form.get("nome", "")).split())[:80]
+    chosen = {str(v) for v in form.getlist("membros")}
+    await run_in_threadpool(_save_team_group, db, tenant, team_id, name, chosen)
+    return RedirectResponse(url="/equipe?salvo=1#equipes", status_code=302)
+
+
+def _save_team_group(db: Session, tenant: Tenant, team_id: str, name: str, chosen: set) -> None:
+    team = _tenant_team(db, tenant, team_id)
+    if name:
+        team.name = name
+    for member in db.query(User).filter(User.tenant_id == tenant.id):
+        if member.id in chosen and member.role == "agent":
+            member.team_id = team.id
+        elif member.team_id == team.id and member.id not in chosen:
+            member.team_id = None
+    db.commit()
+
+
+@router.post("/equipes/{team_id}/excluir")
+def team_group_delete(
+    team_id: str,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    _require_admin(user)
+    team = _tenant_team(db, tenant, team_id)
+    db.query(User).filter(User.tenant_id == tenant.id, User.team_id == team.id).update(
+        {User.team_id: None}, synchronize_session=False)
+    db.delete(team)
+    db.commit()
+    return RedirectResponse(url="/equipe?salvo=1#equipes", status_code=302)
 
 
 @router.post("/equipe/{user_id}/{action}")

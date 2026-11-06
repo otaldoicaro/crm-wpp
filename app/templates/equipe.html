@@ -79,6 +79,7 @@
       <tr style="{{ 'opacity:.5' if not u.is_active }}">
         <td>
           <b>{{ u.name }}</b> {% if u.read_only %}<span class="role-badge agent">👀 Só visualização</span>{% else %}<span class="role-badge {{ 'admin' if u.role == 'admin' else 'agent' }}">{{ "Admin" if u.role == "admin" else "Vendedor" }}</span>{% endif %}
+          {% if u.role == "agent" and u.team_id and teams_by_id.get(u.team_id) %}<a class="pill" href="#equipes" title="Equipe de vendedores">👥 {{ teams_by_id[u.team_id].name }}</a>{% endif %}
           <div class="muted show-sm">{{ u.email }}</div>
           {% if duplicates.get(u.id) %}<div class="dup-warning">⚠️ Possível cadastro duplicado: também existe {% for d in duplicates[u.id] %}{{ d.email }}{{ " (pendente)" if d.pending_approval }}{{ ", " if not loop.last }}{% endfor %}</div>{% endif %}
         </td>
@@ -156,6 +157,33 @@
     <button type="button" class="btn ghost small" id="rolesCancel">Desfazer</button>
     <button type="button" class="btn small" id="rolesSubmit">Salvar alterações</button>
   </div>
+</div>
+
+{# 👥 equipes de vendedores: quem é da mesma equipe vê e responde as conversas dos colegas no Inbox #}
+<div class="card seller-teams" id="equipes">
+  <h3 style="margin:0 0 4px">👥 Equipes de vendedores</h3>
+  <p class="muted" style="margin:0 0 10px">Vendedores da mesma equipe veem e respondem as conversas uns dos outros no Inbox (menos grupos e contatos 🔒 Time/Outro).
+    Vendedor fora de equipe vê só as dele. Cada vendedor fica em uma equipe só.</p>
+  {% set agents = users|selectattr("role", "equalto", "agent")|rejectattr("read_only")|list %}
+  {% for t in seller_teams %}
+  <form method="post" action="/equipes/{{ t.id }}/salvar" class="seller-team">
+    <div class="seller-team-head">
+      <input name="nome" value="{{ t.name }}" maxlength="80" required aria-label="Nome da equipe">
+      <button class="btn small" type="submit">Salvar</button>
+      <button class="btn ghost small" type="submit" formaction="/equipes/{{ t.id }}/excluir" formnovalidate
+        onclick="return confirm({{ ('Excluir a equipe ' ~ t.name ~ '?\n\nOs vendedores dela continuam no CRM, só voltam a ver apenas as conversas deles.')|tojson }})">Excluir equipe</button>
+    </div>
+    <div class="seller-team-members">
+      {% for a in agents %}{% set other = teams_by_id.get(a.team_id) if a.team_id and a.team_id != t.id else none %}
+      <label title="{{ ('Hoje está na equipe ' ~ other.name ~ ': marcando aqui, sai de lá') if other }}"><input type="checkbox" name="membros" value="{{ a.id }}" {{ "checked" if a.team_id == t.id }}> {{ a.name }}{% if other %} <span class="muted">({{ other.name }})</span>{% endif %}</label>
+      {% else %}<span class="muted">Nenhum vendedor cadastrado ainda.</span>{% endfor %}
+    </div>
+  </form>
+  {% endfor %}
+  <form method="post" action="/equipes/nova" class="seller-team-new">
+    <input name="nome" placeholder="Nome da nova equipe (ex: Balcão)" maxlength="80" required>
+    <button class="btn small" type="submit">+ Criar equipe</button>
+  </form>
 </div>
 
 {% if removed %}

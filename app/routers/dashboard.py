@@ -22,6 +22,7 @@ from app.deps import current_tenant, current_user_required
 from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app import features, segments
+from app.services import teams
 from app.services import after_hours, autofollow, autostage, car_deal, channels, comments, deals, handover, invalid_contact, lead_profile, trash, notify, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
@@ -52,12 +53,14 @@ def _own_number_ids(db: Session, user: User) -> list:
 
 
 def _visible_lead(db: Session, tenant: Tenant, user: User, lead_id: str) -> Optional[Lead]:
-    """Lead pelo id, se esta pessoa pode ver: admin vê todos; vendedor os dele e os que têm conversa
-    no WhatsApp dele (cliente que fala com 2 vendedores)."""
+    """Lead pelo id, se esta pessoa pode ver: admin vê todos; vendedor os dele, os que têm conversa
+    no WhatsApp dele (cliente que fala com 2 vendedores) e os dos colegas da equipe dele (👥)."""
     query = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id)
     if user.role != "admin":
+        peers = teams.peer_ids(db, user)
         query = query.filter(or_(Lead.assigned_user_id == user.id, Lead.conversations.any(
-            Conversation.whatsapp_number_id.in_(_own_number_ids(db, user)))))
+            Conversation.whatsapp_number_id.in_(_own_number_ids(db, user))),
+            *([teams.shared_condition(peers)] if peers else [])))
     return query.first()
 
 
@@ -1027,11 +1030,11 @@ def _text_search(db: Session, tenant: Tenant, user: User, q: str, vendedor: str 
         )
     )
     if user.role != "admin":
-        query = query.filter(Lead.assigned_user_id == user.id)
-    elif vendedor == "sem":
-        query = query.filter(Lead.assigned_user_id.is_(None))
-    elif vendedor and vendedor != "removidos":
-        query = query.filter(Lead.assigned_user_id == vendedor)
+        peers = teams.peer_ids(db, user)  # 👥 e as dos colegas da equipe
+        query = query.filter(or_(Lead.assigned_user_id == user.id, *([teams.shared_condition(peers)] if peers else [])))
+    seller_condition = _seller_condition(vendedor, removed_user_ids(db, tenant.id))
+    if seller_condition is not None:
+        query = query.filter(seller_condition)
     rows = query.order_by(Message.created_at.desc()).limit(SEARCH_LIMIT * (4 if per_lead else 1)).all()
     if not per_lead:
         return rows
@@ -1193,20 +1196,20 @@ def _inbox_query(
         # 🔒 contato Time/Outro: só a conversa do WhatsApp DELE (a que outro vendedor tem com a mesma pessoa não aparece)
         own_ids = _own_number_ids(db, user)
         unowned_ids = db.query(WhatsAppNumber.id).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.owner_user_id.is_(None))
+        # 👥 equipe: também os leads dos colegas da mesma equipe (sem grupos e sem contato Time/Outro)
+        peers = teams.peer_ids(db, user)
         query = query.filter(or_(
             Conversation.whatsapp_number_id.in_(own_ids),
             and_(Lead.assigned_user_id == user.id, Lead.tag.notin_(NOT_SALES_TAGS)),
             and_(Lead.assigned_user_id == user.id, Conversation.whatsapp_number_id.in_(unowned_ids)),
+            *([teams.shared_condition(peers)] if peers else []),
         ))
     if numero:
         query = query.filter(Conversation.whatsapp_number_id == numero)
     removed_ids = removed_user_ids(db, tenant.id)
-    if vendedor == "sem":
-        query = query.filter(Lead.assigned_user_id.is_(None))
-    elif vendedor == "removidos":
-        query = query.filter(Lead.assigned_user_id.in_(removed_ids))
-    elif vendedor:
-        query = query.filter(Lead.assigned_user_id == vendedor)
+    seller_condition = _seller_condition(vendedor, removed_ids)
+    if seller_condition is not None:  # ☑ um ou vários vendedores marcados (e/ou sem vendedor / removidos)
+        query = query.filter(seller_condition)
     elif removed_ids:  # "Toda a equipe" = só quem está na equipe hoje (e leads sem vendedor)
         query = query.filter(or_(Lead.assigned_user_id.is_(None), Lead.assigned_user_id.notin_(removed_ids)))
     status = lidas or (tipo if tipo in LEGACY_STATUS_TIPOS else "")
@@ -1254,6 +1257,58 @@ def _inbox_query(
                         or_(Message.body.ilike(f"%{busca}%"), Message.transcript.ilike(f"%{busca}%")))))
         query = query.filter(or_(*conditions))
     return query, removed_ids
+
+
+def _seller_tokens(vendedor: str) -> list:
+    """Filtro de vendedor do Inbox: "" = todos; senão ids separados por vírgula (☑ vários ao mesmo
+    tempo), mais "sem" (sem vendedor) e "removidos" (de usuários removidos)."""
+    return [t for t in dict.fromkeys((vendedor or "").split(",")) if t]
+
+
+def _seller_condition(vendedor: str, removed_ids: list):
+    tokens = _seller_tokens(vendedor)
+    if not tokens:
+        return None
+    conditions = []
+    ids = [t for t in tokens if t not in ("sem", "removidos")]
+    if ids:
+        conditions.append(Lead.assigned_user_id.in_(ids))
+    if "sem" in tokens:
+        conditions.append(Lead.assigned_user_id.is_(None))
+    if "removidos" in tokens and removed_ids:
+        conditions.append(Lead.assigned_user_id.in_(removed_ids))
+    return or_(*conditions) if conditions else Lead.id.is_(None)
+
+
+def _seller_choices(db: Session, tenant: Tenant, user: User) -> list:
+    """Quem aparece nas caixinhas de vendedor do Inbox: admin, todos os vendedores; vendedor numa
+    equipe, ele e os colegas; fora de equipe, ninguém (vê só as dele)."""
+    if user.role == "admin":
+        return [p for p in team_members(db, tenant.id) if p.role == "agent"]
+    team = teams.team_of(db, user)
+    return teams.members(db, tenant.id, team.id) if team else []
+
+
+def _clean_vendedor(db: Session, tenant: Tenant, user: User, vendedor: str) -> str:
+    """Só o que esta pessoa pode filtrar (vendedor excluído, de outra equipe ou admin some do filtro)."""
+    allowed = {p.id for p in _seller_choices(db, tenant, user)}
+    if user.role == "admin":
+        allowed |= {"sem", "removidos"}
+    return ",".join(t for t in _seller_tokens(vendedor) if t in allowed)
+
+
+def _team_shortcuts(db: Session, tenant: Tenant, user: User) -> list:
+    """Atalhos de equipe nas caixinhas do Inbox: [{"team", "ids"}]. Admin vê todas; vendedor, a dele."""
+    if user.role == "admin":
+        chosen = teams.tenant_teams(db, tenant.id)
+    else:
+        chosen = [t for t in [teams.team_of(db, user)] if t is not None]
+    out = []
+    for team in chosen:
+        ids = [m.id for m in teams.members(db, tenant.id, team.id)]
+        if ids:
+            out.append({"team": team, "ids": ids})
+    return out
 
 
 def _inbox_order(ordem: str) -> list:
@@ -1308,7 +1363,8 @@ def _inbox_context(
     quando: str = "",
 ) -> dict:
     if user.role != "admin":
-        numero = vendedor = ""
+        numero = ""
+    vendedor = _clean_vendedor(db, tenant, user, vendedor)
     query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa, aviso, fav, quando)
 
     def count(status: str) -> int:  # quantas em cada situação, com os outros filtros atuais
@@ -1337,6 +1393,7 @@ def _inbox_context(
     if selected_lead_id:
         selected_lead = db.query(Lead).filter(Lead.id == selected_lead_id, Lead.tenant_id == tenant.id).first()
         if (selected_lead and user.role != "admin" and selected_lead.assigned_user_id != user.id
+                and not teams.shares(selected_lead, teams.peer_ids(db, user))  # 👥 lead de colega da equipe
                 and not (handover.private(selected_lead) and handover.visible_conversations(selected_lead, user))):
             selected_lead = None  # vendedor só abre conversa de lead dele (ex: link antigo de um lead transferido)
         if selected_lead and handover.visible_conversations(selected_lead, user):
@@ -1388,7 +1445,10 @@ def _inbox_context(
             .all()
             if user.role == "admin"
             else [],
-            "filter_sellers": [p for p in team_members(db, tenant.id) if p.role == "agent"] if user.role == "admin" else [],
+            "filter_sellers": _seller_choices(db, tenant, user),
+            "seller_tokens": _seller_tokens(vendedor),
+            "seller_teams": _team_shortcuts(db, tenant, user),
+            "my_team": teams.team_of(db, user),
             "has_removed": bool(removed_ids) if user.role == "admin" else False,
             "msg_sig": _msg_sig(db, selected_lead.id) if selected_lead else "0",
             "tenant": tenant,
@@ -1468,11 +1528,11 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     if etapa and not db.query(PipelineStage.id).filter(PipelineStage.id == etapa, PipelineStage.tenant_id == tenant.id).first():
         etapa = ""
     ordem = qp.get("ordem", saved[4]) if qp.get("ordem", saved[4]) in dict(ORDER_LABELS) else "recentes"
-    # filtro lembrado de um vendedor/número que foi excluído depois: volta pra "todos"
-    if vendedor not in ("", "sem", "removidos") and not db.query(User.id).filter(
-        User.id == vendedor, User.tenant_id == tenant.id, User.role == "agent"
-    ).first():
-        vendedor = ""  # vendedor excluído, ou um admin (o filtro mostra só vendedores)
+    # ☑ vários vendedores: vêm como ?vendedor=a&vendedor=b (caixinhas) ou "a,b" (link/cookie)
+    if "vendedor" in qp:
+        vendedor = ",".join(v for v in qp.getlist("vendedor") if v)
+    # filtro lembrado de um vendedor/número que foi excluído depois (ou de outra equipe): sai do filtro
+    vendedor = _clean_vendedor(db, tenant, user, vendedor)
     if numero and not db.query(WhatsAppNumber.id).filter(WhatsAppNumber.id == numero, WhatsAppNumber.tenant_id == tenant.id).first():
         numero = ""
     inbox_state.ensure_baseline(db, user)
@@ -1524,9 +1584,10 @@ def inbox_favorite(
 
 
 def _lead_for_action(db: Session, tenant: Tenant, user: User, lead_id: str) -> Lead:
-    """Lead que esta pessoa pode mexer: admin mexe em todos, vendedor só nos dele."""
+    """Lead que esta pessoa pode mexer: admin mexe em todos, vendedor nos dele e nos dos colegas da equipe."""
     lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None)).first()
-    if not lead or (user.role != "admin" and lead.assigned_user_id != user.id):
+    if not lead or (user.role != "admin" and lead.assigned_user_id != user.id
+                    and not teams.shares(lead, teams.peer_ids(db, user))):
         raise HTTPException(status_code=404, detail="Lead não encontrado")
     return lead
 
@@ -1960,7 +2021,8 @@ def inbox_refresh(
     que mudou (mensagem nova do cliente ou enviada pelo celular)."""
     # checagem rápida (2 consultas leves): só monta a tela se algo mudou
     if user.role != "admin":
-        numero = vendedor = ""
+        numero = ""
+    vendedor = _clean_vendedor(db, tenant, user, vendedor)
     limit = _list_limit(qtd)
     query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa, aviso, fav, quando)
     rows = _first_per_lead(
@@ -2193,9 +2255,7 @@ def team_thread(
     """Conversa aberta dentro de uma coluna da visão da equipe. Com `ms` (assinatura
     que a coluna já tem) só desenha de novo se chegou/saiu mensagem. Também usada na
     tela "leads da campanha" (aí o vendedor pode abrir as conversas dos leads dele)."""
-    if user.role != "admin" and not db.query(Lead.id).filter(
-        Lead.id == lead_id, Lead.tenant_id == tenant.id, Lead.assigned_user_id == user.id
-    ).first():
+    if user.role != "admin" and not _visible_lead(db, tenant, user, lead_id):
         raise HTTPException(status_code=403)
     current = _msg_sig(db, lead_id)
     if ms and current == ms:

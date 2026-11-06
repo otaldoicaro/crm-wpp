@@ -22,7 +22,7 @@
   </nav>
   {# filtros extras: numa gaveta; quando tem algum ligado, o botão fica amarelo e aparecem as etiquetas #}
   {% set f = [] %}
-  {% if user.role == "admin" and vendedor %}{% set _ = f.append(("Vendedor: " ~ ((filter_sellers|selectattr("id", "equalto", vendedor)|map(attribute="name")|first) or ("sem vendedor" if vendedor == "sem" else "removidos")), "vendedor")) %}{% endif %}
+  {% if seller_tokens %}{% set names = [] %}{% for t in seller_tokens %}{% set _ = names.append((filter_sellers|selectattr("id", "equalto", t)|map(attribute="name")|first) or ("sem vendedor" if t == "sem" else "removidos")) %}{% endfor %}{% set _ = f.append(("Vendedor: " ~ (names[:3]|join(", ")) ~ ((" +" ~ (names|length - 3)) if names|length > 3 else ""), "vendedor")) %}{% endif %}
   {% if tipo and tipo != "semgrupos" %}{% set _ = f.append((contact_types|selectattr(0, "equalto", tipo)|map(attribute=1)|first or tipo, "tipo")) %}{% endif %}
   {% if etapa %}{% set _ = f.append(("Etapa: " ~ ((filter_stages|selectattr("id", "equalto", etapa)|map(attribute="name")|first) or ""), "etapa")) %}{% endif %}
   {% if quando %}{% set _ = f.append((inbox_dates|selectattr(0, "equalto", quando)|map(attribute=1)|first, "quando")) %}{% endif %}
@@ -60,10 +60,22 @@
       <label>Contatos<select name="tipo">{% for key, label in contact_types %}<option value="{{ key }}" {{ "selected" if tipo == key }}>{{ label }}</option>{% endfor %}</select></label>
       <label>Período<select name="quando">{% for key, label in inbox_dates %}<option value="{{ key }}" {{ "selected" if quando == key }}>{{ label }}</option>{% endfor %}</select></label>
       <label>Ordem<select name="ordem">{% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if ordem == key }}>{{ label }}</option>{% endfor %}</select></label>
-      {% if user.role == "admin" %}
-      <label>Vendedor<select name="vendedor"><option value="">Toda a equipe</option>{{ m.seller_options(filter_sellers, vendedor) }}<optgroup label="Outros"><option value="sem" {{ "selected" if vendedor == "sem" }}>Sem vendedor</option>{% if has_removed %}<option value="removidos" {{ "selected" if vendedor == "removidos" }}>De usuários removidos</option>{% endif %}</optgroup></select></label>
-      {% endif %}
     </div>
+    {# ☑ vendedores: admin escolhe quais ver ao mesmo tempo; vendedor numa equipe, entre ele e os colegas #}
+    {% if filter_sellers %}
+    <div class="fp-group fp-sellers"><b>{{ "Vendedores" if user.role == "admin" else ("Minha equipe · " ~ my_team.name) }}</b>
+      <input type="hidden" name="vendedor" value="">
+      {% if seller_teams %}<div class="fp-team-btns">{% for t in seller_teams %}<button type="button" class="btn ghost small" data-team-ids="{{ t.ids|join(',') }}" title="Marcar / desmarcar os vendedores desta equipe">👥 {{ t.team.name }}</button>{% endfor %}</div>{% endif %}
+      <div class="fp-checks">
+        {% for p in filter_sellers %}<label><input type="checkbox" name="vendedor" value="{{ p.id }}" {{ "checked" if p.id in seller_tokens }}> {{ p.name }}{{ " (você)" if p.id == user.id }}</label>{% endfor %}
+        {% if user.role == "admin" %}
+        <label><input type="checkbox" name="vendedor" value="sem" {{ "checked" if "sem" in seller_tokens }}> Sem vendedor</label>
+        {% if has_removed %}<label><input type="checkbox" name="vendedor" value="removidos" {{ "checked" if "removidos" in seller_tokens }}> De usuários removidos</label>{% endif %}
+        {% endif %}
+      </div>
+      <span class="muted fp-hint">Nenhuma marcada = {{ "toda a equipe" if user.role == "admin" else "você e os colegas da equipe" }}</span>
+    </div>
+    {% endif %}
     <label class="fp-fav"><input type="checkbox" name="fav" value="1" {{ "checked" if fav }}> ⭐ Só as favoritas</label>
     <input type="hidden" name="numero" value="">
     <div class="fp-actions"><a class="btn ghost small" href="{{ path }}?lidas=&aviso=&etapa=&tipo=semgrupos&quando=&fav=&vendedor=&numero=&ordem=recentes" data-reset-scroll>Limpar tudo</a><button class="btn small" type="submit">Ver resultados</button></div>
@@ -71,6 +83,15 @@
   <script>
   (function () {
     var btn = document.getElementById("filterBtn"), panel = document.getElementById("filterPanel");
+    // 👥 atalho de equipe: marca os vendedores dela (se já estão todos marcados, desmarca)
+    panel.querySelectorAll("[data-team-ids]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var ids = b.getAttribute("data-team-ids").split(","), boxes = [];
+        panel.querySelectorAll('.fp-checks input[name="vendedor"]').forEach(function (c) { if (ids.indexOf(c.value) >= 0) boxes.push(c); });
+        var all = boxes.every(function (c) { return c.checked; });
+        boxes.forEach(function (c) { c.checked = !all; });
+      });
+    });
     btn.addEventListener("click", function () { panel.hidden = !panel.hidden; btn.setAttribute("aria-expanded", String(!panel.hidden)); });
     // "Todas" na situação mantém a aba Não lidas se ela estiver ligada
     panel.addEventListener("submit", function () {

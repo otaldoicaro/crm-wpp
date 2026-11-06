@@ -10,25 +10,39 @@
 <form method="get" action="/auditoria" class="pipeline-search">
   <input type="search" name="q" value="{{ q }}" placeholder="Procurar lead por nome ou telefone" aria-label="Procurar lead">
   <button class="btn small" type="submit">Procurar</button>
-  {% if q %}<a class="muted" href="/auditoria?periodo={{ periodo }}">Limpar busca</a>{% endif %}
+  {% if q %}<a class="muted" href="{{ link(q='') }}">Limpar busca</a>{% endif %}
 </form>
 {% if not q %}
 <nav class="dash-tabs">
-  {% for key, label in periods %}<a class="dash-tab {{ 'on' if periodo == key }}" href="/auditoria?periodo={{ key }}">{{ label }}</a>{% endfor %}
+  {% for key, label in periods %}<a class="dash-tab {{ 'on' if periodo == key }}" href="{{ link(periodo=key, de='', ate='') }}">{{ label }}</a>{% endfor %}
 </nav>
 {% endif %}
+{# filtros por campo: vendedor, origem, situação do contato e (em "Escolher datas") o período #}
+<form method="get" action="/auditoria" class="audit-filters">
+  <input type="hidden" name="q" value="{{ q }}"><input type="hidden" name="periodo" value="{{ periodo }}">
+  <input type="hidden" name="ordem" value="{{ ordem }}"><input type="hidden" name="dir" value="{{ 'desc' if descending else 'asc' }}">
+  {% if periodo == "datas" and not q %}
+  <label>De<input type="date" name="de" value="{{ de }}"></label>
+  <label>Até<input type="date" name="ate" value="{{ ate }}"></label>
+  {% endif %}
+  <label>Vendedor<select name="vendedor"><option value="">Todos</option>{% for p in people %}<option value="{{ p.id }}" {{ "selected" if vendedor == p.id }}>{{ p.name }}{{ " (admin)" if p.role == "admin" }}</option>{% endfor %}<option value="sem" {{ "selected" if vendedor == "sem" }}>Sem vendedor</option></select></label>
+  <label>Origem<select name="origem"><option value="">Todas</option>{% for key, label in origins %}<option value="{{ key }}" {{ "selected" if origem == key }}>{{ label }}</option>{% endfor %}</select></label>
+  <label>Situação<select name="situacao">{% for key, label in situations %}<option value="{{ key }}" {{ "selected" if situacao == key }}>{{ label }}</option>{% endfor %}</select></label>
+  <button class="btn small" type="submit">Filtrar</button>
+  {% if has_filters or de or ate %}<a class="muted" href="{{ link(vendedor='', origem='', situacao='', de='', ate='') }}">Limpar filtros</a>{% endif %}
+</form>
 
 <div class="audit-layout">
   <div class="card audit-list">
-    <p class="muted" style="margin:0 0 8px">{{ leads|length }} lead(s){% if leads|length >= limit %} (mostrando os {{ limit }} mais novos){% endif %}{% if q %} com “{{ q }}”{% endif %}</p>
+    <p class="muted" style="margin:0 0 8px">{{ total }} lead(s){% if total > leads|length %} (mostrando os {{ leads|length }} primeiros nessa ordem){% endif %}{% if q %} com “{{ q }}”{% endif %} · clique no título de uma coluna pra ordenar</p>
     <div class="table-wrap">
     <table class="audit-table">
-      <thead><tr><th>Entrou</th><th>Lead</th><th>Origem</th><th>Vendedor · etapa</th><th>1º contato</th><th>Recebeu</th><th>Respondeu</th></tr></thead>
+      <thead><tr>{% for key, label in columns %}<th aria-sort="{{ ('descending' if descending else 'ascending') if ordem == key else 'none' }}"><a class="audit-sort {{ 'on' if ordem == key }}" href="{{ sort_link(key) }}" title="Ordenar por {{ label }}">{{ label }}<span class="audit-arrow">{{ ('▼' if descending else '▲') if ordem == key else '↕' }}</span></a></th>{% endfor %}</tr></thead>
       <tbody>
       {% for l in leads %}{% set s = summaries.get(l.id, {}) %}
       <tr class="{{ 'on' if selected and selected.id == l.id }}">
         <td>{{ l.created_at|hora("%d/%m %H:%M") }}</td>
-        <td><a href="/auditoria?lead={{ l.id }}&periodo={{ periodo }}{{ '&q=' ~ q if q }}"><b>{{ l.name or l.phone }}</b></a><div class="muted">{{ l.phone }}</div></td>
+        <td><a href="{{ link(lead=l.id) }}"><b>{{ l.name or l.phone }}</b></a><div class="muted">{{ l.phone }}</div></td>
         <td>{{ platform_of(l) }}</td>
         <td>{{ l.assigned_user.name if l.assigned_user else "—" }}<div class="muted">{{ l.stage.name if l.stage else "" }}</div></td>
         <td>{% if s.first_out %}{{ s.first_out|hora("%d/%m %H:%M") }}{% set mins = ((s.first_out - l.created_at).total_seconds() // 60)|int %}<div class="muted">{{ "na hora" if mins < 1 else (mins ~ " min depois" if mins < 120 else (mins // 60) ~ "h depois") }}</div>{% else %}<span class="audit-none">nenhum</span>{% endif %}</td>
@@ -36,7 +50,7 @@
         <td>{{ "✅ sim" if s.ins else "—" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="muted">Nenhum lead {{ "com essa busca" if q else "nesse período" }}.</td></tr>
+      <tr><td colspan="7" class="muted">Nenhum lead {{ "com essa busca" if q else ("com esses filtros" if has_filters else "nesse período") }}.</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -52,13 +66,36 @@
     </div>
     {% if selected.form_details %}<details class="audit-form"><summary>📝 Formulário que ele preencheu</summary><pre>{{ selected.form_details }}</pre></details>{% endif %}
     {% if owner_history %}<details class="audit-form"><summary>↪ Trocas de vendedor ({{ owner_history|length }})</summary><ul>{% for h in owner_history %}<li>{{ h }}</li>{% endfor %}</ul></details>{% endif %}
-    <ol class="audit-timeline">
-      {% for when, kind, title, body in timeline %}
-      <li class="ev-{{ kind }}"><span class="audit-when">{{ when|hora("%d/%m %H:%M") }}</span>
+    {% set whos = timeline|map(attribute=4)|reject("equalto", "")|unique|list %}
+    <div class="audit-ev-filters" id="evFilters">
+      <b>Mostrar:</b>
+      {% for key, label in event_kinds %}{% if timeline|selectattr(1, "equalto", key)|list %}<label><input type="checkbox" data-kind="{{ key }}" checked> {{ label }}</label>{% endif %}{% endfor %}
+      {% if whos|length > 1 %}<label>Quem<select id="evWho"><option value="">Todos</option>{% for w in whos %}<option>{{ w }}</option>{% endfor %}</select></label>{% endif %}
+    </div>
+    <ol class="audit-timeline" id="evList">
+      {% for when, kind, title, body, who in timeline %}
+      <li class="ev-{{ kind }}" data-kind="{{ kind }}" data-who="{{ who }}"><span class="audit-when">{{ when|hora("%d/%m %H:%M") }}</span>
         <div><b>{{ title }}</b>{% if body %}<div class="audit-body">{{ body[:400] }}{% if body|length > 400 %}…{% endif %}</div>{% endif %}</div></li>
       {% endfor %}
     </ol>
+    <p class="muted" id="evEmpty" hidden>Nada com esse filtro.</p>
   </div>
+  <script>
+  (function () {
+    var box = document.getElementById("evFilters"), who = document.getElementById("evWho");
+    function apply() {
+      var kinds = {};
+      box.querySelectorAll("input[data-kind]").forEach(function (c) { kinds[c.getAttribute("data-kind")] = c.checked; });
+      var shown = 0;
+      document.querySelectorAll("#evList li").forEach(function (li) {
+        var ok = kinds[li.getAttribute("data-kind")] !== false && (!who || !who.value || li.getAttribute("data-who") === who.value);
+        li.hidden = !ok; if (ok) shown++;
+      });
+      document.getElementById("evEmpty").hidden = shown > 0;
+    }
+    box.addEventListener("change", apply);
+  })();
+  </script>
   {% endif %}
 </div>
 {% endblock %}

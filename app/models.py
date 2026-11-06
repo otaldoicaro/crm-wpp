@@ -137,6 +137,9 @@ class User(Base):
     on_leave: Mapped[bool] = mapped_column(Boolean, default=False)
     # vendedor que pode passar lead pra outro vendedor (ex: SDR); admin sempre pode. Liga em Equipe
     can_transfer: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 👥 equipe de vendedores (SellerTeam, montada em Equipe): quem é da mesma equipe vê e responde as
+    # conversas dos colegas no Inbox. Vazio = fora de equipe (vê só as dele)
+    team_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="users")
@@ -641,3 +644,15 @@ class Appointment(Base):
 
     lead: Mapped["Lead"] = relationship()
     user: Mapped[Optional["User"]] = relationship()
+
+
+class SellerTeam(Base):
+    """👥 Equipe de vendedores de um cliente (ex: "Balcão"), criada pelo admin em Equipe. Os vendedores
+    com User.team_id = esta equipe veem e respondem as conversas uns dos outros (services/teams.py)."""
+
+    __tablename__ = "seller_teams"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
