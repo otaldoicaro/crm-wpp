@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Meu login{% endblock %}
+{% block content %}
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">👤 Meu login</h2>
+    <span class="muted">Seu nome, o e-mail com que você entra no CRM e a sua senha.</span>
+  </div>
+</div>
+<form method="post" action="/meu-perfil" class="card profile-card" autocomplete="off">
+  {% if error %}<div class="error-box" role="alert">{{ error }}</div>{% endif %}
+  {% if saved %}<div class="ok-box" role="status">✅ Salvo!{% if "email" in saved %} Da próxima vez, entre com o e-mail novo.{% endif %}{% if "senha" in saved %} Da próxima vez, use a senha nova.{% endif %}</div>{% endif %}
+  <label>Nome<input type="text" name="nome" value="{{ form.nome }}" maxlength="120" required autocomplete="name"></label>
+  <span class="muted profile-hint">É o nome que aparece pra equipe e em {vendedor} nas respostas rápidas.</span>
+  <label>E-mail de acesso<input type="email" name="email" value="{{ form.email }}" maxlength="255" required autocomplete="username"></label>
+  <fieldset class="profile-pass">
+    <legend>Trocar a senha <span class="muted">(deixe em branco pra manter a atual)</span></legend>
+    <label>Senha nova<input type="password" name="senha_nova" minlength="{{ min_password }}" autocomplete="new-password"></label>
+    <label>Repita a senha nova<input type="password" name="senha_nova2" minlength="{{ min_password }}" autocomplete="new-password"></label>
+  </fieldset>
+  <label>Senha atual <span class="muted">(só se for trocar o e-mail ou a senha)</span><input type="password" name="senha_atual" autocomplete="current-password"></label>
+  <div><button class="btn" type="submit">Salvar</button></div>
+</form>
+{% endblock %}

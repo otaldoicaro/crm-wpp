@@ -14,6 +14,7 @@ from app.routers import (
     audit,
     auth_router,
     bridge,
+    profile,
     quick_replies,
     team,
     dashboard,
@@ -137,6 +138,7 @@ app.include_router(whatsapp_connect.router)
 app.include_router(team.router)
 app.include_router(audit.router)
 app.include_router(quick_replies.router)
+app.include_router(profile.router)
 
 
 @app.get("/health")

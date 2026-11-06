@@ -47,7 +47,7 @@
       </form>
       {% endif %}
       {% endif %}
-      <span>{{ tenant.name }} · {{ user.name }}</span>
+      <a href="/meu-perfil" class="nav-me {{ 'active' if active_nav == 'perfil' }}" title="Meu login: mudar nome, e-mail e senha"><span>{{ tenant.name }} · {{ user.name }}</span> ✎</a>
       {% if user.read_only %}<span class="role-badge agent">👀 Só visualização</span>{% else %}
       <span class="role-badge {{ 'admin' if user.role == 'admin' else 'agent' }}">{{ "Admin" if user.role == "admin" else "Vendedor" }}</span>{% endif %}
       {% if theme.light_vars %}<button type="button" class="btn ghost small modo-toggle" title="Trocar entre tela clara e escura" onclick="var r = document.documentElement, e = r.dataset.modo !== 'escuro'; if (e) r.dataset.modo = 'escuro'; else delete r.dataset.modo; try { localStorage.setItem('modo', e ? 'escuro' : 'claro'); } catch (x) {}"><span class="so-claro">🌙 Escuro</span><span class="so-escuro">☀️ Claro</span></button>{% endif %}
