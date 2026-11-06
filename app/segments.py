@@ -7,6 +7,41 @@ NO_REPLY_REASON = "Não responde mais"
 INVALID_REASON = "Contato inválido"  # o WhatsApp diz que o número não existe (testado com e sem o 9)
 REFUND_REASON = "Devolução / reembolso"  # comprou e pediu o dinheiro de volta
 
+# 📋 ficha do lead do ramo agência (services/lead_profile.py): as mesmas opções do formulário de
+# diagnóstico da LP, os nichos e os serviços vendidos (tipo: "sim" = só marcar, "qtd" = quantidade,
+# "freq" = frequência)
+LEAD_PROFILE_AGENCIA = {
+    "cargos": ["Sócio(a) / CEO", "Diretor(a)", "Head / Gerente de Marketing", "Analista de Marketing", "Outro"],
+    "faturamento": ["Até R$ 50 mil", "R$ 50 mil a R$ 100 mil", "R$ 100 mil a R$ 250 mil", "R$ 250 mil a R$ 500 mil",
+                    "Mais de R$ 500 mil"],
+    "investimento": ["Até R$ 2 mil", "R$ 2 mil a R$ 5 mil", "R$ 5 mil a R$ 10 mil", "R$ 10 mil a R$ 20 mil",
+                     "R$ 20 mil a R$ 50 mil", "Mais de R$ 50 mil"],
+    "nichos": [
+        "Academia", "Agronegócio", "Alimentação", "Autônomo", "Construção / Arquitetura", "E-commerce",
+        "Educação / Cursos", "Entretenimento", "Estética / Beleza", "Eventos", "Farmácia", "Financeiro / Contábil",
+        "Fitness / Bem-estar", "Imobiliário", "Indústria", "Infoprodutos", "Jurídico", "Locação de carro",
+        "Logística", "Loja física", "Médico / Profissional da saúde", "Moda", "Moda infantil", "Móveis planejados",
+        "Pet", "Prestador de serviço B2B", "Prestador de serviço B2C", "Saúde / Clínicas", "Serviços locais",
+        "Tecnologia / SaaS", "Turismo / Hotelaria", "Varejo", "Outros", "Sem informação",
+    ],
+    "servicos": [
+        ("trafego", "Tráfego pago", "sim"),
+        ("redes", "Redes sociais", "qtd"),
+        ("crm", "CRM", "sim"),
+        ("audiovisual", "Produção audiovisual", "sim"),
+        ("lp", "Landing page", "qtd"),
+        ("edicao", "Edição de vídeo", "qtd"),
+        ("criativos", "Criativos estáticos", "qtd"),
+        ("ugc", "Anúncio com UGC", "qtd"),
+        ("seo", "SEO", "sim"),
+        ("geo", "GEO", "sim"),
+        ("reuniao", "Reunião", "freq"),
+    ],
+    "unidades": {"redes": "posts por mês", "lp": "páginas", "edicao": "vídeos por mês",
+                 "criativos": "criativos por mês", "ugc": "anúncios por mês"},
+    "frequencias": ["Semanal", "Quinzenal", "Mensal"],
+}
+
 SEGMENTS = {
     "autopecas": {
         "label": "Autopeças",
@@ -123,6 +158,7 @@ SEGMENTS = {
         # venda consultiva: Pipeline só com o filtro ⭐ Favoritas; Inbox sem "Venda a confirmar" e sem
         # "Follow-up interessado" (preço/comprovante), e a aba 🔥 vira 📄 Propostas (etapa Proposta enviada)
         "consultive": True,
+        "lead_profile": LEAD_PROFILE_AGENCIA,  # 📋 ficha do lead (empresa, faturamento, nichos, serviços vendidos)
         # menu: Equipe e WhatsApp numa aba só ("Equipe", com sub-abas) e Tráfego fora do Dashboard (aba própria)
         "menu_equipe_whatsapp": True,
         "menu_trafego": True,

@@ -22,7 +22,7 @@ from app.deps import current_tenant, current_user_required
 from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app import features, segments
-from app.services import after_hours, autofollow, autostage, car_deal, channels, comments, deals, handover, invalid_contact, notify, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
+from app.services import after_hours, autofollow, autostage, car_deal, channels, comments, deals, handover, invalid_contact, lead_profile, notify, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -440,8 +440,30 @@ def lead_detail(
             "comments": [] if lead.is_group else comments.thread(db, lead),
             "owner_history": ownership.history(lead),
             "lead_messages": handover.visible_messages(lead, user),
+            "profile_cfg": lead_profile.config(tenant),
+            "profile": lead_profile.load(lead),
         },
     )
+
+
+@router.post("/leads/{lead_id}/ficha")
+async def save_lead_profile(
+    lead_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """📋 Salva a ficha do lead (ramo com "lead_profile": empresa, faturamento, nichos, serviços...)."""
+    lead = _visible_lead(db, tenant, user, lead_id)
+    cfg = lead_profile.config(tenant)
+    if not lead or cfg is None or user.read_only:
+        return RedirectResponse(url="/", status_code=302)
+    form = await request.form()
+    lead.profile = json.dumps(lead_profile.from_form(form, cfg), ensure_ascii=False)
+    db.add(lead)
+    db.commit()
+    return RedirectResponse(url=f"/leads/{lead_id}?salvo=1#ficha", status_code=302)
 
 
 def _start_numbers(db: Session, tenant: Tenant, user: User, lead: Lead) -> list:

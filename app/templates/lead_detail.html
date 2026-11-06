@@ -98,6 +98,8 @@
   </div>
 </div>
 
+{% if profile_cfg and not lead.is_group %}{% include "_lead_profile.html" %}{% endif %}
+
 {% if not lead.is_group %}
 <div class="card lead-comments-card" style="margin-top:16px;">
   {% with voltar="/leads/" ~ lead.id %}{% include "_lead_comments.html" %}{% endwith %}

@@ -1,0 +1,47 @@
+{# 📋 ficha do lead do ramo (segments.py "lead_profile"; salva em /leads/<id>/ficha) #}
+{% set cfg = profile_cfg %}{% set p = profile %}{% set srv = p.servicos or {} %}
+<div class="card lead-profile" id="ficha" style="margin-top:16px;">
+  <h3 style="margin-top:0">📋 Ficha do lead</h3>
+  <form method="post" action="/leads/{{ lead.id }}/ficha">
+    <div class="ficha-grid">
+      <label>Nome da pessoa<input type="text" value="{{ lead.name }}" disabled title="Muda no campo Nome, lá em cima"></label>
+      <label>Nome da empresa<input type="text" name="empresa" value="{{ p.empresa or '' }}"></label>
+      <label>Site ou redes sociais da empresa<input type="text" name="site" value="{{ p.site or '' }}" placeholder="ex: instagram.com/empresa"></label>
+      <label>Cargo<select name="cargo"><option value="">—</option>{% for o in cfg.cargos %}<option {{ "selected" if p.cargo == o }}>{{ o }}</option>{% endfor %}</select></label>
+      <label>Faturamento mensal<select name="faturamento"><option value="">—</option>{% for o in cfg.faturamento %}<option {{ "selected" if p.faturamento == o }}>{{ o }}</option>{% endfor %}</select></label>
+      <label>Investimento mensal em marketing<select name="investimento"><option value="">—</option>{% for o in cfg.investimento %}<option {{ "selected" if p.investimento == o }}>{{ o }}</option>{% endfor %}</select></label>
+    </div>
+
+    <h4>Nicho <span class="muted">(pode marcar mais de um)</span></h4>
+    <div class="ficha-chips">
+      {% for n in cfg.nichos %}<label><input type="checkbox" name="nicho" value="{{ n }}" {{ "checked" if n in (p.nichos or []) }}><span>{{ n }}</span></label>{% endfor %}
+    </div>
+
+    <h4>Anotações</h4>
+    <textarea name="notas" rows="5" placeholder="O que vale deixar escrito sobre o lead e a negociação: dores, o que já tentaram, quem decide, próximos passos...">{{ p.notas or "" }}</textarea>
+
+    <h4>Serviços vendidos <span class="muted">(no fechamento do contrato)</span></h4>
+    <div class="ficha-srv">
+      {% for key, label, kind in cfg.servicos %}
+      <div class="ficha-srv-row">
+        <label><input type="checkbox" name="srv_{{ key }}" value="1" {{ "checked" if key in srv }}> {{ label }}</label>
+        {% if kind == "qtd" %}
+        <span class="ficha-srv-extra"><input type="number" min="1" step="1" name="srv_{{ key }}_qtd" value="{{ srv.get(key) or '' }}" placeholder="qtd"> {{ cfg.unidades[key] }}</span>
+        {% elif kind == "freq" %}
+        <span class="ficha-srv-extra"><select name="srv_{{ key }}_freq"><option value="">frequência</option>{% for f in cfg.frequencias %}<option {{ "selected" if srv.get(key) == f }}>{{ f }}</option>{% endfor %}</select></span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if not user.read_only %}<button class="btn" type="submit" style="margin-top:14px">Salvar ficha</button>{% endif %}
+  </form>
+  <script>
+  (function () {  // quantidade/frequência preenchida já marca o serviço
+    document.querySelectorAll("#ficha .ficha-srv-row").forEach(function (row) {
+      var box = row.querySelector('input[type="checkbox"]'), extra = row.querySelector(".ficha-srv-extra input, .ficha-srv-extra select");
+      if (extra) extra.addEventListener("input", function () { if (extra.value) box.checked = true; });
+    });
+  })();
+  </script>
+</div>

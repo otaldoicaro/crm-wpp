@@ -88,6 +88,7 @@ def open_new(db: Session, lead: Lead, by_customer: bool, user_id: Optional[str] 
         assigned_user_id=lead.assigned_user_id,
         avatar_url=lead.avatar_url,
         avatar_checked_at=lead.avatar_checked_at,
+        profile=lead.profile,  # 📋 a ficha (empresa, nichos, serviços) continua valendo no negócio novo
         contact_id=key,
         deal_number=last_number + 1,
         stage_id=stage.id if stage else None,

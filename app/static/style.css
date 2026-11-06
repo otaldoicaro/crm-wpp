@@ -1178,3 +1178,22 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 [data-tema="junta"] .card { border-radius: 18px; }
 /* claro/escuro (temas com light_vars): mostra só a versão do modo atual */
 :root:not([data-modo="escuro"]) .so-escuro, [data-modo="escuro"] .so-claro { display: none !important; }
+
+/* ---------- 📋 ficha do lead (ramo com lead_profile) ---------- */
+.lead-profile h4 { margin: 18px 0 8px; font-size: .95rem; }
+.ficha-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px 16px; }
+.ficha-grid label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); }
+.ficha-grid input, .ficha-grid select { color: var(--text); }
+.ficha-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ficha-chips label { cursor: pointer; }
+.ficha-chips input { position: absolute; opacity: 0; pointer-events: none; }
+.ficha-chips span { display: inline-block; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; font-size: .84rem; background: var(--panel-2); }
+.ficha-chips input:checked + span { background: var(--y); color: var(--ink); border-color: var(--y); font-weight: 700; }
+.ficha-chips input:focus-visible + span { outline: 2px solid var(--accent-ring); }
+.lead-profile textarea { width: 100%; }
+.ficha-srv { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px 16px; }
+.ficha-srv-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 40px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.ficha-srv-row label { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.ficha-srv-extra { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.ficha-srv-extra input { width: 64px; padding: 5px 8px; }
+.ficha-srv-extra select { width: auto; padding: 5px 8px; }

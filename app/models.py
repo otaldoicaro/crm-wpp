@@ -283,6 +283,8 @@ class Lead(Base):
     seen_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # o que a pessoa preencheu nos formulários (LP/site), um bloco por envio, mais recente primeiro
     form_details: Mapped[str] = mapped_column(Text, default="")
+    # 📋 ficha do lead do ramo (services/lead_profile.py): empresa, cargo, faturamento, nichos, anotações, serviços (JSON)
+    profile: Mapped[str] = mapped_column(Text, default="")
     # 🤖 follow-up automático: 0 = nada, 1/2 = mensagens enviadas, 3 = foi pra Perdido, -1 = parou (erro)
     autofu_step: Mapped[int] = mapped_column(Integer, default=0)
     autofu_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
