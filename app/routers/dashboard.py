@@ -1180,9 +1180,10 @@ def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
 
 def _inbox_query(
     db: Session, tenant: Tenant, user: User, busca: str, numero: str, vendedor: str, tipo: str = "", lidas: str = "",
-    etapa: str = "", aviso: str = "", fav: str = "", quando: str = "",
+    etapa: str = "", aviso: str = "", fav: str = "", quando: str = "", marca: str = "",
 ):
     """Conversas visíveis no Inbox com os filtros aplicados. Devolve (query, removed_ids).
+    marca = ⚠️ problema / 📌 importante (INBOX_FLAGS).
     tipo = quais contatos (INBOX_CONTACT_TYPES); lidas = situação (INBOX_STATUSES);
     etapa = etapa do funil."""
     query = (
@@ -1223,6 +1224,8 @@ def _inbox_query(
         query = query.filter(followup.stale_condition(funnel._stages(db, tenant.id)))
     if etapa:
         query = query.filter(Lead.stage_id == etapa)
+    if marca in INBOX_FLAGS:  # 🏷 ⚠️ Problema / 📌 Importante
+        query = query.filter(INBOX_FLAGS[marca][1].isnot(None))
     if fav:  # ⭐ favoritas desta pessoa (junta com os outros filtros)
         query = inbox_state.favorite_filter(query, user)
     start, end = _inbox_date_bounds(quando)
@@ -1257,6 +1260,13 @@ def _inbox_query(
                         or_(Message.body.ilike(f"%{busca}%"), Message.transcript.ilike(f"%{busca}%")))))
         query = query.filter(or_(*conditions))
     return query, removed_ids
+
+
+# 🏷 marcações da conversa: chave → (rótulo, coluna do lead)
+INBOX_FLAGS = {
+    "problema": ("⚠️ Problema", Lead.flag_problem_at),
+    "importante": ("📌 Importante", Lead.flag_important_at),
+}
 
 
 def _seller_tokens(vendedor: str) -> list:
@@ -1361,14 +1371,16 @@ def _inbox_context(
     aviso: str = "",
     fav: str = "",
     quando: str = "",
+    marca: str = "",
 ) -> dict:
     if user.role != "admin":
         numero = ""
     vendedor = _clean_vendedor(db, tenant, user, vendedor)
-    query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa, aviso, fav, quando)
+    marca = marca if marca in INBOX_FLAGS else ""
+    query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa, aviso, fav, quando, marca)
 
     def count(status: str) -> int:  # quantas em cada situação, com os outros filtros atuais
-        q, _ = _inbox_query(db, tenant, user, "", numero, vendedor, tipo, status, etapa, aviso, fav, quando)
+        q, _ = _inbox_query(db, tenant, user, "", numero, vendedor, tipo, status, etapa, aviso, fav, quando, marca)
         return q.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
 
     status_counts = {key: count(key) for key, _ in INBOX_STATUSES}
@@ -1378,6 +1390,9 @@ def _inbox_context(
         return q.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
 
     status_counts["interesse"], status_counts["venda"] = aviso_count("interesse"), aviso_count("venda")
+    for key in INBOX_FLAGS:  # abas ⚠️ Problema / 📌 Importante: quantas conversas marcadas (com os filtros da gaveta)
+        q, _ = _inbox_query(db, tenant, user, "", numero, vendedor, tipo, "", etapa, "", fav, quando, key)
+        status_counts[key] = q.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
     unread_total, naolidas_total = status_counts["naorespondidas"], status_counts["naolidas"]
     conversations = _first_per_lead(
         query.options(joinedload(Conversation.lead).joinedload(Lead.assigned_user))  # sem 1 consulta por item
@@ -1431,6 +1446,8 @@ def _inbox_context(
             "avisos": INBOX_AVISOS,
             "fav": fav,
             "quando": quando,
+            "marca": marca,
+            "inbox_flags": [(k, label) for k, (label, _) in INBOX_FLAGS.items()],
             "inbox_dates": INBOX_DATES,
             "status_counts": status_counts,
             "contact_types": INBOX_CONTACT_TYPES,
@@ -1516,6 +1533,9 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     quando = qp.get("quando", saved[8])
     if quando not in dict(INBOX_DATES):
         quando = ""
+    marca = qp.get("marca", saved[9])
+    if marca not in INBOX_FLAGS:
+        marca = ""
     if tipo == "favoritas":  # antes "Favoritas" era um tipo; agora é um botão que junta com os outros
         tipo, fav = "semgrupos", "1"
     # filtros de antes (situação misturada nos tipos; "nao" = não respondidas)
@@ -1539,7 +1559,7 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     if selected_lead_id:
         inbox_state.mark_read(db, user.id, selected_lead_id)
     ctx = _inbox_context(
-        db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas, _list_limit(qp.get("qtd")), ordem, etapa, aviso, fav, quando
+        db, tenant, user, selected_lead_id, qp.get("busca", ""), numero, vendedor, tipo, lidas, _list_limit(qp.get("qtd")), ordem, etapa, aviso, fav, quando, marca
     )
     ctx["quick_replies"] = replies_for_js(db, tenant, user)
     # 🔎 busca no texto das conversas: a lista da esquerda vira os resultados e continua ali
@@ -1554,7 +1574,7 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
         response.set_cookie(INBOX_TEXT_COOKIE, quote(texto), samesite="lax")  # sem httponly: o menu apaga
     else:
         response.delete_cookie(INBOX_TEXT_COOKIE)
-    response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}|{ordem}|{etapa}|{aviso}|{fav}|{quando}", httponly=True, samesite="lax")
+    response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}|{ordem}|{etapa}|{aviso}|{fav}|{quando}|{marca}", httponly=True, samesite="lax")
     return response
 
 
@@ -1974,6 +1994,31 @@ def inbox_mark_unread(
     return JSONResponse({"ok": True})
 
 
+@router.post("/leads/{lead_id}/marca")
+def lead_flag(
+    lead_id: str,
+    tipo: str = Form(...),
+    ajax: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """🏷 Liga/desliga ⚠️ Problema ou 📌 Importante na conversa (quem vê a conversa pode marcar).
+    Fica um registro na conversa (só no CRM) com quem marcou/desmarcou."""
+    lead = _visible_lead(db, tenant, user, lead_id)
+    if not lead or tipo not in INBOX_FLAGS:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
+    label, column = INBOX_FLAGS[tipo]
+    on = getattr(lead, column.key) is None
+    setattr(lead, column.key, datetime.datetime.utcnow() if on else None)
+    _add_note(db, lead, f"🏷 {user.name} {'marcou como' if on else 'tirou a marcação'} {label}")
+    db.add(lead)
+    db.commit()
+    if ajax:
+        return JSONResponse({"ok": True, "on": on})
+    return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
+
+
 @router.post("/leads/{lead_id}/tag")
 def set_lead_tag(
     lead_id: str,
@@ -2010,6 +2055,7 @@ def inbox_refresh(
     aviso: str = "",
     fav: str = "",
     quando: str = "",
+    marca: str = "",
     ls: str = "",
     ms: str = "",
     db: Session = Depends(get_db),
@@ -2024,7 +2070,8 @@ def inbox_refresh(
         numero = ""
     vendedor = _clean_vendedor(db, tenant, user, vendedor)
     limit = _list_limit(qtd)
-    query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa, aviso, fav, quando)
+    marca = marca if marca in INBOX_FLAGS else ""
+    query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa, aviso, fav, quando, marca)
     rows = _first_per_lead(
         query.with_entities(Conversation.id, Conversation.lead_id, Conversation.last_message_at)
         .order_by(*_inbox_order(ordem))
@@ -2036,7 +2083,7 @@ def inbox_refresh(
         return JSONResponse({"changed": False})  # nada novo: resposta mínima, sem desenhar nada
     if lead and current_msg_sig != ms:
         inbox_state.mark_read(db, user.id, lead)  # chegou mensagem na conversa que está aberta: já foi vista
-    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo, lidas, limit, ordem, etapa, aviso, fav, quando)
+    ctx = _inbox_context(db, tenant, user, lead or None, busca, numero, vendedor, tipo, lidas, limit, ordem, etapa, aviso, fav, quando, marca)
     return JSONResponse(
         {
             "list_sig": ctx["list_sig"],

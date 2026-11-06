@@ -34,10 +34,14 @@
     <button type="button" class="btn ghost small filter-btn {{ 'act' if f }}" id="filterBtn" aria-expanded="false">⚙ {{ ("Filtros ligados (" ~ f|length ~ ")") if f else "Filtros" }}</button>
     {% if user.role == "admin" %}<a class="btn ghost small" href="/inbox-equipe" title="Ver as conversas de vários vendedores lado a lado">👥 Equipe</a>{% endif %}
   </div>
+  {# 🏷 abas das conversas marcadas (clique de novo pra voltar a ver todas) #}
+  <nav class="inbox-tabs status-chips flag-tabs">
+    {% for key, label in inbox_flags %}<a data-reset-scroll class="flag-tab flag-{{ key }} {{ 'on' if marca == key }}" href="{{ path }}?marca={{ '' if marca == key else key }}" title="{{ 'Voltar a ver todas as conversas' if marca == key else 'Só as conversas marcadas como ' ~ label }}">{{ label }} <span class="unread-total {{ 'zero' if not status_counts[key] }}" data-status="{{ key }}">{{ status_counts[key] }}</span></a>{% endfor %}
+  </nav>
   {% if f %}
   <div class="filter-chips">
     {% for label, key in f %}<a data-reset-scroll class="filter-chip" href="{{ path }}?{{ key }}={{ 'semgrupos' if key == 'tipo' else ('recentes' if key == 'ordem' else '') }}" title="Tirar este filtro">{{ label }} ✕</a>{% endfor %}
-    <a data-reset-scroll class="filter-clear" href="{{ path }}?lidas=&aviso=&etapa=&tipo=semgrupos&quando=&fav=&vendedor=&numero=&ordem=recentes">Limpar tudo</a>
+    <a data-reset-scroll class="filter-clear" href="{{ path }}?lidas=&aviso=&etapa=&tipo=semgrupos&quando=&fav=&vendedor=&numero=&ordem=recentes&marca=">Limpar tudo</a>
   </div>
   {% endif %}
   <form class="filter-panel" id="filterPanel" method="get" action="{{ path }}" data-reset-scroll hidden>
@@ -78,7 +82,7 @@
     {% endif %}
     <label class="fp-fav"><input type="checkbox" name="fav" value="1" {{ "checked" if fav }}> ⭐ Só as favoritas</label>
     <input type="hidden" name="numero" value="">
-    <div class="fp-actions"><a class="btn ghost small" href="{{ path }}?lidas=&aviso=&etapa=&tipo=semgrupos&quando=&fav=&vendedor=&numero=&ordem=recentes" data-reset-scroll>Limpar tudo</a><button class="btn small" type="submit">Ver resultados</button></div>
+    <div class="fp-actions"><a class="btn ghost small" href="{{ path }}?lidas=&aviso=&etapa=&tipo=semgrupos&quando=&fav=&vendedor=&numero=&ordem=recentes&marca=" data-reset-scroll>Limpar tudo</a><button class="btn small" type="submit">Ver resultados</button></div>
   </form>
   <script>
   (function () {
@@ -147,6 +151,14 @@
           <span class="stage-status muted"></span>
         </form>
         {% endif %}
+        {# 🏷 marcar a conversa pra achar fácil depois (abas ⚠️ Problema / 📌 Importante da lista) #}
+        <div class="flag-bar">
+          {% for key, label in inbox_flags %}{% set on = selected_lead.flag_problem_at if key == "problema" else selected_lead.flag_important_at %}
+          <form method="post" action="/leads/{{ selected_lead.id }}/marca"><input type="hidden" name="tipo" value="{{ key }}">
+            <button class="btn small flag-btn flag-{{ key }} {{ 'on' if on else 'ghost' }}" type="submit" aria-pressed="{{ 'true' if on else 'false' }}"
+              title="{{ ('Marcada como ' ~ label ~ ' desde ' ~ (on|hora('%d/%m %H:%M')) ~ '. Clique pra tirar') if on else ('Marcar esta conversa como ' ~ label) }}">{{ label }}{{ " ✓" if on }}</button>
+          </form>{% endfor %}
+        </div>
         {% if agenda_on and not selected_lead.is_group %}{% with lead=selected_lead, voltar="/inbox/" ~ selected_lead.id %}{% include "_agenda_dialog.html" %}{% endwith %}{% endif %}
         {% if not selected_lead.is_group %}{% with lead=selected_lead, voltar_url="/inbox/" ~ selected_lead.id %}{% include "_suggest_banner.html" %}{% include "_next_step.html" %}{% endwith %}{% endif %}
       </div>
@@ -721,6 +733,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   var aviso = {{ aviso|tojson }};
   var fav = {{ fav|tojson }};
   var quando = {{ quando|tojson }};
+  var marca = {{ marca|tojson }};
   var qtd = {{ list_limit }};
   var ordem = {{ ordem|tojson }};
   var busy = false, stickNext = false;
@@ -729,7 +742,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
     if (busy || (document.hidden && force !== true)) return;
     busy = true;
     var url = "/inbox-atualizar?lead=" + encodeURIComponent(lead) + "&busca=" + encodeURIComponent(busca) +
-      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) + "&lidas=" + encodeURIComponent(lidas) + "&qtd=" + qtd + "&ordem=" + encodeURIComponent(ordem) + "&etapa=" + encodeURIComponent(etapa) + "&aviso=" + encodeURIComponent(aviso) + "&fav=" + encodeURIComponent(fav) + "&quando=" + encodeURIComponent(quando) +
+      "&numero=" + encodeURIComponent(numero) + "&vendedor=" + encodeURIComponent(vendedor) + "&tipo=" + encodeURIComponent(tipo) + "&lidas=" + encodeURIComponent(lidas) + "&qtd=" + qtd + "&ordem=" + encodeURIComponent(ordem) + "&etapa=" + encodeURIComponent(etapa) + "&aviso=" + encodeURIComponent(aviso) + "&fav=" + encodeURIComponent(fav) + "&quando=" + encodeURIComponent(quando) + "&marca=" + encodeURIComponent(marca) +
       "&ls=" + encodeURIComponent(listSig) + "&ms=" + encodeURIComponent(msgSig);
     fetch(url, { headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })

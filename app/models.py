@@ -312,6 +312,10 @@ class Lead(Base):
     # a Lixeira mostra quem excluiu e quando, e o admin pode restaurar.
     deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
     deleted_by_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # 🏷 marcações da conversa no Inbox (⚠️ Problema / 📌 Importante): valem pra todo mundo que vê a
+    # conversa, viram aba de filtro na lista e ficam registradas na conversa (quem marcou e quando)
+    flag_problem_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    flag_important_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="leads")
     stage: Mapped[Optional["PipelineStage"]] = relationship()

@@ -1235,3 +1235,12 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .profile-hint { font-size: .78rem; margin-top: -6px; }
 .profile-pass { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 .profile-pass legend { font-weight: 600; font-size: .88rem; padding: 0 4px; }
+
+/* 🏷 marcações ⚠️ Problema / 📌 Importante (Inbox) */
+.flag-tabs { margin-top: 6px; }
+.flag-tabs .flag-problema.on { background: var(--danger-bg); color: var(--danger); }
+.flag-btn.on { font-weight: 700; }
+.flag-btn.flag-problema.on { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
+.flag-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.flag-bar form { margin: 0; }
+.flag-mini { font-size: .8em; }
