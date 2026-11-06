@@ -5,7 +5,11 @@
 <div class="kanban-toolbar">
   <div>
     <h2 style="margin:0">Lixeira ({{ total }})</h2>
+    {% if has_feature(tenant, "lixeira_apaga") %}
+    <span class="muted">Leads excluídos, com quem excluiu e quando. Ficam aqui por {{ keep_days }} dias e depois são apagados de vez, com a conversa. Até lá, clique em Restaurar pra trazer de volta. Se o cliente mandar mensagem de novo, o lead volta sozinho.</span>
+    {% else %}
     <span class="muted">Leads excluídos, com quem excluiu e quando. Nada foi apagado de verdade: clique em Restaurar pra trazer de volta. Se o cliente mandar mensagem de novo, o lead volta sozinho.</span>
+    {% endif %}
   </div>
 </div>
 <div class="card">
@@ -14,7 +18,7 @@
   </form>
   <div style="overflow-x:auto;">
   <table class="table-simple">
-    <thead><tr><th>Nome</th><th class="hide-sm">Telefone</th><th>Excluído por</th><th>Quando</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th class="hide-sm">Telefone</th><th>Excluído por</th><th>Quando</th>{% if has_feature(tenant, "lixeira_apaga") %}<th class="hide-sm">Apagado de vez em</th>{% endif %}<th></th></tr></thead>
     <tbody>
     {% for lead in leads %}
       <tr>
@@ -22,6 +26,7 @@
         <td class="hide-sm muted">{{ lead.phone or lead.email }}</td>
         <td>{{ lead.deleted_by.name if lead.deleted_by else "—" }}</td>
         <td>{{ lead.deleted_at|hora("%d/%m/%Y %H:%M") }}</td>
+        {% if has_feature(tenant, "lixeira_apaga") %}<td class="hide-sm muted">{{ purge_date(lead)|hora("%d/%m/%Y") }}</td>{% endif %}
         <td>
           <form method="post" action="/leads/{{ lead.id }}/restaurar" style="margin:0">
             <button class="btn small" type="submit">Restaurar</button>

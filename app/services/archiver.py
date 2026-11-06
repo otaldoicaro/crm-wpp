@@ -65,6 +65,11 @@ def schedule(delay_seconds: int = 120) -> None:
             cold = autostage.cool_silent_leads(db)  # ❄️ quem usa Lead frio: cliente calado há 7 dias
             if cold:
                 logger.info("lead frio automático (cliente sem responder há %s dias): %s", autostage.COLD_AFTER_DAYS, len(cold))
+            from app.services import trash
+
+            purged = trash.purge(db)  # 🗑️ quem usa Lixeira com prazo: excluídos há mais de 30 dias somem de vez
+            if purged:
+                logger.info("lixeira: %s leads apagados de vez", purged)
             n = archive_old_leads(db)
             if n:
                 logger.info("arquivamento automático: %s leads saíram do Pipeline", n)

@@ -141,7 +141,7 @@
     </label>
   </form>
   <p class="muted" style="margin:0">Atendente responsável</p>
-  {% if people and not lead.deleted_at %}
+  {% if people and not lead.deleted_at and not has_feature(tenant, "sem_passar_lead") %}
   <form method="post" action="/leads/{{ lead.id }}/transferir" class="owner-form"
         onsubmit="return this.para.value && confirm('Passar este lead para ' + this.para.options[this.para.selectedIndex].text + '?\n\nEle sai do Pipeline e do Inbox de quem atendia e aparece pro novo vendedor.')">
     <input type="hidden" name="voltar" value="/leads/{{ lead.id }}?salvo=1">

@@ -22,7 +22,7 @@ from app.deps import current_tenant, current_user_required
 from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app import features, segments
-from app.services import after_hours, autofollow, autostage, car_deal, channels, comments, deals, handover, invalid_contact, lead_profile, notify, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
+from app.services import after_hours, autofollow, autostage, car_deal, channels, comments, deals, handover, invalid_contact, lead_profile, trash, notify, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
 from app.services.people import removed_user_ids, team_members
@@ -381,6 +381,8 @@ def trash_view(
             "active_nav": "pipeline",
             "leads": query.order_by(Lead.deleted_at.desc()).limit(200).all(),
             "total": total,
+            "keep_days": trash.KEEP_DAYS,
+            "purge_date": trash.purge_date,
             "busca": busca,
         },
     )
@@ -1398,9 +1400,9 @@ def _inbox_context(
             "active_conversation": active_conversation,
             "other_numbers": other_numbers,
             "platform": resolve_platform(selected_lead.attribution) if selected_lead else None,
-            "bulk_people": [p for p in team_members(db, tenant.id, only_active=True)] if _can_transfer(user) else [],
+            "bulk_people": [p for p in team_members(db, tenant.id, only_active=True)] if _can_transfer(user, tenant) else [],
             "transfer_people": _transfer_options(db, tenant, selected_lead)
-            if selected_lead and not selected_lead.is_group and _can_transfer(user) else [],
+            if selected_lead and not selected_lead.is_group and _can_transfer(user, tenant) else [],
             "stages": db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
             if selected_lead and not selected_lead.is_group else [],
             "deal_info": deals.summary(db, selected_lead) if selected_lead and not selected_lead.is_group else None,
@@ -1798,8 +1800,10 @@ def settle_lead(
     return RedirectResponse(url=back, status_code=302)
 
 
-def _can_transfer(user: User) -> bool:
-    """Admin, ou vendedor com "Passa leads" ligado em Equipe."""
+def _can_transfer(user: User, tenant: Tenant) -> bool:
+    """Admin, ou vendedor com "Passa leads" ligado em Equipe; nunca no cliente com o recurso "sem_passar_lead"."""
+    if features.has(tenant, "sem_passar_lead"):
+        return False
     return not user.read_only and (user.role == "admin" or bool(user.can_transfer))
 
 
@@ -1847,7 +1851,7 @@ def transfer_leads_batch(
 ):
     """↪ Passa várias conversas de uma vez (Inbox: ⋮ numa conversa ou "Selecionar várias"), sem abrir
     cada uma. Mesma regra do passar de dentro da conversa; grupo e lead de outro (pra vendedor) ficam de fora."""
-    if not _can_transfer(user):
+    if not _can_transfer(user, tenant):
         raise HTTPException(status_code=403, detail="Só o admin (ou quem tem a permissão em Equipe) passa leads pra outro vendedor")
     target = next((p for p in team_members(db, tenant.id, only_active=True) if p.id == para), None)
     if target is None:
@@ -1880,7 +1884,7 @@ def transfer_lead(
     """Passa o lead (com a conversa inteira) pra outro vendedor. O histórico todo continua no
     CRM: quem recebe abre a conversa e vê tudo, desde a 1ª mensagem. Com `trocar_numero` (ou o
     recurso "passar_troca_numero" do cliente), as próximas mensagens saem pelo WhatsApp do novo vendedor."""
-    if not _can_transfer(user):
+    if not _can_transfer(user, tenant):
         raise HTTPException(status_code=403, detail="Só o admin (ou quem tem a permissão em Equipe) passa leads pra outro vendedor")
     lead = _lead_for_action(db, tenant, user, lead_id)
     target = next((p for p in team_members(db, tenant.id, only_active=True) if p.id == para), None)
@@ -2206,7 +2210,7 @@ def team_thread(
     head = templates.get_template("_team_thread_head.html").render({
         "tenant": tenant, "lead": lead, "closed": closed, "truncated": len(all_messages) > TEAM_THREAD_LAST,
         "can_settle": not lead.is_group and bool(response_times.waiting_since(lead)),
-        "transfer_people": [] if lead.is_group or not _can_transfer(user) else _transfer_options(db, tenant, lead),
+        "transfer_people": [] if lead.is_group or not _can_transfer(user, tenant) else _transfer_options(db, tenant, lead),
         "stages": [] if lead.is_group else db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all(),
     })
     body = templates.get_template("_inbox_messages.html").render({"messages": messages})

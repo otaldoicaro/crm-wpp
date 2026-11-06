@@ -25,12 +25,16 @@ FEATURES = {
                     "Qualificado, Ganho e Perdido pelas frases da conversa viram 💡 sugestão pro vendedor confirmar; "
                     "preço enviado não leva pra Negociando; comprovante vira “confirmar venda” (não fecha sozinho); "
                     "sem Perdido automático por 7 dias parado",
+    "sem_passar_lead": "🚫 Sem passar lead pra outro vendedor: some a opção “Passar pra” da conversa, da ficha do lead e do "
+                       "“Selecionar várias” (cada lead fica com quem atendeu)",
+    "lixeira_apaga": "🗑️ Lixeira com prazo: lead excluído fica na Lixeira por 30 dias (dá pra restaurar) e depois é apagado de vez, "
+                     "com a conversa",
     "transcrever_audios": "🎙️ Transcrever os áudios do WhatsApp (o texto aparece embaixo do áudio e entra nas regras "
                           "automáticas e na busca). Custo no Groq: ~US$ 0,04 por hora de áudio",
 }
 DEFAULTS_BY_SEGMENT = {
     "seminovos": ("pagamento_parcelado", "visita_negociando"),
-    "agencia": ("funil_manual", "interessados_negociando"),
+    "agencia": ("funil_manual", "interessados_negociando", "lixeira_apaga"),
 }
 
 
