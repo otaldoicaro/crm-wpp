@@ -12,15 +12,18 @@
       <label>Investimento mensal em marketing<select name="investimento"><option value="">—</option>{% for o in cfg.investimento %}<option {{ "selected" if p.investimento == o }}>{{ o }}</option>{% endfor %}</select></label>
     </div>
 
-    <h4>Nicho <span class="muted">(pode marcar mais de um)</span></h4>
-    <div class="ficha-chips">
-      {% for n in cfg.nichos %}<label><input type="checkbox" name="nicho" value="{{ n }}" {{ "checked" if n in (p.nichos or []) }}><span>{{ n }}</span></label>{% endfor %}
-    </div>
+    <details class="ficha-box">
+      <summary><b>Nicho</b> <span class="muted" data-resumo="nicho">{{ (p.nichos or [])|join(", ") or "nenhum marcado · pode marcar mais de um" }}</span></summary>
+      <div class="ficha-chips">
+        {% for n in cfg.nichos %}<label><input type="checkbox" name="nicho" value="{{ n }}" {{ "checked" if n in (p.nichos or []) }}><span>{{ n }}</span></label>{% endfor %}
+      </div>
+    </details>
 
     <h4>Anotações</h4>
     <textarea name="notas" rows="5" placeholder="O que vale deixar escrito sobre o lead e a negociação: dores, o que já tentaram, quem decide, próximos passos...">{{ p.notas or "" }}</textarea>
 
-    <h4>Serviços vendidos <span class="muted">(no fechamento do contrato)</span></h4>
+    <details class="ficha-box">
+      <summary><b>Serviços vendidos</b> <span class="muted">{% set n_srv = srv|length %}{{ (n_srv ~ (" serviço marcado" if n_srv == 1 else " serviços marcados")) if n_srv else "nenhum marcado · no fechamento do contrato" }}</span></summary>
     <div class="ficha-srv">
       {% for key, label, kind in cfg.servicos %}
       <div class="ficha-srv-row">
@@ -33,6 +36,7 @@
       </div>
       {% endfor %}
     </div>
+    </details>
 
     {% if not user.read_only %}<button class="btn" type="submit" style="margin-top:14px">Salvar ficha</button>{% endif %}
   </form>

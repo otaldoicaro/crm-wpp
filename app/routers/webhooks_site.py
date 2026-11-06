@@ -6,7 +6,9 @@ Dois formatos:
 - POST /webhooks/lp/{tenant_id}: JSON (a LP da Nova Viseu manda com
   Content-Type text/plain + no-cors, pra não precisar de CORS). Campos da LP:
   nome, telefone/whatsapp, email, marca, modelo, ano, pecas, qtd_pecas_encontradas,
-  veiculos, busca (LP de seminovos), pagina, utm_*, origem {utm_*, gclid, fbclid}.
+  veiculos, busca (LP de seminovos), empresa, site, cargo, faturamento, investimento (LP da
+  agência), pagina, utm_*, origem {utm_*, gclid, fbclid}. Aceita também o mesmo conteúdo como
+  formulário (application/x-www-form-urlencoded), que é como a LP da Junta manda.
 
 Nos dois casos o lead é um por pessoa: se o telefone já existe (porque a pessoa
 já chamou no WhatsApp, ou já preencheu antes), completa o mesmo lead em vez de
@@ -17,6 +19,7 @@ no código da página), o pior uso indevido seria criar leads falsos nesse clien
 """
 
 import json
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.concurrency import run_in_threadpool
@@ -68,7 +71,11 @@ def lp_preflight(tenant_id: str):
 @router.post("/webhooks/lp/{tenant_id}")
 async def receive_lp_lead(tenant_id: str, request: Request):
     try:
-        payload = json.loads((await request.body()).decode("utf-8") or "{}")
+        raw = (await request.body()).decode("utf-8")
+        if raw.lstrip()[:1] in ("{", ""):
+            payload = json.loads(raw or "{}")
+        else:  # formulário (nome=...&whatsapp=...)
+            payload = {key: values[-1] for key, values in parse_qs(raw).items()}
     except (ValueError, UnicodeDecodeError):
         return JSONResponse({"ok": False, "error": "JSON inválido"}, status_code=400, headers=CORS)
 
@@ -80,7 +87,8 @@ async def receive_lp_lead(tenant_id: str, request: Request):
         "email": str(payload.get("email") or ""),
         # ad_id: formulário nativo do Meta (via Make) — liga o lead ao gasto do anúncio
         **{k: pick(k) for k in ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid", "fbc", "fbp", "ad_id")},
-        **{k: payload.get(k) for k in ("marca", "modelo", "ano", "pecas", "qtd_pecas_encontradas", "veiculos", "busca", "mensagem", "pagina")},
+        **{k: payload.get(k) for k in ("marca", "modelo", "ano", "pecas", "qtd_pecas_encontradas", "veiculos", "busca", "mensagem", "pagina",
+                                       "empresa", "site", "cargo", "faturamento", "investimento")},
         "respostas": payload.get("respostas"),  # perguntas do formulário nativo do Meta (lead_match.form_answers)
     }
     if not data["phone"] and not data["email"]:

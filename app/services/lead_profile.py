@@ -22,6 +22,30 @@ def load(lead) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _same(a: str, b: str) -> bool:
+    """"R$50 mil a R$100 mil" (LP) = "R$ 50 mil a R$ 100 mil" (ficha): sem espaços nem maiúsculas."""
+    return "".join(str(a).split()).lower() == "".join(str(b).split()).lower()
+
+
+def fill_from_form(lead, tenant, data: dict) -> None:
+    """Formulário da LP (empresa, site, cargo, faturamento, investimento) preenche a ficha. Não apaga o
+    que o vendedor já escreveu: só completa o que está vazio."""
+    cfg = config(tenant)
+    if cfg is None:
+        return
+    profile = load(lead)
+    picks = {"cargo": cfg["cargos"], "faturamento": cfg["faturamento"], "investimento": cfg["investimento"]}
+    for key in ("empresa", "site", "cargo", "faturamento", "investimento"):
+        value = str(data.get(key) or "").strip()[:300]
+        if not value or profile.get(key):
+            continue
+        if key in picks:
+            value = next((o for o in picks[key] if _same(o, value)), "")
+        if value:
+            profile[key] = value
+    lead.profile = json.dumps(profile, ensure_ascii=False)
+
+
 def _int(value: str):
     try:
         number = int(str(value).strip())

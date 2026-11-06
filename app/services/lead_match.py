@@ -37,6 +37,11 @@ FORM_LABELS = [
     ("veiculos", "Carros de interesse"),  # LP de seminovos: carros que a pessoa marcou
     ("busca", "Busca no site"),
     ("mensagem", "Mensagem"),
+    ("empresa", "Empresa"),  # LP da agência (diagnóstico): também preenchem a 📋 ficha do lead
+    ("site", "Site ou Instagram"),
+    ("cargo", "Cargo"),
+    ("faturamento", "Faturamento médio mensal"),
+    ("investimento", "Investimento mensal em marketing"),
     ("pagina", "Página"),
 ]
 
@@ -105,6 +110,10 @@ def upsert_form_lead(db: Session, tenant_id: str, data: dict, source: str = "sit
     lead.deleted_at = None
     details = _format_details(data)
     lead.form_details = f"{details}\n\n{lead.form_details}".strip() if lead.form_details else details
+    from app.models import Tenant
+    from app.services import lead_profile
+
+    lead_profile.fill_from_form(lead, db.get(Tenant, tenant_id), data)  # 📋 ramo com ficha: empresa, cargo, faturamento...
     db.commit()
     db.refresh(lead)
 

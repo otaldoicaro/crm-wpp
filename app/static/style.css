@@ -1197,3 +1197,7 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .ficha-srv-extra { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); white-space: nowrap; }
 .ficha-srv-extra input { width: 64px; padding: 5px 8px; }
 .ficha-srv-extra select { width: auto; padding: 5px 8px; }
+.ficha-box { margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+.ficha-box > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.ficha-box > summary .muted { font-size: .84rem; }
+.ficha-box[open] > summary { margin-bottom: 12px; }
