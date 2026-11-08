@@ -17,7 +17,7 @@
     <a data-reset-scroll class="{{ 'on' if tab == 'naolidas' }}" href="{{ path }}?lidas=naolidas&aviso=">Não lidas <span class="unread-total {{ 'zero' if not status_counts.naolidas }}" data-status="naolidas">{{ status_counts.naolidas }}</span></a>
     {% set agenda_tab = has_feature(tenant, 'agendamentos') %}
     {% set consultive = segment_for(tenant).consultive %}{# venda consultiva: aba das propostas, sem "Venda a confirmar" #}
-    <a data-reset-scroll class="tab-hot {{ 'on' if tab == 'interesse' }}" href="{{ path }}?lidas=&aviso=interesse" title="{{ 'Leads na etapa Proposta enviada' if consultive else ('Leads na etapa Agendamento (visita marcada)' if agenda_tab else ('Leads na etapa Negociando' if has_feature(tenant, 'interessados_negociando') else 'Viram o preço e responderam com interesse (“como faço?”, “qual o pix?”): follow-up já!')) }}">{{ "📄 Propostas" if consultive else ("📅 Agendamentos" if agenda_tab else "🔥 Interessados") }} <span class="unread-total {{ 'zero' if not status_counts.interesse }}" data-status="interesse">{{ status_counts.interesse }}</span></a>
+    <a data-reset-scroll class="tab-hot {{ 'on' if tab == 'interesse' }}" href="{{ path }}?lidas=&aviso=interesse" title="{{ 'Leads na etapa Proposta enviada e os que já receberam a proposta pela conversa (mensagem com “proposta” e link ou arquivo)' if consultive else ('Leads na etapa Agendamento (visita marcada)' if agenda_tab else ('Leads na etapa Negociando' if has_feature(tenant, 'interessados_negociando') else 'Viram o preço e responderam com interesse (“como faço?”, “qual o pix?”): follow-up já!')) }}">{{ "📄 Propostas" if consultive else ("📅 Agendamentos" if agenda_tab else "🔥 Interessados") }} <span class="unread-total {{ 'zero' if not status_counts.interesse }}" data-status="interesse">{{ status_counts.interesse }}</span></a>
     {% if not consultive %}<a data-reset-scroll class="tab-sale {{ 'on' if tab == 'venda' }}" href="{{ path }}?lidas=&aviso=venda" title="Comprovante que o CRM não confirmou sozinho, ou cliente que disse que vem buscar / paga na entrega: marque Ganho ou Perdido">💰 Venda a confirmar <span class="unread-total {{ 'zero' if not status_counts.venda }}" data-status="venda">{{ status_counts.venda }}</span></a>{% endif %}
   </nav>
   {# filtros extras: numa gaveta; quando tem algum ligado, o botão fica amarelo e aparecem as etiquetas #}
@@ -135,8 +135,10 @@
             <span class="muted">{{ selected_lead.phone }} · {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "sem vendedor" }}</span>
           </div>
         </div>
+        {% set not_sales = selected_lead.tag in ("time", "outro") and not selected_lead.is_group %}{# Time/Outro: fora do funil #}
         {% if selected_lead.is_group %}<div class="muted" style="font-size:.76rem">👥 Grupo de WhatsApp — não conta como lead</div>{% endif %}
-        {% if stages %}
+        {% if not_sales %}<div class="muted" style="font-size:.76rem">{{ tag_label[selected_lead.tag] }} — fora do funil: não conta como lead, sem etapa e sem valor</div>{% endif %}
+        {% if stages and not not_sales %}
         <form class="stage-bar" id="stageBar" data-lead="{{ selected_lead.id }}">
           <label>Etapa
             <select name="stage_id">
@@ -180,7 +182,7 @@
         {% if selected_lead.calls_total and not private_view %}<div>{{ m.calls_badge(selected_lead) }}</div>{% endif %}
         {{ m.tempo_atendimento(selected_lead, closed=closed, compact=True) }}
         {{ m.followup_tags(selected_lead) }}
-        {% if selected_lead.quoted_value and not closed %}<div class="muted quoted">💰 Último valor enviado: R$ {{ "{:,.2f}".format(selected_lead.quoted_value).replace(",", "X").replace(".", ",").replace("X", ".") }} ({{ selected_lead.quoted_at|hora("%d/%m %H:%M") }})</div>{% endif %}
+        {% if selected_lead.quoted_value and not closed and not not_sales %}<div class="muted quoted">💰 Último valor enviado: R$ {{ "{:,.2f}".format(selected_lead.quoted_value).replace(",", "X").replace(".", ",").replace("X", ".") }} ({{ selected_lead.quoted_at|hora("%d/%m %H:%M") }})</div>{% endif %}
         {% endif %}
         {% if active_conversation %}
         {% set active_number = active_conversation.whatsapp_number %}

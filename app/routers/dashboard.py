@@ -1148,6 +1148,19 @@ INBOX_AVISOS = [
 ]
 
 
+def _proposals_condition(db: Session, tenant: Tenant, stages: list, is_open):
+    """📄 Propostas (venda consultiva): leads na etapa Proposta enviada e os em aberto, antes dela, pra quem o
+    time já mandou a proposta pela conversa (mensagem nossa com "proposta" e um link ou um arquivo)."""
+    target = funnel.negotiation_stage(stages)
+    in_stage = Lead.stage_id == getattr(target, "id", None)
+    before = [st.id for st in stages if target is not None and st.order < target.order and not st.is_won and not st.is_lost]
+    sent = (db.query(Conversation.lead_id).join(Message, Message.conversation_id == Conversation.id)
+            .filter(Conversation.tenant_id == tenant.id, Message.direction == "out",
+                    func.lower(Message.body).like("%proposta%"),
+                    or_(func.lower(Message.body).like("%http%"), Message.media_type == "document")))
+    return or_(in_stage, and_(is_open, Lead.stage_id.in_(before), Lead.id.in_(sent)))
+
+
 def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
     """Condição SQL pros avisos pendentes (mesmas regras de quando o aviso aparece na conversa)."""
     stages = funnel._stages(db, tenant.id)
@@ -1161,7 +1174,9 @@ def _aviso_condition(db: Session, tenant: Tenant, aviso: str):
         "outro": and_(Lead.suggest_kind == "outro", Lead.tag.notin_(NOT_SALES_TAGS)),
         "comprovante": and_(Lead.receipt_status.in_(("pending", "auto")), Lead.stage_id.notin_([st.id for st in stages if st.is_lost])),
         "sem_motivo": and_(Lead.stage_id.in_([st.id for st in stages if st.is_lost]), or_(Lead.loss_reason.is_(None), Lead.loss_reason == "")),
-        "interesse": (Lead.stage_id == getattr(funnel.negotiation_stage(stages), "id", None)
+        "interesse": (_proposals_condition(db, tenant, stages, is_open)  # venda consultiva: aba 📄 Propostas
+                      if segments.segment_for(tenant).get("consultive")
+                      else Lead.stage_id == getattr(funnel.negotiation_stage(stages), "id", None)
                       if features.has(tenant, "interessados_negociando") or features.has(tenant, "agendamentos")  # aba vira 📅 Agendamentos
                       else and_(Lead.interest_at.isnot(None), is_open)),
         # 💰 venda a confirmar: comprovante que o CRM não confirmou sozinho, ou "vou buscar / pago na entrega / pode separar"
@@ -1221,7 +1236,7 @@ def _inbox_query(
     elif status == "followup":
         query = query.filter(followup.followup_condition(tenant, funnel._stages(db, tenant.id)))
     elif status == "parados":
-        query = query.filter(followup.stale_condition(funnel._stages(db, tenant.id)))
+        query = query.filter(followup.stale_condition(funnel._stages(db, tenant.id), tenant))
     if etapa:
         query = query.filter(Lead.stage_id == etapa)
     if marca in INBOX_FLAGS:  # 🏷 ⚠️ Problema / 📌 Importante
@@ -2135,7 +2150,7 @@ def _team_columns(
     now = datetime.datetime.utcnow()
     today = local_to_utc(to_local(now).replace(hour=0, minute=0, second=0, microsecond=0))
     stages = funnel._stages(db, tenant.id)
-    fu_cond, stale_cond = followup.followup_condition(tenant, stages), followup.stale_condition(stages)
+    fu_cond, stale_cond = followup.followup_condition(tenant, stages), followup.stale_condition(stages, tenant)
     columns = []
     for seller_id in [s for s in seller_ids if s in people][:TEAM_VIEW_MAX]:
         query, _ = _inbox_query(db, tenant, user, "", "", seller_id)

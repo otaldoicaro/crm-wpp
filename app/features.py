@@ -29,12 +29,14 @@ FEATURES = {
                        "“Selecionar várias” (cada lead fica com quem atendeu)",
     "lixeira_apaga": "🗑️ Lixeira com prazo: lead excluído fica na Lixeira por 30 dias (dá pra restaurar) e depois é apagado de vez, "
                      "com a conversa",
+    "sem_prazos": "⏰ Sem alertas de prazo (venda longa): some o “⏰ há X dias na etapa”, o “📞 follow-up · sem resposta” e o "
+                  "“pode marcar Perdido” dos cards e das conversas, e esses leads saem dos filtros de atrasados",
     "transcrever_audios": "🎙️ Transcrever os áudios do WhatsApp (o texto aparece embaixo do áudio e entra nas regras "
                           "automáticas e na busca). Custo no Groq: ~US$ 0,04 por hora de áudio",
 }
 DEFAULTS_BY_SEGMENT = {
     "seminovos": ("pagamento_parcelado", "visita_negociando"),
-    "agencia": ("funil_manual", "interessados_negociando", "lixeira_apaga"),
+    "agencia": ("funil_manual", "interessados_negociando", "lixeira_apaga", "sem_prazos"),
 }
 
 

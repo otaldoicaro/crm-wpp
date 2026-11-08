@@ -20,7 +20,10 @@ from typing import Optional
 from sqlalchemy import and_, or_
 
 from app.models import Lead, Message, PipelineStage, Tenant
+from app import features
 from app.services import funnel
+
+NOT_SALES = ("outro", "time")  # = inbox_state.NOT_SALES_TAGS (contato que não é venda)
 
 NEAR = 0.75  # a partir de 75% do prazo: amarelo
 
@@ -88,12 +91,12 @@ def asks_price(text: str) -> bool:
 def on_inbound_text(db, lead: Lead, body: str) -> None:
     """Cliente perguntou o preço ("valor?", "quanto custa?"): lead vai pra Qualificado (se ainda
     não passou de lá). Só avança, nunca volta."""
-    if lead.is_group:
+    if lead.is_group or lead.tag in NOT_SALES:  # Time/Outro não é venda
         return
     from app.services import car_deal
 
     car_deal.on_text(db, lead, body, outbound=False)  # seminovos: "vou passar aí" -> Negociando
-    if not asks_price(body):
+    if not asks_price(body) or features.has(lead.tenant, "funil_manual"):  # funil manual: o vendedor muda a etapa
         return
     stages = funnel._stages(db, lead.tenant_id)
     target = funnel.stage_named(stages, "Qualificado", "Qualificados")
@@ -129,13 +132,15 @@ def state(lead: Lead) -> dict:
     out = {"stale": None, "followup": None, "next": None}
     if lead.is_group or not _open(stage):
         return out
+    tenant = lead.tenant
+    if lead.tag in NOT_SALES or features.has(tenant, "sem_prazos"):  # Time/Outro não é venda; venda longa sem prazos
+        return out
     now = _now()
     if stage.sla_hours and lead.stage_entered_at:
         spent = now - lead.stage_entered_at
         limit = datetime.timedelta(hours=stage.sla_hours)
         if spent >= limit * NEAR:
             out["stale"] = {"for": spent, "late": spent >= limit, "stage": stage.name}
-    tenant = lead.tenant
     ours_last = lead.last_outbound_at and (lead.last_inbound_at is None or lead.last_outbound_at > lead.last_inbound_at)
     if ours_last and now - lead.last_outbound_at >= datetime.timedelta(hours=tenant.followup_hours or 24):
         out["followup"] = {"for": now - lead.last_outbound_at, "attempts": max(lead.unanswered_outs or 1, 1)}
@@ -150,7 +155,9 @@ def state(lead: Lead) -> dict:
 
 # ---------- filtros (SQL) pra listas: Pipeline "só atrasados", Inbox, visão da equipe ----------
 
-def stale_condition(stages: list):
+def stale_condition(stages: list, tenant: Optional[Tenant] = None):
+    if tenant is not None and features.has(tenant, "sem_prazos"):
+        return Lead.id.is_(None)
     now = _now()
     parts = [
         and_(Lead.stage_id == st.id, Lead.stage_entered_at < now - datetime.timedelta(hours=st.sla_hours))
@@ -161,6 +168,8 @@ def stale_condition(stages: list):
 
 
 def followup_condition(tenant: Tenant, stages: list):
+    if features.has(tenant, "sem_prazos"):
+        return Lead.id.is_(None)
     open_ids = [st.id for st in stages if not st.is_won and not st.is_lost]
     return and_(
         Lead.is_group.is_(False),
@@ -183,7 +192,7 @@ def next_step_condition(tenant: Tenant, stages: list):
 
 def late_condition(tenant: Tenant, stages: list):
     """"Só atrasados": parado na etapa, follow-up pendente ou próximo contato vencido."""
-    return or_(stale_condition(stages), followup_condition(tenant, stages), next_step_condition(tenant, stages))
+    return or_(stale_condition(stages, tenant), followup_condition(tenant, stages), next_step_condition(tenant, stages))
 
 
 # ---------- valor enviado -> Negociando ----------
@@ -191,7 +200,7 @@ def late_condition(tenant: Tenant, stages: list):
 def on_outbound_text(db, lead: Lead, body: str) -> None:
     """Mensagem do time com preço: guarda o valor e leva o lead pra Negociando (se ainda não
     passou de lá)."""
-    if lead.is_group:
+    if lead.is_group or lead.tag in NOT_SALES:  # Time/Outro: valor na conversa não é preço de venda
         return
     from app.services import car_deal
 

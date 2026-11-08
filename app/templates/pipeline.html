@@ -48,7 +48,7 @@
     <select name="ordem" onchange="this.form.submit()" aria-label="Ordem dos cards" title="Ordem de todas as colunas (cada coluna também tem a sua, no topo dela)">
       {% for key, label in order_labels %}<option value="{{ key }}" {{ "selected" if ordem == key }}>↕ {{ label }}</option>{% endfor %}
     </select>
-    {% set consultive = segment_for(tenant).consultive %}{# venda consultiva: só o filtro ⭐ Favoritas #}
+    {% set consultive = segment_for(tenant).consultive %}{% set card_enxuto = segment_for(tenant).card_enxuto %}{# venda consultiva: só o filtro ⭐ Favoritas #}
     {% if not consultive %}
     <label class="pill late-toggle {{ 'pill-on' if atrasados }}" title="Só leads parados na etapa além do prazo, com follow-up pendente ou próximo contato vencido">
       <input type="checkbox" name="atrasados" value="1" {{ "checked" if atrasados }} onchange="this.form.submit()" hidden> {{ "✕ " if atrasados }}⚠️ Só atrasados
@@ -108,8 +108,12 @@
         {% if lead.attribution and lead.attribution.utm_campaign %}
           <div class="campaign" title="{{ lead.attribution.utm_campaign }}">{{ lead.attribution.utm_campaign }}</div>
         {% endif %}
+        {% if card_enxuto %}{# só canal, ⏳ aguardando, dia e vendedor (segments.py "card_enxuto") #}
+        {{ m.tempo_atendimento(lead, closed=stage.is_won or stage.is_lost, compact=True) }}
+        {% else %}
         {{ m.tempo_atendimento(lead, closed=stage.is_won or stage.is_lost) }}
         {{ m.followup_tags(lead) }}
+        {% endif %}
         <div class="foot">
           <span>{{ lead.created_at|hora("%d/%m") }}</span>
           {% if lead.assigned_user %}<span>{{ lead.assigned_user.name }}</span>{% endif %}

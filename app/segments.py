@@ -157,6 +157,7 @@ SEGMENTS = {
         "stage_removed": {"Triagem (R1)": "Em atendimento"},
         # venda consultiva: Pipeline só com o filtro ⭐ Favoritas; Inbox sem "Venda a confirmar" e sem
         # "Follow-up interessado" (preço/comprovante), e a aba 🔥 vira 📄 Propostas (etapa Proposta enviada)
+        "card_enxuto": True,  # card do Pipeline só com canal, ⏳ aguardando, dia e vendedor
         "consultive": True,
         "lead_profile": LEAD_PROFILE_AGENCIA,  # 📋 ficha do lead (empresa, faturamento, nichos, serviços vendidos)
         # menu: Equipe e WhatsApp numa aba só ("Equipe", com sub-abas) e Tráfego fora do Dashboard (aba própria)
