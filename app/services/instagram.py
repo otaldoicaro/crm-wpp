@@ -8,7 +8,8 @@ A conta do Instagram do cliente fica guardada como uma "conexão" na mesma tabel
 - access_token = token de longa duração (60 dias), renovado sozinho 1x por dia (refresh_all);
 - o contato vira Lead com phone = "ig:<id da pessoa no Instagram>".
 
-Limites da Meta: só dá pra responder até 24h depois da última mensagem da pessoa; texto até 1000
+Limites da Meta: só dá pra responder até 24h depois da última mensagem da pessoa (até 7 dias quando
+quem responde é uma pessoa do time e a Meta aprovou o recurso "Human Agent" do app); texto até 1000
 caracteres; arquivo (foto/áudio) ainda não sai pelo CRM, só pelo app do Instagram.
 """
 
@@ -86,20 +87,38 @@ def friendly(exc: Exception) -> str:
     text = str(exc).lower()
     logger.warning("instagram: %s", exc)
     if "window" in text:
-        return "passou de 24h da última mensagem do cliente no Instagram (regra da Meta). Responda pelo app do Instagram"
+        return ("passou do prazo da Meta pra responder pelo CRM (24h da última mensagem do cliente; 7 dias quando o "
+                "recurso \"Agente humano\" estiver aprovado no app). Responda pelo app do Instagram")
     if "token" in text or "session" in text or "oauth" in text:
         return "a conexão com o Instagram expirou. Um admin precisa conectar de novo em ⚙ Configurações → Integrações"
     return "o Instagram recusou o envio. Tente de novo; se continuar, responda pelo app do Instagram"
 
 
-def send_text(number, contact: str, body: str) -> tuple:
-    """(ok, id da mensagem, erro)."""
+def _outside_window(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "window" in text or "outside of allowed" in text or "24 hour" in text
+
+
+def send_text(number, contact: str, body: str, human: bool = False) -> tuple:
+    """(ok, id da mensagem, erro).
+    human=True (uma pessoa do time escreveu agora): se passou das 24h, tenta de novo com a marca
+    HUMAN_AGENT, que a Meta aceita até 7 dias depois da última mensagem do cliente. Só funciona depois
+    que a Meta aprovar o recurso "Human Agent" do app; antes disso a Meta recusa e o time responde pelo
+    app do Instagram. Nunca usar em mensagem automática (regra da Meta)."""
     igsid = contact[len(PREFIX):] if is_ig_contact(contact) else contact
+    message = {"recipient": {"id": igsid}, "message": {"text": body[:1000]}}
     try:
-        data = _post("me/messages", number.access_token, json={"recipient": {"id": igsid}, "message": {"text": body[:1000]}})
+        data = _post("me/messages", number.access_token, json=message)
         return True, data.get("message_id", ""), ""
     except (InstagramError, requests.RequestException) as exc:
-        return False, "", friendly(exc)
+        if not (human and isinstance(exc, InstagramError) and _outside_window(exc)):
+            return False, "", friendly(exc)
+        logger.info("instagram: fora das 24h, tentando como agente humano")
+    try:
+        data = _post("me/messages", number.access_token, json={**message, "messaging_type": "MESSAGE_TAG", "tag": "HUMAN_AGENT"})
+        return True, data.get("message_id", ""), ""
+    except (InstagramError, requests.RequestException) as exc:
+        return False, "", friendly(InstagramError(f"window: {exc}"))
 
 
 def profile(number, igsid: str) -> dict:

@@ -2481,7 +2481,7 @@ def reply_lead(
         if owner is None or owner.lead_id != lead.id or not quoted.wa_message_id or owner not in handover.visible_conversations(lead, user):
             quoted = None
     quote = {"id": quoted.wa_message_id, "from_me": quoted.direction == "out", "text": quoted.body} if quoted else None
-    ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, body, quote)  # tenta com e sem o 9º dígito
+    ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, body, quote, human=True)  # tenta com e sem o 9º dígito
     if ok is not False and used != lead.phone:
         lead.phone = used
     if ok is None:

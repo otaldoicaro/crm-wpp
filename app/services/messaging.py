@@ -47,8 +47,9 @@ def _healing(number: WhatsAppNumber, send):
     return send()
 
 
-def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dict] = None) -> tuple:
+def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dict] = None, human: bool = False) -> tuple:
     """Devolve (ok, id_da_mensagem_no_whatsapp, messageSecret). quote: ver evolution_client.send_text.
+    human=True: foi uma pessoa do time que escreveu agora (Instagram: pode usar a marca de agente humano, até 7 dias).
     ok=None: o Evolution não respondeu a tempo (servidor lento) — pode ter saído; a confirmação
     chega depois pelo webhook (inbound.record_outbound_from_phone casa com a mensagem)."""
     _last.no_whatsapp = False
@@ -56,7 +57,7 @@ def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dic
         if number.provider != instagram.PROVIDER:  # contato do Direct não tem WhatsApp
             _last.error = "esse contato veio pelo Instagram: responda pela conversa do Direct"
             return False, "", ""
-        ok, mid, error = instagram.send_text(number, phone, body)
+        ok, mid, error = instagram.send_text(number, phone, body, human=human)
         _last.error = error
         return ok, mid, ""
     if number.provider == "evolution":
@@ -76,11 +77,11 @@ def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dic
 NO_WHATSAPP = "esse número não tem WhatsApp (tentamos com e sem o 9º dígito). Confira o número com o cliente ou ligue"
 
 
-def send_text_any(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dict] = None) -> tuple:
+def send_text_any(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dict] = None, human: bool = False) -> tuple:
     """send_text, mas se o WhatsApp disser que o número não existe, tenta com e sem o 9º dígito
     (muita gente digita o celular sem o 9, ou o WhatsApp antigo dela está sem ele).
     Devolve (ok, id, messageSecret, telefone que funcionou)."""
-    ok, wa_id, secret = send_text(number, phone, body, quote)
+    ok, wa_id, secret = send_text(number, phone, body, quote, human=human)
     if ok is not False or not getattr(_last, "no_whatsapp", False) or instagram.is_ig_contact(phone):
         return ok, wa_id, secret, phone
     from app.services.attribution import _phone_variants
