@@ -477,7 +477,7 @@ def _start_numbers(db: Session, tenant: Tenant, user: User, lead: Lead) -> list:
     numbers = [
         n for n in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
         .order_by(WhatsAppNumber.label)
-        if n.provider != "evolution" or n.connection_state == "open"
+        if n.provider != "instagram" and (n.provider != "evolution" or n.connection_state == "open")
     ]
     if user.role != "admin":
         numbers = [n for n in numbers if n.owner_user_id == user.id]
@@ -759,7 +759,8 @@ def settings_page(
             "capi_events": db.query(ConversionEvent).filter(ConversionEvent.tenant_id == tenant.id, ConversionEvent.platform == "meta")
             .order_by(ConversionEvent.created_at.desc()).limit(12).all(),
             "capi_msg": request.query_params.get("capi", ""),
-            "wa_numbers": db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
+            "wa_numbers": db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True),
+                                                         WhatsAppNumber.provider != "instagram")
             .order_by(WhatsAppNumber.label).all(),
         })
     return templates.TemplateResponse(request, "configuracoes.html", ctx)
@@ -942,7 +943,8 @@ async def save_whatsapp_waba(
             tenant.meta_wa_token = new_token
             for number in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id):
                 number.meta_waba_checked_at = None
-        numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True)).all()
+        numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True),
+                                                  WhatsAppNumber.provider != "instagram").all()
         found_for: dict = {}
         if form.get("acao") == "descobrir":  # 🔎 o próprio token diz quais WABAs enxerga e os números de cada um
             ok, msg, found = meta_capi.discover_wabas(tenant)
@@ -1436,7 +1438,8 @@ def _inbox_context(
                 .filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
                 .order_by(WhatsAppNumber.label)
                 .all()
-                if n.id != active_conversation.whatsapp_number_id
+                if n.id != active_conversation.whatsapp_number_id and n.provider != "instagram"
+                and not selected_lead.phone.startswith("ig:")
                 and (n.provider != "evolution" or n.connection_state == "open")
             ]
 
@@ -1915,7 +1918,7 @@ def _transfer(db: Session, tenant: Tenant, user: User, lead: Lead, target: User,
     for conversation in lead.conversations:
         conversation.assigned_user_id = target.id
     note = f"↪ Transferido de {previous} para {target.name} por {user.name}"
-    if trocar_numero:
+    if trocar_numero and not (lead.phone or "").startswith("ig:"):  # 📸 Direct não troca pra WhatsApp
         number = (
             db.query(WhatsAppNumber)
             .filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.owner_user_id == target.id, WhatsAppNumber.is_active.is_(True))
@@ -2446,7 +2449,7 @@ def get_media(
     content, mime_type = media_store.load(message.media_stored_key)
     if content is None:
         number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
-        content, mime_type = messaging.fetch_media(number, message.media_id)
+        content, mime_type = messaging.fetch_media(number, message.media_id, message.media_url)
     if content is None:
         raise HTTPException(status_code=404, detail="Mídia indisponível (expirou ou o número foi desconectado)")
 
@@ -3321,7 +3324,8 @@ def dashboard_view(
             "top_sold": products.top_sold(db, won_leads) if heavy else None,
             "canal": canal,
             "channel_options": channels.CHANNELS,
-            "wa_numbers": db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
+            "wa_numbers": db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True),
+                                                         WhatsAppNumber.provider != "instagram")
             .order_by(WhatsAppNumber.label).all() if aba == "integracoes" and is_admin else [],
         },
     )

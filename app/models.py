@@ -149,7 +149,8 @@ class WhatsAppNumber(Base):
     """Um número de WhatsApp conectado ao tenant. Dois tipos (`provider`):
     - "cloud_api": API oficial da Meta (usa waba_phone_number_id + access_token)
     - "evolution": Evolution API não-oficial, pareada por QR code (usa evolution_instance);
-      o número continua funcionando no app nativo do celular ao mesmo tempo."""
+      o número continua funcionando no app nativo do celular ao mesmo tempo.
+    - "instagram": Direct do Instagram (services/instagram.py), sem telefone: nunca manda WhatsApp."""
 
     __tablename__ = "whatsapp_numbers"
 
@@ -183,6 +184,8 @@ class WhatsAppNumber(Base):
     # 📤 número de disparo: só manda a 1ª mensagem pros leads do formulário (rodízio entre eles); fica fora
     # do link /go e do rodízio de vendedor. Com algum marcado, o WhatsApp do vendedor/loja nunca faz 1º contato
     dispatch: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 📸 conta do Instagram (provider="instagram", services/instagram.py): quando o token foi renovado
+    token_renewed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="whatsapp_numbers")

@@ -132,7 +132,7 @@
           {{ m.avatar(selected_lead) }}
           <div class="info">
             <div class="name">{{ selected_lead.name or selected_lead.phone }}</div>
-            <span class="muted">{{ selected_lead.phone }} · {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "sem vendedor" }}</span>
+            <span class="muted">{{ selected_lead.phone|contato }} · {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "sem vendedor" }}</span>
           </div>
         </div>
         {% set not_sales = selected_lead.tag in ("time", "outro") and not selected_lead.is_group %}{# Time/Outro: fora do funil #}
@@ -169,7 +169,7 @@
       <div class="head-summary">
         <div class="head-chips">
           {% if agenda_on %}{{ m.agenda_chip(selected_lead) }}{% endif %}
-          {{ m.platform_badge(platform, platform_label) }}
+          {{ m.platform_badge(platform, platform_label, selected_lead.source) }}
           {% if not selected_lead.is_group %}
           {% if selected_lead.tag %}<span class="tag-pill">{{ tag_label[selected_lead.tag] }}</span>{% endif %}
           {% if deal_info and deal_info.recurring %}

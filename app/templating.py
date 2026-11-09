@@ -140,6 +140,21 @@ def _fone(phone: str) -> str:
 templates.env.filters["fone"] = _fone
 
 
+def _ig_info(tenant) -> dict:
+    """📸 Card do Instagram em ⚙ Configurações → Integrações."""
+    from app.services import instagram
+    from app.tenancy import public_url
+
+    account = next((n for n in tenant.whatsapp_numbers if n.provider == instagram.PROVIDER and n.is_active), None)
+    return {"account": account, "callback": f"{public_url(tenant)}/webhooks/instagram", "verify": instagram.verify_token(),
+            "lp": f"{public_url(tenant)}/webhooks/lp/{tenant.id}"}
+
+
+templates.env.globals["ig_info"] = _ig_info
+# 📸 contato do Direct do Instagram ("ig:<id>"): aparece como "📸 Instagram" no lugar do telefone
+templates.env.filters["contato"] = lambda phone: "📸 Instagram" if (phone or "").startswith("ig:") else (phone or "")
+
+
 def _recados_pending(user) -> int:
     """💬 Recados esperando resposta desta pessoa (número vermelho na barra de cima)."""
     from app.db import SessionLocal

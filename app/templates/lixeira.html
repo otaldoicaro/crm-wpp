@@ -22,8 +22,8 @@
     <tbody>
     {% for lead in leads %}
       <tr>
-        <td><b>{{ lead.name or "(sem nome)" }}</b><div class="muted show-sm">{{ lead.phone }}</div></td>
-        <td class="hide-sm muted">{{ lead.phone or lead.email }}</td>
+        <td><b>{{ lead.name or "(sem nome)" }}</b><div class="muted show-sm">{{ lead.phone|contato }}</div></td>
+        <td class="hide-sm muted">{{ (lead.phone or lead.email)|contato }}</td>
         <td>{{ lead.deleted_by.name if lead.deleted_by else "—" }}</td>
         <td>{{ lead.deleted_at|hora("%d/%m/%Y %H:%M") }}</td>
         {% if has_feature(tenant, "lixeira_apaga") %}<td class="hide-sm muted">{{ purge_date(lead)|hora("%d/%m/%Y") }}</td>{% endif %}

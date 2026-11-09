@@ -23,6 +23,7 @@ from app.routers import (
     webhooks_whatsapp,
     whatsapp_connect,
 )
+from app.routers import instagram as instagram_router
 from app.tenancy import DEBUG, is_known_host
 
 logging.basicConfig(level=logging.INFO)
@@ -48,7 +49,10 @@ wa_health.schedule()  # 🩺 confere os WhatsApps a cada 5 min e religa sozinho 
 evolution_client.refresh_webhooks()  # eventos novos do webhook (📞 ligações) valem sem reconectar
 from app.services.conversions import queue as conversions_queue  # noqa: E402
 
-conversions_queue.schedule()  # 📤 eventos do CRM pro Meta (por cliente)  # recupera do Evolution mensagens que escaparam (a cada 5 min, última 1h)  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)
+conversions_queue.schedule()
+from app.services import instagram as _instagram  # noqa: E402
+
+_instagram.schedule()  # 📸 renova o token das contas do Instagram conectadas  # 📤 eventos do CRM pro Meta (por cliente)  # recupera do Evolution mensagens que escaparam (a cada 5 min, última 1h)  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)
 webhooks_evolution.clean_legacy_placeholders()
 with SessionLocal() as _db:
     response_times.backfill(_db)
@@ -131,6 +135,7 @@ app.include_router(admin_setup.router)
 app.include_router(webhooks_whatsapp.router)
 app.include_router(webhooks_evolution.router)
 app.include_router(webhooks_site.router)
+app.include_router(instagram_router.router)
 app.include_router(bridge.router)
 app.include_router(auth_router.router)
 app.include_router(dashboard.router)

@@ -84,7 +84,7 @@ def check_message(message_id: str, rules: bool = True) -> str:
         content, mime = media_store.load(message.media_stored_key)
         if content is None:
             number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
-            content, mime = messaging.fetch_media(number, message.media_id)
+            content, mime = messaging.fetch_media(number, message.media_id, message.media_url)
         if not content:
             return ""
         db.close()  # a transcrição leva 1-2 s: não segura conexão do banco

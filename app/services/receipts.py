@@ -282,7 +282,7 @@ def check_message(message_id: str) -> None:
         content, mime = media_store.load(message.media_stored_key)
         if content is None:
             number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
-            content, mime = messaging.fetch_media(number, message.media_id)
+            content, mime = messaging.fetch_media(number, message.media_id, message.media_url)
         if not content:
             return
         store = lead.tenant.name

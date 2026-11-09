@@ -5,7 +5,7 @@
 </div>
 <div class="team-thread-who">
   <b>{{ lead.name or lead.phone }}</b>{% if lead.tag %} <span class="tag-badge {{ lead.tag }}">{{ "Cliente" if lead.tag == "cliente" else "Outro" }}</span>{% endif %}
-  <div class="muted">{{ lead.phone }}</div>
+  <div class="muted">{{ lead.phone|contato }}</div>
   {{ m.tempo_atendimento(lead, closed=closed) }}
   {{ m.followup_tags(lead) }}
   {% with voltar_url="" %}{% include "_receipt_banner.html" %}{% include "_suggest_banner.html" %}{% endwith %}

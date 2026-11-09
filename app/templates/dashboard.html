@@ -690,10 +690,10 @@
       <tr style="cursor:pointer" onclick="window.location='{{ '/inbox/' if lead.id in with_chat else '/leads/' }}{{ lead.id }}'">
         {% if is_admin %}<td class="check-col" onclick="event.stopPropagation()"><input type="checkbox" class="lead-check" name="lead_ids" value="{{ lead.id }}" data-name="{{ lead.name or lead.phone or '(sem nome)' }}"></td>{% endif %}
         <td>{{ lead.created_at|hora("%d/%m %H:%M") }}</td>
-        <td>{{ m.platform_badge(lead_platforms[lead.id], platform_labels[lead_platforms[lead.id]]) }}</td>
+        <td>{{ m.platform_badge(lead_platforms[lead.id], platform_labels[lead_platforms[lead.id]], lead.source) }}</td>
         <td class="muted">{{ (lead.attribution.utm_campaign if lead.attribution else "") or "—" }}</td>
         <td>{{ lead.name or "(sem nome)" }}</td>
-        <td class="muted">{{ lead.phone or lead.email }}</td>
+        <td class="muted">{{ (lead.phone or lead.email)|contato }}</td>
         <td>{{ stage_by_id[lead.stage_id].name if lead.stage_id in stage_by_id else "—" }}{% if lead.stage_id in stage_by_id and stage_by_id[lead.stage_id].is_lost and lead.loss_reason %}<div class="muted" style="font-size:.72rem" title="{{ lead.loss_detail }}">{{ lead.loss_reason }}{{ " · " ~ lead.loss_detail[:60] if lead.loss_detail }}</div>{% endif %}</td>
         <td>{% if lead.deal_value %}<b>R$ {{ "{:,.0f}".format(lead.deal_value).replace(",", ".") }}</b>{% else %}<span class="muted">—</span>{% endif %}</td>
       </tr>

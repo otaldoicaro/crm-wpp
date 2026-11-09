@@ -27,7 +27,7 @@
     {% if selected %}
     <div class="recado-head">
       <div><b style="font-size:1.05rem">{{ selected.name or selected.phone }}</b>
-        <div class="muted">{{ selected.phone }} · {{ selected.assigned_user.name if selected.assigned_user else "sem vendedor" }}{% if selected.stage %} · {{ selected.stage.name }}{% endif %}</div></div>
+        <div class="muted">{{ selected.phone|contato }} · {{ selected.assigned_user.name if selected.assigned_user else "sem vendedor" }}{% if selected.stage %} · {{ selected.stage.name }}{% endif %}</div></div>
       <a class="btn small" href="/inbox/{{ selected.id }}">Abrir conversa do lead →</a>
     </div>
     {% with lead=selected, comments=thread, voltar="/recados?lead=" ~ selected.id %}{% include "_lead_comments.html" %}{% endwith %}

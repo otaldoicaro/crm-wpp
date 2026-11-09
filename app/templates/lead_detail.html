@@ -17,7 +17,7 @@
   <div class="card" style="flex:2; min-width:320px;">
     <h2 style="display:flex; align-items:center; gap:10px;">
       {{ lead.name or "(sem nome)" }}
-      {{ m.platform_badge(platform, platform_label) }}
+      {{ m.platform_badge(platform, platform_label, lead.source) }}
     </h2>
 
     <form method="post" action="/leads/{{ lead.id }}/update" id="leadForm">

@@ -17,6 +17,8 @@ from app.services.inbox_state import NOT_SALES_TAGS
 
 
 def usable(number: Optional[WhatsAppNumber]) -> bool:
+    if number is not None and number.provider == "instagram":  # 📸 Direct: manda enquanto estiver conectado
+        return number.is_active and bool(number.access_token)
     return (number is not None and number.is_active and bool(number.phone_number)
             and (number.provider != "evolution" or number.connection_state == "open"))
 
@@ -26,16 +28,16 @@ def own_number(db, user_id: Optional[str], tenant_id: str) -> Optional[WhatsAppN
     if not user_id:
         return None
     return next((n for n in db.query(WhatsAppNumber).filter(
-        WhatsAppNumber.tenant_id == tenant_id, WhatsAppNumber.owner_user_id == user_id, WhatsAppNumber.is_active.is_(True))
-        if usable(n)), None)
+        WhatsAppNumber.tenant_id == tenant_id, WhatsAppNumber.owner_user_id == user_id, WhatsAppNumber.is_active.is_(True),
+        WhatsAppNumber.provider != "instagram") if usable(n)), None)
 
 
 def next_number(db, lead: Lead) -> Optional[WhatsAppNumber]:
     """Pra qual WhatsApp a conversa precisa passar antes da próxima mensagem (None = fica como está)."""
     conv = lead.active_conversation
     current = conv.whatsapp_number if conv is not None else None
-    if conv is None or usable(current):
-        return None
+    if conv is None or usable(current) or (current is not None and current.provider == "instagram"):
+        return None  # 📸 conversa do Instagram fica no Instagram (não dá pra continuar no WhatsApp sem telefone)
     if current is not None and current.is_active and current.owner_user_id == lead.assigned_user_id:
         return None  # é do próprio vendedor e só caiu: reconectar resolve
     target = own_number(db, lead.assigned_user_id, lead.tenant_id)

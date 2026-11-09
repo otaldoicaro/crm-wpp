@@ -48,6 +48,31 @@ document.addEventListener("submit", function (e) {
     </table>
     {% endif %}
   </details>
+  {% set ig = ig_info(tenant) %}
+  <details class="traffic-accounts capi-box" id="instagram" {{ "open" if request.query_params.get("ig") }}>
+    <summary><b>📸 Direct do Instagram</b> <span class="muted">— {% if ig.account and ig.account.connection_state != "close" %}<b class="goal-ok">conectado</b> · {{ ig.account.label }}{% elif ig.account %}<b class="goal-bad">conexão expirou</b> · conecte de novo{% else %}desconectado{% endif %} · as DMs caem no Inbox e viram card no Pipeline</span></summary>
+    {% if request.query_params.get("ig") %}<p class="capi-msg">{{ request.query_params.get("ig") }}</p>{% endif %}
+    <p class="muted">API oficial da Meta, sem custo por mensagem. Regras da Meta: dá pra responder pelo CRM até <b>24h</b> depois da última mensagem do cliente (depois disso, só pelo app do Instagram); foto/áudio que o cliente manda aparecem aqui, mas arquivo nosso sai só pelo app. Comentários em post não entram, só o Direct.</p>
+    <ol class="muted" style="margin:0 0 10px 18px;padding:0">
+      <li>O Instagram tem que ser <b>conta profissional</b> (Comercial ou Criador de conteúdo).</li>
+      <li>No <b>Meta for Developers</b> → seu app → <b>Instagram</b> → <b>Configuração da API com login do Instagram</b>: em <b>Webhooks</b>, cole a URL e o token abaixo, clique em <b>Verificar e salvar</b> e ative o campo <b>messages</b>.</li>
+      <li>Na mesma página, em <b>Gerar tokens de acesso</b>, adicione a conta do Instagram, clique em <b>Gerar token</b>, copie e cole aqui embaixo.</li>
+    </ol>
+    <table class="table-simple" style="margin-bottom:10px">
+      <tr><td>URL de retorno</td><td><code>{{ ig.callback }}</code></td></tr>
+      <tr><td>Verificar token</td><td><code>{{ ig.verify }}</code></td></tr>
+    </table>
+    <form method="post" action="/configuracoes/instagram" class="capi-form">
+      <label>Token da conta do Instagram <input name="token" type="password" autocomplete="new-password" placeholder="{{ 'já conectado (cole um novo só pra trocar de conta)' if ig.account else 'cole aqui o token gerado no app' }}"></label>
+      <div><button class="btn small" type="submit" name="acao" value="conectar" data-busy="Conectando no Instagram…">{{ "Trocar token / conta" if ig.account else "Conectar Instagram" }}</button>
+      {% if ig.account %}<button class="btn ghost small" type="submit" name="acao" value="desconectar" onclick="return confirm('Desconectar o Instagram? As conversas continuam no CRM, mas mensagens novas do Direct não entram mais.')">Desconectar</button>{% endif %}</div>
+    </form>
+  </details>
+  <details class="traffic-accounts capi-box" id="leadster">
+    <summary><b>💬 Leadster (chat do site)</b> <span class="muted">— cada contato do chat vira lead no CRM, como o formulário da LP</span></summary>
+    <p class="muted">No Leadster: <b>Integrações</b> → <b>Webhook</b> → cole o endereço abaixo e salve. O CRM pega nome, WhatsApp e e-mail (com o nome que o Leadster der pra cada campo), e as outras respostas do chat ficam na ficha do lead.</p>
+    <p><code>{{ ig.lp }}?origem=leadster</code></p>
+  </details>
   <details class="traffic-accounts">
     <summary class="muted">⚙ Contas de anúncio do Meta deste cliente: {{ meta_accounts or "detectando pelos anúncios dos leads…" }}</summary>
     <form method="post" action="/dashboard/meta-contas">

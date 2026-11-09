@@ -74,7 +74,8 @@ def team_page(
         .all()
     )
     # WhatsApps de cada pessoa (conectado primeiro) e os sem dono (número compartilhado)
-    numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True)).all()
+    numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True),
+                                              WhatsAppNumber.provider != "instagram").all()
     numbers.sort(key=lambda n: (n.provider == "evolution" and n.connection_state != "open", n.label.lower()))
     numbers_by_owner: dict = {}
     for n in numbers:

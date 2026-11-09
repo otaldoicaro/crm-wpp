@@ -10,7 +10,7 @@ import re
 from typing import Optional
 
 from app.models import WhatsAppNumber
-from app.services import evolution_client, whatsapp_client
+from app.services import evolution_client, instagram, whatsapp_client
 from app.services.whatsapp_client import media_kind_for_mime  # noqa: F401  (reexportado pro Inbox)
 
 logger = logging.getLogger("messaging")
@@ -52,6 +52,13 @@ def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dic
     ok=None: o Evolution não respondeu a tempo (servidor lento) — pode ter saído; a confirmação
     chega depois pelo webhook (inbound.record_outbound_from_phone casa com a mensagem)."""
     _last.no_whatsapp = False
+    if number.provider == instagram.PROVIDER or instagram.is_ig_contact(phone):
+        if number.provider != instagram.PROVIDER:  # contato do Direct não tem WhatsApp
+            _last.error = "esse contato veio pelo Instagram: responda pela conversa do Direct"
+            return False, "", ""
+        ok, mid, error = instagram.send_text(number, phone, body)
+        _last.error = error
+        return ok, mid, ""
     if number.provider == "evolution":
         try:
             wa_id, secret = _healing(number, lambda: evolution_client.send_text(number.evolution_instance, phone, body, quote))
@@ -74,7 +81,7 @@ def send_text_any(number: WhatsAppNumber, phone: str, body: str, quote: Optional
     (muita gente digita o celular sem o 9, ou o WhatsApp antigo dela está sem ele).
     Devolve (ok, id, messageSecret, telefone que funcionou)."""
     ok, wa_id, secret = send_text(number, phone, body, quote)
-    if ok is not False or not getattr(_last, "no_whatsapp", False):
+    if ok is not False or not getattr(_last, "no_whatsapp", False) or instagram.is_ig_contact(phone):
         return ok, wa_id, secret, phone
     from app.services.attribution import _phone_variants
 
@@ -92,6 +99,8 @@ def send_media(
     number: WhatsAppNumber, phone: str, content: bytes, filename: str, mime_type: str, media_kind: str, caption: str
 ) -> tuple[bool, str, str, str]:
     """Devolve (ok, id_da_mensagem, media_id_pra_guardar, erro, messageSecret)."""
+    if number.provider == instagram.PROVIDER or instagram.is_ig_contact(phone):
+        return False, "", "", "arquivo ainda não sai pelo CRM no Instagram. Mande pelo app do Instagram", ""
     if number.provider == "evolution":
         try:
             if media_kind == "audio":  # vai como mensagem de voz (legenda não existe em áudio)
@@ -129,7 +138,9 @@ def friendly_error(exc: Exception) -> str:
     return "o WhatsApp recusou o envio. Tente de novo; se continuar, avise o admin."
 
 
-def fetch_media(number: WhatsAppNumber, media_id: str) -> tuple[Optional[bytes], Optional[str]]:
+def fetch_media(number: WhatsAppNumber, media_id: str, url: str = "") -> tuple[Optional[bytes], Optional[str]]:
+    if number is not None and number.provider == instagram.PROVIDER:
+        return instagram.fetch_media(url)  # o Instagram manda o link do arquivo (guardado em media_url)
     if number.provider == "evolution":
         return evolution_client.fetch_media(number.evolution_instance, media_id)
     return whatsapp_client.fetch_media(number, media_id)
