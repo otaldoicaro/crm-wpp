@@ -236,6 +236,7 @@ def pipeline_view(
             "sellers": team_members(db, tenant.id),
             "archived_count": archived_count,
             "just_deleted": request.query_params.get("excluido") == "1",
+            "novo_erro": request.query_params.get("novo_erro", "")[:300],
             "stage_colors": _stage_colors(stages),
             "lead_platforms": lead_platforms,
             "platform_labels": PLATFORM_LABEL,
@@ -447,8 +448,70 @@ def lead_detail(
             "lead_messages": handover.visible_messages(lead, user),
             "profile_cfg": lead_profile.config(tenant),
             "profile": lead_profile.load(lead),
+            "lead_origin": lead_profile.origin(lead, lead_profile.config(tenant)),
+            "contract_total": lead_profile.contract_total(lead_profile.load(lead)),
         },
     )
+
+
+@router.post("/leads/novo")
+def create_manual_lead(
+    nome: str = Form(""),
+    empresa: str = Form(""),
+    telefone: str = Form(""),
+    email: str = Form(""),
+    origem: str = Form(""),
+    indicado_por: str = Form(""),
+    vendedor: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """✍️ Cadastra um lead na mão (ainda não está no WhatsApp: indicação, prospecção ativa, evento).
+    Entra em "Lead sem conversa", com o vendedor de quem cadastrou (admin escolhe). Telefone que já é
+    de um lead: abre esse lead em vez de duplicar."""
+    from urllib.parse import quote as _q
+
+    from app.services.attribution import normalize_br_phone
+    from app.services.lead_match import find_lead_by_phone
+
+    if user.read_only:
+        raise HTTPException(status_code=403)
+    nome, email = nome.strip()[:160], email.strip().lower()[:255]
+    if not nome:
+        return RedirectResponse(url="/?novo=1&novo_erro=" + _q("Escreva o nome da pessoa."), status_code=303)
+    phone = normalize_br_phone(telefone)
+    if phone and len(phone) < 12:
+        return RedirectResponse(url="/?novo=1&novo_erro=" + _q("Confira o WhatsApp: precisa do DDD (ex: 14 99999-9999)."), status_code=303)
+    existing = find_lead_by_phone(db, tenant.id, phone) if phone else None
+    if existing is None and email:
+        existing = (db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.email == email, Lead.deleted_at.is_(None))
+                    .order_by(Lead.created_at).first())
+    if existing is not None and existing.deleted_at is None:
+        return RedirectResponse(url=f"/leads/{existing.id}?ja_existe=1", status_code=303)
+
+    seller = user
+    if user.role == "admin" and vendedor:
+        seller = next((p for p in team_members(db, tenant.id, only_active=True) if p.id == vendedor), user)
+    stage = funnel.entry_stage(db, tenant.id, with_chat=False)
+    lead = Lead(tenant_id=tenant.id, name=nome, phone=phone, email=email, source="manual",
+                stage_id=stage.id if stage else None, assigned_user_id=seller.id)
+    cfg = lead_profile.config(tenant)
+    if cfg is not None:
+        profile = {}
+        if empresa.strip():
+            profile["empresa"] = empresa.strip()[:300]
+        origins = next((s["campos"][0][3] for s in cfg.get("secoes") or [] if s["id"] == "origem"), [])
+        if origem in origins:
+            profile["origem"] = origem
+            if indicado_por.strip() and origem == "Indicação de cliente":
+                profile["indicado_por"] = indicado_por.strip()[:300]
+        lead.profile = json.dumps(profile, ensure_ascii=False)
+    if stage is not None:
+        lead.stage_entered_at, lead.reached_order = datetime.datetime.utcnow(), stage.order
+    db.add(lead)
+    db.commit()
+    return RedirectResponse(url=f"/leads/{lead.id}?novo=1#ficha", status_code=303)
 
 
 @router.post("/leads/{lead_id}/ficha")
@@ -1841,7 +1904,7 @@ def answer_suggestion(
             return done("Preencha o valor da venda.")
         lead.deal_value = amount
     elif kind == "perdido":
-        target = next((st for st in stages if st.is_lost), None)
+        target = funnel.lost_stage(stages, lead)
         error = funnel.check_loss(db, lead, target, loss_reason) if target else "Etapa Perdido não encontrada."
         if error:
             return done(error)
@@ -1877,7 +1940,7 @@ def settle_lead(
     back = voltar if voltar.startswith("/") else f"/inbox/{lead_id}"
     note = f"✓ Atendimento encerrado por {user.name} (sem resposta necessária)"
     if resultado == "perdido" and not lead.is_group:
-        lost = next((st for st in funnel._stages(db, tenant.id) if st.is_lost), None)
+        lost = funnel.lost_stage(funnel._stages(db, tenant.id), lead)
         error = funnel.check_loss(db, lead, lost, loss_reason) if lost else "Este funil não tem etapa de perdido"
         if error:
             if ajax:
@@ -2035,6 +2098,26 @@ def lead_flag(
     if ajax:
         return JSONResponse({"ok": True, "on": on})
     return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
+
+
+@router.post("/leads/{lead_id}/tentativa")
+def lead_attempt(
+    lead_id: str,
+    voltar: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """📞 "+ tentativa": o vendedor chamou o cliente por fora (ligação, e-mail...) sem resposta."""
+    lead = _visible_lead(db, tenant, user, lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    response_times.count_attempt(lead, force=True)
+    _add_note(db, lead, f"📞 {user.name} registrou uma tentativa de contato ({response_times.attempt_label(lead)})")
+    db.add(lead)
+    db.commit()
+    back = voltar if voltar.startswith(("/inbox/", "/leads/")) else f"/leads/{lead_id}"
+    return RedirectResponse(url=back, status_code=302)
 
 
 @router.post("/leads/{lead_id}/tag")

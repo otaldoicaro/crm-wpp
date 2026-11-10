@@ -5,6 +5,7 @@ faturamento, verba, nichos), as anotações do vendedor e os serviços vendidos.
 from __future__ import annotations
 
 import json
+import re
 
 from app import segments
 
@@ -74,5 +75,67 @@ def from_form(form, cfg: dict) -> dict:
         else:
             services[key] = True
     data["servicos"] = services
+    for secao in cfg.get("secoes") or []:
+        for campo in secao["campos"]:
+            value = _field(form, campo)
+            if value not in ("", None, False):
+                data[campo[0]] = value
     return data
+
+
+def _money(value: str):
+    """"1.500,00", "1500", "R$ 1.500" → 1500.0 (vazio/inválido → None)."""
+    text = re.sub(r"[^\d,.]", "", str(value or ""))
+    if not text:
+        return None
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    elif text.count(".") > 1 or re.search(r"\.\d{3}$", text):
+        text = text.replace(".", "")
+    try:
+        number = round(float(text), 2)
+    except ValueError:
+        return None
+    return number if number >= 0 else None
+
+
+def _field(form, campo):
+    key, kind = campo[0], campo[2]
+    raw = (form.get(key) or "").strip()
+    if kind == "sim":
+        return bool(raw)
+    if kind == "dinheiro":
+        return _money(raw)
+    if kind == "inteiro":
+        return _int(raw)
+    if kind == "opcao":
+        return raw if raw in campo[3] else ""
+    if kind == "data":
+        return raw if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw) else ""
+    if kind == "doc":
+        return re.sub(r"[^\d./-]", "", raw)[:20]
+    if kind == "longo":
+        return raw[:1000]
+    return raw[:300]
+
+
+def company(lead) -> str:
+    """Nome da empresa da ficha (vazio se não tiver ficha/empresa)."""
+    if not lead.profile:
+        return ""
+    return str(load(lead).get("empresa") or "").strip()
+
+
+def origin(lead, cfg) -> str:
+    """Canal de origem: o que o vendedor marcou, ou o sugerido pelo jeito que o lead chegou."""
+    profile = load(lead)
+    return profile.get("origem") or (cfg or {}).get("origem_por_fonte", {}).get(lead.source or "", "")
+
+
+def contract_total(profile: dict):
+    """Setup + mensalidade × prazo (None se faltar a mensalidade ou o prazo)."""
+    monthly, months = profile.get("mensalidade"), profile.get("prazo_meses")
+    if not monthly or not months:
+        return None
+    return round((profile.get("setup") or 0) + monthly * months, 2)
 

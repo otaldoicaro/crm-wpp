@@ -39,6 +39,20 @@ def negotiation_stage(stages: list) -> Optional[PipelineStage]:
     return stage_named(stages, *NEGOTIATION_NAMES)
 
 
+def lost_stage(stages: list, lead: Optional[Lead] = None) -> Optional[PipelineStage]:
+    """Etapa de perdido pra este lead. Funil com mais de uma (ex: ramo agência: "Lead perdido" e
+    "Proposta perdida"): quem já chegou na etapa de oportunidade (Proposta enviada/Negociando) vai pra
+    última; quem não chegou, pra primeira."""
+    lost = [s for s in stages if s.is_lost]
+    if len(lost) < 2 or lead is None:
+        return lost[0] if lost else None
+    negotiation = negotiation_stage(stages)
+    reached = max(lead.reached_order or 0, lead.stage.order if lead.stage and not lead.stage.is_lost else 0)
+    if negotiation is not None and reached >= negotiation.order:
+        return lost[-1]
+    return lost[0]
+
+
 def set_stage(lead: Lead, stage: PipelineStage) -> None:
     """Muda a etapa e lembra a mais avançada (perdido não conta como avanço) e quando fechou."""
     closing = stage.is_won or stage.is_lost
@@ -362,7 +376,8 @@ def _sync_segment_stages(db, tenant: Tenant) -> None:
     clientes criados antes. Os leads de uma etapa tirada vão pra etapa indicada."""
     seg = segments.segment_for(tenant)
     renames, removed = seg.get("stage_renames") or {}, seg.get("stage_removed") or {}
-    if not renames and not removed:
+    added = seg.get("stage_added") or []
+    if not renames and not removed and not added:
         return
     for old, new in renames.items():
         stages = _stages(db, tenant.id)
@@ -380,6 +395,36 @@ def _sync_segment_stages(db, tenant: Tenant) -> None:
             {Lead.stage_id: target.id, Lead.updated_at: Lead.updated_at}, synchronize_session=False)
         db.delete(stage)
         logger.info("funil: etapa %s tirada de %s (%s leads foram pra %s)", old, tenant.name, moved, target_name)
+    db.flush()
+    # etapas que o ramo ganhou ("stage_added"): entram logo depois da etapa anterior da lista do ramo
+    wanted = seg.get("stages") or []
+    for name in added:
+        stages = _stages(db, tenant.id)
+        spec = next((s for s in wanted if s[0] == name), None)
+        if spec is None or not stages or stage_named(stages, name) is not None:
+            continue
+        index = wanted.index(spec)
+        before = next((stage_named(stages, w[0]) for w in reversed(wanted[:index]) if stage_named(stages, w[0])), None)
+        order = (before.order + 1) if before is not None else max(s.order for s in stages) + 1
+        for st in stages:
+            if st.order >= order:
+                st.order += 1
+        db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.reached_order >= order).update(
+            {Lead.reached_order: Lead.reached_order + 1, Lead.updated_at: Lead.updated_at}, synchronize_session=False)
+        new_stage = PipelineStage(tenant_id=tenant.id, name=name, conversion_event_name=spec[1],
+                                  is_won=spec[2], is_lost=spec[3], order=order)
+        db.add(new_stage)
+        db.flush()
+        logger.info("funil: etapa %s criada em %s", name, tenant.name)
+        if spec[3]:  # perdido novo: quem já estava perdido vai pra etapa certa (lost_stage)
+            stages = _stages(db, tenant.id)
+            old_lost = [st.id for st in stages if st.is_lost and st.id != new_stage.id]
+            moves = [(lead.id, target.id) for lead in db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.stage_id.in_(old_lost))
+                     for target in [lost_stage(stages, lead)] if target is not None and target.id != lead.stage_id]
+            for lead_id, stage_id in moves:
+                db.query(Lead).filter(Lead.id == lead_id).update(
+                    {Lead.stage_id: stage_id, Lead.updated_at: Lead.updated_at}, synchronize_session=False)
+            logger.info("funil: %s leads perdidos depois da proposta foram pra %s em %s", len(moves), name, tenant.name)
     db.commit()
 
 

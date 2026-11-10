@@ -179,7 +179,7 @@ def run() -> int:
                             lead.autofu_step = -1
                         done += 1
                     elif step == 2 and at and now - at >= CLOSE_AFTER:
-                        lost = next((s for s in funnel._stages(db, tenant.id) if s.is_lost), None)
+                        lost = funnel.lost_stage(funnel._stages(db, tenant.id), lead)
                         if lost is not None:
                             funnel.set_stage(lead, lost)
                             lead.loss_reason = segments.NO_REPLY_REASON

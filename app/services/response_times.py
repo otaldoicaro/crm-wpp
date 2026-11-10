@@ -24,6 +24,7 @@ FOLLOWUP_BURST = datetime.timedelta(hours=1)  # várias mensagens seguidas conta
 def mark_inbound(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
     lead.last_inbound_at = when or datetime.datetime.utcnow()
     lead.unanswered_outs = 0  # o cliente respondeu
+    lead.contact_attempts, lead.contact_attempt_at = 0, None  # 📞 contato feito: zera as tentativas
 
 
 def mark_outbound(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
@@ -32,8 +33,35 @@ def mark_outbound(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
     if previous is None or (lead.last_inbound_at and lead.last_inbound_at > previous) or when - previous > FOLLOWUP_BURST:
         lead.unanswered_outs = (lead.unanswered_outs or 0) + 1  # mais uma tentativa nossa sem resposta
     lead.last_outbound_at = when
+    count_attempt(lead, when)
     if lead.first_response_at is None:
         lead.first_response_at = when
+
+
+def count_attempt(lead: Lead, when: Optional[datetime.datetime] = None, force: bool = False) -> None:
+    """📞 1º/2º/3º contato: cada dia (horário de Brasília) em que o time chama o cliente sem resposta
+    conta uma tentativa; várias mensagens no mesmo dia são uma só. force=True ("+ tentativa" na
+    conversa: ligação, e-mail, mensagem por fora) conta mesmo no mesmo dia."""
+    from app.timeutil import to_local
+
+    when = when or datetime.datetime.utcnow()
+    last = lead.contact_attempt_at
+    if lead.last_inbound_at and lead.last_inbound_at > when:
+        return  # mensagem antiga (recuperada) de antes da última resposta do cliente
+    if force or last is None or to_local(when).date() > to_local(last).date():
+        lead.contact_attempts = (lead.contact_attempts or 0) + 1
+    if last is None or when > last:
+        lead.contact_attempt_at = when
+
+
+ATTEMPT_LABELS = {1: "1º contato", 2: "2º contato", 3: "3º contato"}
+
+
+def attempt_label(lead: Lead) -> str:
+    n = lead.contact_attempts or 0
+    if n <= 0:
+        return ""
+    return ATTEMPT_LABELS.get(n, f"{n}ª tentativa")
 
 
 def first_response(lead: Lead) -> Optional[datetime.timedelta]:

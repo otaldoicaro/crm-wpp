@@ -13,12 +13,17 @@
   <form method="post" action="/leads/{{ lead.id }}/arquivo" style="margin:0"><input type="hidden" name="voltar" value="/leads/{{ lead.id }}"><button class="btn small" type="submit">Restaurar pro Pipeline</button></form>
 </div>
 {% endif %}
+{% if request.query_params.get("novo") == "1" %}<div class="toast" role="status">✅ Lead cadastrado. Complete a ficha aqui embaixo quando tiver os dados.</div>{% endif %}
+{% if request.query_params.get("ja_existe") == "1" %}<div class="toast" role="status">ℹ️ Esse WhatsApp/e-mail já era de um lead: abrimos o cadastro dele em vez de criar outro.</div>{% endif %}
 <div style="display:flex; gap:20px; flex-wrap:wrap;">
   <div class="card" style="flex:2; min-width:320px;">
     <h2 style="display:flex; align-items:center; gap:10px;">
-      {{ lead.name or "(sem nome)" }}
+      {{ lead.name or "(sem nome)" }}{% set empresa = empresa_de(lead) %}{% if empresa %} <span class="muted" style="font-weight:500">· 🏢 {{ empresa }}</span>{% endif %}
       {{ m.platform_badge(platform, platform_label, lead.source) }}
     </h2>
+    {% if has_feature(tenant, "tentativas_contato") and not lead.is_group and not (lead.stage and (lead.stage.is_won or lead.stage.is_lost)) %}
+    <div class="attempt-row">{{ m.attempt_chip(lead) or "" }}{% if not lead.contact_attempts %}<span class="muted" style="font-size:.85rem">📞 Nenhuma tentativa de contato ainda</span>{% endif %}{% if not user.read_only %}{{ m.attempt_button(lead, "/leads/" ~ lead.id) }}{% endif %}</div>
+    {% endif %}
 
     <form method="post" action="/leads/{{ lead.id }}/update" id="leadForm">
       <input type="hidden" name="voltar" value="{{ voltar }}">

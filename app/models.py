@@ -258,6 +258,10 @@ class Lead(Base):
     calls_seconds: Mapped[int] = mapped_column(Integer, default=0)
     last_call_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     quoted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    # 📞 tentativas de contato (recurso "tentativas_contato"): 1º, 2º, 3º contato = dias diferentes em que
+    # o time chamou (mensagem ou "+ tentativa" na conversa) sem o cliente responder. Zera quando ele responde.
+    contact_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    contact_attempt_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     next_action_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     next_action_note: Mapped[str] = mapped_column(String(255), default="")
     # comprovante de pagamento que o cliente mandou (lido pela IA): o vendedor confirma a venda

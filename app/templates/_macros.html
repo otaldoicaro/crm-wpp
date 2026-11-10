@@ -107,3 +107,14 @@
 {# 📅 visita em aberto (recurso "agendamentos"): quando, carro; a confirmar / prazo atrasado #}
 {% set a = agenda_active(lead) %}{% if a %}{% set st = agenda_state(a) %}<span class="agenda-chip {{ st }}" title="Visita agendada{{ ': ' ~ a.car if a.car }}{{ ' · ' ~ a.payment if a.payment }}">{% if st == "atrasado" %}⏰ Prazo atrasado · {% elif st == "a_confirmar" %}🟡 A confirmar · {% else %}📅 {% endif %}{{ agenda_when(a) }}{% if a.car %} · {{ a.car[:28] }}{% endif %}</span>{% endif %}
 {%- endmacro %}
+
+{% macro attempt_chip(lead) -%}
+{# 📞 1º/2º/3º contato sem resposta (recurso "tentativas_contato"): services/response_times.count_attempt #}
+{% set label = rt.attempt_label(lead) %}{% if label %}<span class="attempt-chip n{{ [lead.contact_attempts, 4]|min }}" title="O time chamou o cliente em {{ lead.contact_attempts }} dia(s) diferente(s) e ele ainda não respondeu{{ ' · última tentativa em ' ~ (lead.contact_attempt_at|hora('%d/%m %H:%M')) if lead.contact_attempt_at }}">📞 {{ label }}{% if lead.contact_attempt_at %} · {{ lead.contact_attempt_at|hora("%d/%m") }}{% endif %}</span>{% endif %}
+{%- endmacro %}
+
+{% macro attempt_button(lead, voltar) -%}
+<form method="post" action="/leads/{{ lead.id }}/tentativa" class="attempt-form"><input type="hidden" name="voltar" value="{{ voltar }}">
+  <button class="btn small ghost" type="submit" title="Chamou o cliente por fora (ligação, e-mail, outro WhatsApp) e ele não respondeu: conta mais uma tentativa">📞 + tentativa</button>
+</form>
+{%- endmacro %}

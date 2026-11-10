@@ -131,7 +131,7 @@
         <div class="head-who">
           {{ m.avatar(selected_lead) }}
           <div class="info">
-            <div class="name">{{ selected_lead.name or selected_lead.phone }}</div>
+            <div class="name">{{ selected_lead.name or selected_lead.phone }}{% set empresa = empresa_de(selected_lead) %}{% if empresa %} <span class="head-company">· 🏢 {{ empresa }}</span>{% endif %}</div>
             <span class="muted">{{ selected_lead.phone|contato }} · {{ selected_lead.assigned_user.name if selected_lead.assigned_user else "sem vendedor" }}</span>
           </div>
         </div>
@@ -169,6 +169,7 @@
       <div class="head-summary">
         <div class="head-chips">
           {% if agenda_on %}{{ m.agenda_chip(selected_lead) }}{% endif %}
+          {% if has_feature(tenant, "tentativas_contato") and not selected_lead.is_group and not closed %}{{ m.attempt_chip(selected_lead) }}{{ m.attempt_button(selected_lead, "/inbox/" ~ selected_lead.id) }}{% endif %}
           {{ m.platform_badge(platform, platform_label, selected_lead.source) }}
           {% if not selected_lead.is_group %}
           {% if selected_lead.tag %}<span class="tag-pill">{{ tag_label[selected_lead.tag] }}</span>{% endif %}

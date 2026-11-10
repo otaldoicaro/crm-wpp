@@ -31,12 +31,15 @@ FEATURES = {
                      "com a conversa",
     "sem_prazos": "⏰ Sem alertas de prazo (venda longa): some o “⏰ há X dias na etapa”, o “📞 follow-up · sem resposta” e o "
                   "“pode marcar Perdido” dos cards e das conversas, e esses leads saem dos filtros de atrasados",
+    "tentativas_contato": "📞 1º, 2º e 3º contato: mostra no card do Pipeline (etapas antes de Qualificado) e no topo da "
+                          "conversa quantas vezes o time chamou o cliente sem resposta (um por dia; o botão “+ tentativa” "
+                          "conta ligação ou e-mail). Zera quando o cliente responde",
     "transcrever_audios": "🎙️ Transcrever os áudios do WhatsApp (o texto aparece embaixo do áudio e entra nas regras "
                           "automáticas e na busca). Custo no Groq: ~US$ 0,04 por hora de áudio",
 }
 DEFAULTS_BY_SEGMENT = {
     "seminovos": ("pagamento_parcelado", "visita_negociando"),
-    "agencia": ("funil_manual", "interessados_negociando", "lixeira_apaga", "sem_prazos"),
+    "agencia": ("funil_manual", "interessados_negociando", "lixeira_apaga", "sem_prazos", "tentativas_contato"),
 }
 
 

@@ -19,6 +19,38 @@
       </div>
     </details>
 
+    {% for secao in cfg.secoes or [] %}
+    {% set cond = secao.so_se %}
+    {% set filled = secao.campos|selectattr(0, "in", p)|list|length %}
+    <details class="ficha-box" id="ficha-{{ secao.id }}" {% if cond %}data-so-se="{{ cond[0] }}" data-so-se-valor="{{ cond[1] }}"{% endif %}
+             {% if cond and (p.get(cond[0]) or lead_origin) != cond[1] %}hidden{% endif %}>
+      <summary><b>{{ secao.titulo }}</b> <span class="muted">
+        {% if secao.id == "comercial" and contract_total %}Setup R$ {{ (p.setup or 0)|brl }} · R$ {{ p.mensalidade|brl }}/mês × {{ p.prazo_meses }} meses = <b>R$ {{ contract_total|brl }}</b>
+        {% elif secao.id == "origem" %}{{ p.origem or (lead_origin ~ " (pelo jeito que chegou)" if lead_origin else "não marcado") }}
+        {% elif secao.id == "indicacao" and p.indicado_por %}indicado por {{ p.indicado_por }}{% if p.bonificacao %} · bonificação {{ "✅ concedida" if p.bonificacao_paga else "⏳ a conceder" }}{% endif %}
+        {% else %}{{ (filled ~ " de " ~ secao.campos|length ~ " preenchidos") if filled else "nada preenchido" }}{% endif %}
+      </span></summary>
+      <div class="ficha-grid">
+        {% for campo in secao.campos %}{% set key, label, kind = campo[0], campo[1], campo[2] %}{% set v = p.get(key) %}
+        {% if kind == "sim" %}
+        <label class="ficha-check"><span><input type="checkbox" name="{{ key }}" value="1" {{ "checked" if v }}> {{ label }}</span></label>
+        {% elif kind == "opcao" %}{% set v = v or (lead_origin if key == "origem" else "") %}
+        <label>{{ label }}<select name="{{ key }}"><option value="">—</option>{% for o in campo[3] %}<option {{ "selected" if v == o }}>{{ o }}</option>{% endfor %}</select></label>
+        {% elif kind == "longo" %}
+        <label class="ficha-wide">{{ label }}<textarea name="{{ key }}" rows="2">{{ v or "" }}</textarea></label>
+        {% elif kind == "dinheiro" %}
+        <label>{{ label }}<input type="text" inputmode="decimal" name="{{ key }}" value="{{ v|brl if v is not none else '' }}" placeholder="0,00"></label>
+        {% elif kind == "inteiro" %}
+        <label>{{ label }}<input type="number" min="1" step="1" name="{{ key }}" value="{{ v or '' }}"></label>
+        {% else %}
+        <label>{{ label }}<input type="{{ {'data': 'date', 'email': 'email', 'fone': 'tel'}.get(kind, 'text') }}" name="{{ key }}" value="{{ v or '' }}"
+          {% if kind == "doc" %}inputmode="numeric" placeholder="só números ou com pontos"{% endif %}></label>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </details>
+    {% endfor %}
+
     <h4>Anotações</h4>
     <textarea name="notas" rows="5" placeholder="O que vale deixar escrito sobre o lead e a negociação: dores, o que já tentaram, quem decide, próximos passos...">{{ p.notas or "" }}</textarea>
 
@@ -41,6 +73,16 @@
     {% if not user.read_only %}<button class="btn" type="submit" style="margin-top:14px">Salvar ficha</button>{% endif %}
   </form>
   <script>
+  (function () {  // bloco que depende de outro campo (ex: indicação só com origem "Indicação de cliente")
+    document.querySelectorAll("#ficha [data-so-se]").forEach(function (box) {
+      var field = document.querySelector('#ficha [name="' + box.dataset.soSe + '"]');
+      if (!field) return;
+      field.addEventListener("change", function () {
+        box.hidden = field.value !== box.dataset.soSeValor;
+        if (!box.hidden) box.open = true;
+      });
+    });
+  })();
   (function () {  // quantidade/frequência preenchida já marca o serviço
     document.querySelectorAll("#ficha .ficha-srv-row").forEach(function (row) {
       var box = row.querySelector('input[type="checkbox"]'), extra = row.querySelector(".ficha-srv-extra input, .ficha-srv-extra select");

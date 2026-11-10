@@ -151,6 +151,9 @@ def _ig_info(tenant) -> dict:
 
 
 templates.env.globals["ig_info"] = _ig_info
+from app.services import lead_profile as _lead_profile  # noqa: E402
+
+templates.env.globals["empresa_de"] = _lead_profile.company  # 🏢 empresa da ficha do lead (card, conversa)
 # 📸 contato do Direct do Instagram ("ig:<id>"): aparece como "📸 Instagram" no lugar do telefone
 templates.env.filters["contato"] = lambda phone: "📸 Instagram" if (phone or "").startswith("ig:") else (phone or "")
 

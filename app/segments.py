@@ -40,6 +40,43 @@ LEAD_PROFILE_AGENCIA = {
     "unidades": {"redes": "posts por mês", "lp": "páginas", "edicao": "vídeos por mês",
                  "criativos": "criativos por mês", "ugc": "anúncios por mês"},
     "frequencias": ["Semanal", "Quinzenal", "Mensal"],
+    # blocos extras da ficha (services/lead_profile.py): (chave, rótulo, tipo[, opções]).
+    # tipos: texto, longo, dinheiro, inteiro, data, email, fone, doc (CPF/CNPJ), opcao, sim
+    # "so_se": o bloco só aparece com o campo (chave) com esse valor
+    "secoes": [
+        {"id": "comercial", "titulo": "💰 Informações comerciais", "campos": [
+            ("setup", "Valor do setup (R$)", "dinheiro"),
+            ("mensalidade", "Valor da mensalidade (R$)", "dinheiro"),
+            ("prazo_meses", "Prazo do contrato (meses)", "inteiro"),
+        ]},
+        {"id": "origem", "titulo": "📍 Origem do lead", "campos": [
+            ("origem", "Canal de origem", "opcao", ["Indicação de cliente", "WhatsApp", "Instagram", "Site",
+                                                     "Prospecção ativa", "Outro"]),
+        ]},
+        {"id": "indicacao", "titulo": "🎁 Indicação e bonificação", "so_se": ("origem", "Indicação de cliente"), "campos": [
+            ("indicado_por", "Quem indicou", "texto"),
+            ("bonificacao", "Bonificação combinada", "texto"),
+            ("bonificacao_paga", "Bonificação já concedida", "sim"),
+        ]},
+        {"id": "contrato", "titulo": "📄 Dados para contrato", "campos": [
+            ("doc", "CNPJ ou CPF do contratante", "doc"),
+            ("razao_social", "Razão social ou nome completo", "texto"),
+            ("endereco", "Endereço jurídico completo", "longo"),
+        ]},
+        {"id": "financeiro", "titulo": "💳 Dados financeiros", "campos": [
+            ("email_boletos", "E-mail para envio dos boletos", "email"),
+            ("fone_financeiro", "Telefone do contato financeiro", "fone"),
+        ]},
+        {"id": "assinatura", "titulo": "✍️ Responsável pela assinatura", "campos": [
+            ("ass_nome", "Nome completo", "texto"),
+            ("ass_nascimento", "Data de nascimento", "data"),
+            ("ass_email", "E-mail", "email"),
+            ("ass_fone", "Telefone", "fone"),
+            ("ass_cpf", "CPF", "doc"),
+        ]},
+    ],
+    # de onde o lead chegou (Lead.source) → canal de origem sugerido enquanto a ficha não diz
+    "origem_por_fonte": {"instagram": "Instagram", "site_form": "Site", "whatsapp": "WhatsApp"},
 }
 
 SEGMENTS = {
@@ -150,10 +187,14 @@ SEGMENTS = {
             ("R2 Agendada", "", False, False),
             ("Proposta enviada", "", False, False),
             ("Venda", "Purchase", True, False),
-            ("Perdido", "", False, True),
+            # perdido em duas: antes da proposta (Lead perdido) e depois (Proposta perdida) — funnel.lost_stage
+            ("Lead perdido", "", False, True),
+            ("Proposta perdida", "", False, True),
         ],
         # clientes criados com o funil antigo: no start, etapa renomeada / tirada (os leads dela vão pra outra)
-        "stage_renames": {"Lead": "Em atendimento"},
+        # / criada (stage_added)
+        "stage_renames": {"Lead": "Em atendimento", "Perdido": "Lead perdido"},
+        "stage_added": ["Proposta perdida"],
         "stage_removed": {"Triagem (R1)": "Em atendimento"},
         # venda consultiva: Pipeline só com o filtro ⭐ Favoritas; Inbox sem "Venda a confirmar" e sem
         # "Follow-up interessado" (preço/comprovante), e a aba 🔥 vira 📄 Propostas (etapa Proposta enviada)

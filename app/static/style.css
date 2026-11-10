@@ -1192,6 +1192,10 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .ficha-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px 16px; }
 .ficha-grid label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); }
 .ficha-grid input, .ficha-grid select { color: var(--text); }
+.ficha-grid textarea { color: var(--text); }
+.ficha-grid .ficha-wide { grid-column: 1 / -1; }
+.ficha-grid .ficha-check { justify-content: flex-end; }
+.ficha-grid .ficha-check span { display: flex; align-items: center; gap: 8px; color: var(--text); padding: 8px 0; }
 .ficha-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .ficha-chips label { cursor: pointer; }
 .ficha-chips input { position: absolute; opacity: 0; pointer-events: none; }
@@ -1254,3 +1258,22 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .flag-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .flag-bar form { margin: 0; }
 .flag-mini { font-size: .8em; }
+
+/* 🏢 empresa da ficha no card do Pipeline e na conversa */
+.lead-card .name .card-company { display: block; font-weight: 700; }
+.lead-card .name .card-person { display: block; font-weight: 400; font-size: .86em; color: var(--muted); }
+.inbox-thread-head .head-company, .inbox-list .list-company { font-weight: 500; color: var(--muted); }
+
+/* 📞 1º/2º/3º contato */
+.attempt-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .76rem; font-weight: 600;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text); }
+.lead-card .attempt-chip { margin-top: 6px; }
+.attempt-chip.n2 { border-color: #d9a400; }
+.attempt-chip.n3, .attempt-chip.n4 { border-color: #d9534f; }
+.attempt-form { display: inline; }
+.attempt-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 12px; }
+
+/* ✍️ novo lead na mão */
+dialog.novo-lead { max-width: 640px; width: calc(100% - 32px); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--panel); color: var(--text); padding: 20px; }
+dialog.novo-lead::backdrop { background: rgba(0, 0, 0, .45); }

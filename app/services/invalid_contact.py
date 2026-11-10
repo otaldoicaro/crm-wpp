@@ -23,7 +23,7 @@ def mark(db, lead: Lead, why: str = "o WhatsApp diz que esse número não existe
     stage = lead.stage
     if lead.is_group or stage is None or stage.is_won or stage.is_lost or not looks_like_phone(lead.phone):
         return False
-    lost = next((s for s in funnel._stages(db, lead.tenant_id) if s.is_lost), None)
+    lost = funnel.lost_stage(funnel._stages(db, lead.tenant_id), lead)
     if lost is None:
         return False
     funnel.set_stage(lead, lost)

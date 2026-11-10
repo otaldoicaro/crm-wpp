@@ -128,7 +128,7 @@ def apply(db, lead: Lead, kind: str, *, reason: str = "", amount: Optional[float
 
             dispatch_stage_conversion(db, lead, target.conversion_event_name)
     elif kind == "perdido":
-        target = next((st for st in stages if st.is_lost), None)
+        target = funnel.lost_stage(stages, lead)
         if target is None or (outbound and followup.find_price(body)):
             return False
         if not outbound and (reason in SUGGEST_ONLY_LOSS or "?" in (body or "")):
@@ -313,7 +313,7 @@ def refund_if_asked(db, lead: Lead, body: str, outbound: bool) -> bool:
         return False
     if "perdido" in (lead.suggest_dismissed or "").split(","):
         return False
-    lost = next((st for st in funnel._stages(db, lead.tenant_id) if st.is_lost), None)
+    lost = funnel.lost_stage(funnel._stages(db, lead.tenant_id), lead)
     if lost is None:
         return False
     value = f" de {_brl(lead.deal_value)}" if lead.deal_value else ""
