@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -174,73 +174,54 @@ def create_viewer(
     return RedirectResponse(url="/equipe?salvo=1", status_code=302)
 
 
-def _tenant_team(db: Session, tenant: Tenant, team_id: str) -> SellerTeam:
-    team = db.get(SellerTeam, team_id)
-    if not team or team.tenant_id != tenant.id:
-        raise HTTPException(status_code=404, detail="Equipe não encontrada")
-    return team
-
-
-@router.post("/equipes/nova")
-def team_group_new(
-    nome: str = Form(...),
-    db: Session = Depends(get_db),
-    tenant: Tenant = Depends(current_tenant),
-    user: User = Depends(current_user_required),
-):
-    """👥 Cria uma equipe de vendedores (os membros são marcados depois, na própria tela)."""
-    _require_admin(user)
-    name = " ".join(nome.split())[:80]
-    if not name:
-        return RedirectResponse(url="/equipe?erro=" + quote("Dê um nome pra equipe.") + "#equipes", status_code=302)
-    db.add(SellerTeam(tenant_id=tenant.id, name=name))
-    db.commit()
-    return RedirectResponse(url="/equipe?salvo=1#equipes", status_code=302)
-
-
-@router.post("/equipes/{team_id}/salvar")
-async def team_group_save(
-    team_id: str,
+@router.post("/equipes/salvar")
+async def team_groups_save(
     request: Request,
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    """Nome e vendedores da equipe. Quem é marcado aqui sai da equipe em que estava (uma por pessoa)."""
+    """👥 Salva TODAS as equipes de uma vez (nomes e vendedores), pra nenhuma mudança se perder.
+    Campos: nome_<equipe>, membro=<equipe>:<vendedor> (cada vendedor fica em uma equipe só).
+    acao=nova (+ nova_nome) cria uma equipe e excluir=<equipe> apaga uma, depois de salvar o resto.
+    Pelo botão Salvar a tela manda ajax=1 e recebe JSON (não recarrega nem volta pro topo)."""
     _require_admin(user)
     form = await request.form()
-    name = " ".join(str(form.get("nome", "")).split())[:80]
-    chosen = {str(v) for v in form.getlist("membros")}
-    await run_in_threadpool(_save_team_group, db, tenant, team_id, name, chosen)
+    names = {k[5:]: " ".join(str(v).split())[:80] for k, v in form.items() if k.startswith("nome_")}
+    pairs = [str(v).partition(":") for v in form.getlist("membro")]
+    chosen = {member_id: team_id for team_id, _, member_id in pairs if team_id and member_id}
+    new_name = " ".join(str(form.get("nova_nome", "")).split())[:80] if form.get("acao") == "nova" else ""
+    delete_id = str(form.get("excluir", ""))
+    if form.get("acao") == "nova" and not new_name:
+        return RedirectResponse(url="/equipe?erro=" + quote("Dê um nome pra equipe nova.") + "#equipes", status_code=302)
+    result = await run_in_threadpool(_save_team_groups, db, tenant, names, chosen, new_name, delete_id)
+    if form.get("ajax"):
+        return JSONResponse({"ok": True, **result})
     return RedirectResponse(url="/equipe?salvo=1#equipes", status_code=302)
 
 
-def _save_team_group(db: Session, tenant: Tenant, team_id: str, name: str, chosen: set) -> None:
-    team = _tenant_team(db, tenant, team_id)
-    if name:
-        team.name = name
+def _save_team_groups(db: Session, tenant: Tenant, names: dict, chosen: dict, new_name: str, delete_id: str) -> dict:
+    groups = {t.id: t for t in teams.tenant_teams(db, tenant.id)}
+    for team_id, name in names.items():
+        if team_id in groups and name:
+            groups[team_id].name = name
     for member in db.query(User).filter(User.tenant_id == tenant.id):
-        if member.id in chosen and member.role == "agent":
-            member.team_id = team.id
-        elif member.team_id == team.id and member.id not in chosen:
+        target = chosen.get(member.id)
+        if target in groups and member.role == "agent":
+            member.team_id = target
+        elif member.team_id in groups:  # desmarcado em todas as equipes: fica fora de equipe
             member.team_id = None
+    if delete_id in groups:
+        db.query(User).filter(User.tenant_id == tenant.id, User.team_id == delete_id).update(
+            {User.team_id: None}, synchronize_session=False)
+        db.delete(groups.pop(delete_id))
+    if new_name:
+        db.add(SellerTeam(tenant_id=tenant.id, name=new_name))
     db.commit()
-
-
-@router.post("/equipes/{team_id}/excluir")
-def team_group_delete(
-    team_id: str,
-    db: Session = Depends(get_db),
-    tenant: Tenant = Depends(current_tenant),
-    user: User = Depends(current_user_required),
-):
-    _require_admin(user)
-    team = _tenant_team(db, tenant, team_id)
-    db.query(User).filter(User.tenant_id == tenant.id, User.team_id == team.id).update(
-        {User.team_id: None}, synchronize_session=False)
-    db.delete(team)
-    db.commit()
-    return RedirectResponse(url="/equipe?salvo=1#equipes", status_code=302)
+    # o que a tela precisa pra se atualizar sem recarregar: nome da equipe de cada vendedor
+    return {"equipe_de": {u.id: groups[u.team_id].name for u in db.query(User).filter(
+        User.tenant_id == tenant.id, User.team_id.in_(list(groups) or [""]))},
+            "nomes": {t.id: t.name for t in groups.values()}}
 
 
 @router.post("/equipe/{user_id}/{action}")

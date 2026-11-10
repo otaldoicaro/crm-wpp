@@ -79,7 +79,7 @@
       <tr style="{{ 'opacity:.5' if not u.is_active }}">
         <td>
           <b>{{ u.name }}</b> {% if u.read_only %}<span class="role-badge agent">👀 Só visualização</span>{% else %}<span class="role-badge {{ 'admin' if u.role == 'admin' else 'agent' }}">{{ "Admin" if u.role == "admin" else "Vendedor" }}</span>{% endif %}
-          {% if u.role == "agent" and u.team_id and teams_by_id.get(u.team_id) %}<a class="pill" href="#equipes" title="Equipe de vendedores">👥 {{ teams_by_id[u.team_id].name }}</a>{% endif %}
+          {% if u.role == "agent" and not u.read_only %}<a class="pill team-pill" href="#equipes" title="Equipe de vendedores" data-user="{{ u.id }}" {{ "hidden" if not (u.team_id and teams_by_id.get(u.team_id)) }}>👥 {{ teams_by_id[u.team_id].name if u.team_id and teams_by_id.get(u.team_id) else "" }}</a>{% endif %}
           <div class="muted show-sm">{{ u.email }}</div>
           {% if duplicates.get(u.id) %}<div class="dup-warning">⚠️ Possível cadastro duplicado: também existe {% for d in duplicates[u.id] %}{{ d.email }}{{ " (pendente)" if d.pending_approval }}{{ ", " if not loop.last }}{% endfor %}</div>{% endif %}
         </td>
@@ -165,24 +165,32 @@
   <p class="muted" style="margin:0 0 10px">Vendedores da mesma equipe veem e respondem as conversas uns dos outros no Inbox (menos grupos e contatos 🔒 Time/Outro).
     Vendedor fora de equipe vê só as dele. Cada vendedor fica em uma equipe só.</p>
   {% set agents = users|selectattr("role", "equalto", "agent")|rejectattr("read_only")|list %}
+  {# um formulário só pra todas as equipes: o "Salvar equipes" grava tudo de uma vez, sem recarregar #}
+  <form method="post" action="/equipes/salvar" id="teamsForm">
   {% for t in seller_teams %}
-  <form method="post" action="/equipes/{{ t.id }}/salvar" class="seller-team">
+  <div class="seller-team" data-team="{{ t.id }}">
     <div class="seller-team-head">
-      <input name="nome" value="{{ t.name }}" maxlength="80" required aria-label="Nome da equipe">
-      <button class="btn small" type="submit">Salvar</button>
-      <button class="btn ghost small" type="submit" formaction="/equipes/{{ t.id }}/excluir" formnovalidate
-        onclick="return confirm({{ ('Excluir a equipe ' ~ t.name ~ '?\n\nOs vendedores dela continuam no CRM, só voltam a ver apenas as conversas deles.')|tojson }})">Excluir equipe</button>
+      <input name="nome_{{ t.id }}" value="{{ t.name }}" maxlength="80" required aria-label="Nome da equipe">
+      <button class="btn ghost small" type="submit" name="excluir" value="{{ t.id }}" formnovalidate
+        onclick="return confirm({{ ('Excluir a equipe ' ~ t.name ~ '?\n\nOs vendedores dela continuam no CRM, só voltam a ver apenas as conversas deles. As outras mudanças desta tela são salvas junto.')|tojson }})">Excluir equipe</button>
     </div>
     <div class="seller-team-members">
       {% for a in agents %}{% set other = teams_by_id.get(a.team_id) if a.team_id and a.team_id != t.id else none %}
-      <label title="{{ ('Hoje está na equipe ' ~ other.name ~ ': marcando aqui, sai de lá') if other }}"><input type="checkbox" name="membros" value="{{ a.id }}" {{ "checked" if a.team_id == t.id }}> {{ a.name }}{% if other %} <span class="muted">({{ other.name }})</span>{% endif %}</label>
+      <label><input type="checkbox" name="membro" value="{{ t.id }}:{{ a.id }}" data-user="{{ a.id }}" {{ "checked" if a.team_id == t.id }}> {{ a.name }} <span class="muted team-where" data-user="{{ a.id }}">{{ ("(" ~ other.name ~ ")") if other }}</span></label>
       {% else %}<span class="muted">Nenhum vendedor cadastrado ainda.</span>{% endfor %}
     </div>
-  </form>
+  </div>
   {% endfor %}
-  <form method="post" action="/equipes/nova" class="seller-team-new">
-    <input name="nome" placeholder="Nome da nova equipe (ex: Balcão)" maxlength="80" required>
-    <button class="btn small" type="submit">+ Criar equipe</button>
+  {% if seller_teams %}
+  <div class="teams-save" id="teamsSave">
+    <button class="btn small" type="submit" id="teamsSaveBtn">Salvar equipes</button>
+    <span class="teams-status muted" id="teamsStatus" role="status" aria-live="polite"></span>
+  </div>
+  {% endif %}
+  <div class="seller-team-new">
+    <input name="nova_nome" placeholder="Nome da nova equipe (ex: Balcão)" maxlength="80">
+    <button class="btn small ghost" type="submit" name="acao" value="nova" formnovalidate>+ Criar equipe</button>
+  </div>
   </form>
 </div>
 
@@ -274,6 +282,72 @@
     });
   });
   document.getElementById("rmCancel").addEventListener("click", function () { removeDialog.close(); });
+
+  // 👥 equipes: cada vendedor numa equipe só (marcar numa tira das outras, na hora), aviso de mudança
+  // não salva e "Salvar equipes" sem recarregar a página (nada se perde, a tela não volta pro topo)
+  var teamsForm = document.getElementById("teamsForm");
+  if (teamsForm) {
+    var status = document.getElementById("teamsStatus"), saveBox = document.getElementById("teamsSave");
+    var saveBtn = document.getElementById("teamsSaveBtn"), dirty = false;
+    var boxes = Array.prototype.slice.call(teamsForm.querySelectorAll('input[name="membro"]'));
+    try {
+      var back = sessionStorage.getItem("equipesScroll");
+      if (back !== null) { sessionStorage.removeItem("equipesScroll"); window.scrollTo(0, parseInt(back, 10) || 0); }
+    } catch (x) {}
+    function teamName(teamId) {
+      var input = teamsForm.querySelector('input[name="nome_' + teamId + '"]');
+      return input ? input.value.trim() : "";
+    }
+    function refreshWhere() {  // "(Equipe)" ao lado do nome = onde a pessoa está marcada agora
+      boxes.forEach(function (box) {
+        var mine = box.value.split(":")[0], uid = box.dataset.user, other = "";
+        boxes.forEach(function (b) { if (b.checked && b.dataset.user === uid && b.value.split(":")[0] !== mine) other = teamName(b.value.split(":")[0]); });
+        var span = box.parentNode.querySelector(".team-where");
+        if (span) span.textContent = other ? "(" + other + ")" : "";
+      });
+    }
+    function setDirty(on) {
+      dirty = on;
+      if (saveBox) saveBox.classList.toggle("dirty", on);
+      if (status) { status.textContent = on ? "⚠️ Mudanças não salvas" : status.textContent; status.classList.toggle("warn", on); }
+    }
+    boxes.forEach(function (box) {
+      box.addEventListener("change", function () {
+        if (box.checked) {  // cada vendedor fica numa equipe só: sai das outras na hora
+          boxes.forEach(function (b) { if (b !== box && b.dataset.user === box.dataset.user) b.checked = false; });
+        }
+        refreshWhere(); setDirty(true);
+      });
+    });
+    teamsForm.querySelectorAll('input[name^="nome_"]').forEach(function (input) {
+      input.addEventListener("input", function () { refreshWhere(); setDirty(true); });
+    });
+    teamsForm.addEventListener("submit", function (e) {
+      var submitter = e.submitter;
+      if (submitter && submitter !== saveBtn) {  // criar/excluir: salva tudo, recarrega e volta pro mesmo ponto
+        dirty = false;
+        try { sessionStorage.setItem("equipesScroll", String(window.scrollY)); } catch (x) {}
+        return;
+      }
+      e.preventDefault();
+      var data = new FormData(teamsForm);
+      data.delete("nova_nome"); data.append("ajax", "1");
+      saveBtn.disabled = true; status.textContent = "Salvando…"; status.classList.remove("warn");
+      fetch("/equipes/salvar", { method: "POST", body: data, headers: { "Accept": "application/json" } })
+        .then(function (r) { return r.json().then(function (d) { if (!r.ok || !d.ok) throw new Error(d.detail || d.error || "erro"); return d; }); })
+        .then(function (d) {
+          document.querySelectorAll(".team-pill").forEach(function (pill) {  // 👥 na tabela de cima
+            var name = d.equipe_de[pill.dataset.user];
+            pill.hidden = !name; pill.textContent = name ? "👥 " + name : "";
+          });
+          setDirty(false); status.textContent = "✓ Salvo"; status.classList.add("ok");
+          setTimeout(function () { if (!dirty) { status.textContent = ""; status.classList.remove("ok"); } }, 4000);
+        })
+        .catch(function () { status.textContent = "Não deu pra salvar. Confira a internet e clique de novo."; status.classList.add("warn"); })
+        .then(function () { saveBtn.disabled = false; });
+    });
+    window.addEventListener("beforeunload", function (e) { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+  }
 })();
 </script>
 {% endblock %}
