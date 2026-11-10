@@ -151,6 +151,23 @@ def _ig_info(tenant) -> dict:
 
 
 templates.env.globals["ig_info"] = _ig_info
+
+
+def _google_ads_info(tenant) -> dict:
+    """📊 Card do Google Ads em ⚙ Configurações → Integrações: script pronto e última sincronização."""
+    from app.db import SessionLocal
+    from app.services import google_ads_spend
+
+    with SessionLocal() as db:
+        last_day, rows = google_ads_spend.last_sync(db, tenant.id)
+    if last_day is not None and not isinstance(last_day, str):
+        last_day = last_day.strftime("%d/%m/%Y")
+    elif last_day:
+        last_day = "/".join(reversed(str(last_day)[:10].split("-")))
+    return {"script": google_ads_spend.script_for(tenant), "last_day": last_day or "—", "rows": rows}
+
+
+templates.env.globals["google_ads_info"] = _google_ads_info
 from app.services import lead_profile as _lead_profile  # noqa: E402
 
 templates.env.globals["empresa_de"] = _lead_profile.company  # 🏢 empresa da ficha do lead (card, conversa)

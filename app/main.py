@@ -23,6 +23,7 @@ from app.routers import (
     webhooks_whatsapp,
     whatsapp_connect,
 )
+from app.routers import google_ads as google_ads_router
 from app.routers import instagram as instagram_router
 from app.tenancy import DEBUG, is_known_host
 
@@ -136,6 +137,7 @@ app.include_router(webhooks_whatsapp.router)
 app.include_router(webhooks_evolution.router)
 app.include_router(webhooks_site.router)
 app.include_router(instagram_router.router)
+app.include_router(google_ads_router.router)
 app.include_router(bridge.router)
 app.include_router(auth_router.router)
 app.include_router(dashboard.router)

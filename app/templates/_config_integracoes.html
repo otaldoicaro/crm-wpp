@@ -73,6 +73,20 @@ document.addEventListener("submit", function (e) {
     <p class="muted">No Leadster: <b>Integrações</b> → <b>Webhook</b> → cole o endereço abaixo e salve. O CRM pega nome, WhatsApp e e-mail (com o nome que o Leadster der pra cada campo), e as outras respostas do chat ficam na ficha do lead.</p>
     <p><code>{{ ig.lp }}?origem=leadster</code></p>
   </details>
+  {% set gads = google_ads_info(tenant) %}
+  <details class="traffic-accounts capi-box" id="google-ads">
+    <summary><b>📊 Google Ads (investimento)</b> <span class="muted">— {% if gads.rows %}✅ recebendo · último dia com gasto: {{ gads.last_day }}{% else %}desligado: ainda não recebeu nada{% endif %}</span></summary>
+    <p class="muted">O gasto, as impressões e os cliques de cada campanha entram no 📊 Tráfego, junto com os leads da campanha (pelo nome da campanha no link). Sem custo e sem pedir aprovação pro Google: um script que roda dentro da conta do Google Ads 1x por dia.</p>
+    <ol class="muted">
+      <li>No Google Ads da conta deste cliente: <b>Ferramentas</b> (🔧) → <b>Ações em massa</b> → <b>Scripts</b> → botão <b>＋</b> → <b>Novo script</b>.</li>
+      <li>Apague o que vier escrito, clique em <b>Copiar script</b> aqui embaixo e cole lá. Dê o nome <b>CRM</b>.</li>
+      <li>Clique em <b>Autorizar</b> e entre com a conta do Google. Depois em <b>Executar</b>: no fim aparece “CRM respondeu 200”.</li>
+      <li>Salve e, na lista de scripts, em <b>Frequência</b>, escolha <b>Diariamente</b>.</li>
+    </ol>
+    <p class="muted">⚠️ O script tem a chave deste cliente no endereço: não mande ele pra fora da agência.</p>
+    <textarea id="gadsScript" rows="8" readonly style="width:100%; font-family:monospace; font-size:.75rem">{{ gads.script }}</textarea>
+    <button class="btn small" type="button" onclick="var t=document.getElementById('gadsScript'); t.select(); navigator.clipboard.writeText(t.value).then(()=>{this.textContent='✓ Copiado'})">Copiar script</button>
+  </details>
   <details class="traffic-accounts">
     <summary class="muted">⚙ Contas de anúncio do Meta deste cliente: {{ meta_accounts or "detectando pelos anúncios dos leads…" }}</summary>
     <form method="post" action="/dashboard/meta-contas">
