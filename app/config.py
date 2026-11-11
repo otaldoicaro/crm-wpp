@@ -40,6 +40,11 @@ EVOLUTION_WEBHOOK_TOKEN = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "")
 # Redis do Evolution (só leitura): é onde o WhatsApp conectado guarda "código LID -> telefone"
 # quando CACHE_REDIS_SAVE_INSTANCES=true. O instalador preenche (ex: redis://evolution-redis:6379)
 EVOLUTION_REDIS_URL = os.getenv("EVOLUTION_REDIS_URL", "")
+# 📱 UAZapi (WhatsApp não-oficial pago, roda no servidor deles): substituto do Evolution, número por número.
+# UAZAPI_URL = https://<subdominio>.uazapi.com · UAZAPI_ADMIN_TOKEN cria/lista instâncias
+# (configurado por deploy/vps/configurar_uazapi.sh, digitado escondido; nunca no repositório)
+UAZAPI_URL = os.getenv("UAZAPI_URL", "").rstrip("/")
+UAZAPI_ADMIN_TOKEN = os.getenv("UAZAPI_ADMIN_TOKEN", "")
 # endereço público deste CRM, usado pra montar a URL do webhook ao criar instâncias
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000").rstrip("/")
 # endereço que o Evolution usa pra entregar mensagens ao CRM. No VPS é a rede

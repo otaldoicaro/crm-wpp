@@ -54,7 +54,7 @@
     <div class="wa-card-head">
       <div>
         <div class="wa-label">{{ n.label }}</div>
-        <div class="muted">{{ ("+" ~ n.phone_number) if n.phone_number else "número ainda não pareado" }}</div>
+        <div class="muted">{{ ("+" ~ n.phone_number) if n.phone_number else "número ainda não pareado" }}{% if is_admin and uazapi_ready %} · <span class="wa-via" title="Por onde este número conversa com o WhatsApp">{{ "via UAZapi" if n.provider == "uazapi" else "via Evolution" }}</span>{% endif %}</div>
         {% if is_admin %}
         <form method="post" action="/whatsapp/{{ n.id }}/disparo" class="wa-owner">
           <label class="check" title="Só manda a 1ª mensagem pros leads do formulário, em rodízio com os outros números de disparo. Fica fora do link /go. O vendedor do lead responde pelo CRM.">
@@ -100,6 +100,17 @@
       {% else %}
         <button class="btn small wa-connect-btn" type="button">Conectar agora</button>
       {% endif %}
+      {% if is_admin and uazapi_ready %}
+        {% if n.provider == "uazapi" %}
+        <form method="post" action="/whatsapp/{{ n.id }}/provedor" onsubmit="return confirm('Voltar {{ n.label|e }} pro Evolution?\n\nO número é desconectado do UAZapi e precisa ler o QR code de novo. As conversas continuam no CRM.')">
+          <input type="hidden" name="para" value="evolution"><button class="btn ghost small" type="submit">↩ Voltar pro Evolution</button>
+        </form>
+        {% else %}
+        <form method="post" action="/whatsapp/{{ n.id }}/provedor" onsubmit="return confirm('Passar {{ n.label|e }} pro UAZapi?\n\nO número sai do Evolution e precisa ler o QR code de novo, com o celular dele na mão. As conversas continuam as mesmas no CRM.\n\nNo celular, depois: Aparelhos conectados → tire o aparelho antigo do CRM, se ele ainda aparecer.')">
+          <input type="hidden" name="para" value="uazapi"><button class="btn ghost small" type="submit">🔁 Passar pro UAZapi</button>
+        </form>
+        {% endif %}
+      {% endif %}
       {% if is_admin %}
         <form method="post" action="/whatsapp/{{ n.id }}/remover" onsubmit="return confirm('Remover {{ n.label|e }} do CRM?\n\nO número é desconectado e sai da lista e do rodízio. As conversas antigas continuam salvas no CRM.')">
           <button class="btn ghost small" type="submit">Remover número</button>
@@ -120,6 +131,10 @@
           {{ m.seller_options(users, "") }}
         </select></label></p>
       <p><label>Número com DDD (opcional)<br><input type="text" name="phone" placeholder="Ex: 21 99999-9999" inputmode="tel"></label></p>
+      {% if uazapi_ready %}
+      <p><label>Conectar por<br>
+        <select name="via"><option value="uazapi">UAZapi (recomendado)</option><option value="evolution">Evolution</option></select></label></p>
+      {% endif %}
       <button class="btn" type="submit" {{ "disabled" if not configured }}>Adicionar e conectar</button>
     </form>
   </div>

@@ -146,7 +146,7 @@ def message_for(tenant: Tenant, lead: Lead, seller: User | None) -> str:
 
 def _connected(number: WhatsAppNumber | None) -> bool:
     return (number is not None and number.is_active and bool(number.phone_number)
-            and (number.provider != "evolution" or number.connection_state == "open"))
+            and (not number.qr_based or number.connection_state == "open"))
 
 
 def is_seller(user: User | None) -> bool:

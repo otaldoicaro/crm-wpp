@@ -68,7 +68,7 @@ def seller_link(
         .order_by((WhatsAppNumber.connection_state == "open").desc(), WhatsAppNumber.created_at)
         .first()
     )
-    if number is None or (number.provider == "evolution" and number.connection_state != "open"):
+    if number is None or (number.qr_based and number.connection_state != "open"):
         number = pick_number_for_click(db, tenant_id) or number
     if number is None:
         return HTMLResponse(

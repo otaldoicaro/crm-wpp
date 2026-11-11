@@ -149,10 +149,32 @@ def _from_chatbot(payload: dict, page: str) -> dict:
     if not phone:  # campo com outro nome, mas com cara de telefone
         phone = next((v for v in flat.values() if 10 <= len(re.sub(r"\D", "", v)) <= 13 and re.fullmatch(r"[\d\s()+\-.]+", v)), "")
     email = pick(EMAIL_KEYS) or next((v for v in flat.values() if re.fullmatch(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", v, re.I)), "")
-    skip = {"id", "lead_id", "conversation_id", "created_at", "updated_at", "token", "type", "event", "status"}
-    answers = {k: v for k, v in flat.items() if k not in used and k not in skip and len(v) <= 500 and v not in (phone, email)}
-    return {"nome": pick(NAME_KEYS), "whatsapp": phone, "email": email, "pagina": flat.get("pagina") or flat.get("page_url") or page,
-            "respostas": dict(list(answers.items())[:25]), **{k: flat[k] for k in UTM_KEYS if flat.get(k)}}
+    profile = {field: pick(keys) for field, keys in PROFILE_KEYS.items()}  # 📋 ficha (ramo agência)
+    used |= {k for keys in PROFILE_KEYS.values() for k in keys} | {"url", "page_url", "pagina"}
+    answers = {k: v for k, v in flat.items() if k not in used and not _technical(k, v) and len(v) <= 500 and v not in (phone, email)}
+    return {"nome": pick(NAME_KEYS), "whatsapp": phone, "email": email,
+            "pagina": page + (f" · {flat.get('url') or flat.get('page_url') or flat.get('pagina')}" if (flat.get("url") or flat.get("page_url") or flat.get("pagina")) else ""),
+            "respostas": dict(list(answers.items())[:25]), **{k: v for k, v in profile.items() if v},
+            **{k: flat[k] for k in UTM_KEYS if flat.get(k)}}
+
+
+# campos do chat que viram a 📋 ficha do lead (mesmos nomes do formulário da LP)
+PROFILE_KEYS = {
+    "empresa": ("empresa", "nome_empresa", "nome_da_empresa", "company", "company_name"),
+    "site": ("site", "siteinstagram", "site_instagram", "instagram", "site_ou_instagram", "website"),
+    "cargo": ("cargo", "job_title", "funcao"),
+    "faturamento": ("faturamento", "faturamentoempresa", "faturamento_empresa", "faturamento_mensal"),
+    "investimento": ("investimento", "investimentotrafego", "investimento_trafego", "investimento_em_marketing"),
+}
+# dados internos do chat (ids, datas, IP, regras do robô...): não vão pra ficha do lead
+TECHNICAL = {"id", "lead_id", "conversation_id", "created_at", "updated_at", "token", "type", "event", "status", "conversion",
+             "score", "ip", "ip_address", "uid", "channel", "default", "enabled", "migrated", "lead_source", "script_identifier",
+             "lead_created_at", "lead_created_date", "user_agent", "referrer", "timezone"}
+
+
+def _technical(key: str, value: str) -> bool:
+    return (key in TECHNICAL or key.endswith(("_id", "_at", "_date", "sended?", "sended", "_sent")) or key.startswith(("openmo", "source_script"))
+            or value in ("True", "False", "true", "false"))
 
 
 def _save_lp_lead(tenant_id: str, data: dict) -> dict:

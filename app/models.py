@@ -162,7 +162,7 @@ class WhatsAppNumber(Base):
     waba_business_account_id: Mapped[str] = mapped_column(String(60), default="")
     access_token: Mapped[str] = mapped_column(Text, default="")  # token do sistema/app da Meta
     verify_token: Mapped[str] = mapped_column(String(120), default="")  # usado no handshake do webhook
-    provider: Mapped[str] = mapped_column(String(20), default="cloud_api")  # cloud_api | evolution
+    provider: Mapped[str] = mapped_column(String(20), default="cloud_api")  # cloud_api | evolution | uazapi | instagram
     evolution_instance: Mapped[str] = mapped_column(String(80), default="", index=True)
     # último estado conhecido da conexão (Evolution): open | connecting | close
     connection_state: Mapped[str] = mapped_column(String(20), default="")
@@ -191,6 +191,11 @@ class WhatsAppNumber(Base):
     tenant: Mapped["Tenant"] = relationship(back_populates="whatsapp_numbers")
     owner: Mapped[Optional["User"]] = relationship()
 
+
+    @property
+    def qr_based(self) -> bool:
+        """WhatsApp conectado lendo QR code (Evolution ou UAZapi): pode cair, então o estado da conexão importa."""
+        return self.provider in ("evolution", "uazapi")
 
 class PipelineStage(Base):
     """Etapa do funil comercial (ex: Novo, Em atendimento, Qualificado, Ganho, Perdido)."""

@@ -58,7 +58,7 @@
 
 {# 📱 número + situação da conexão (Cloud API não desconecta: sempre "Conectado") #}
 {% macro wa_number(w) -%}
-{% set on = w.provider != "evolution" or w.connection_state == "open" %}
+{% set on = not w.qr_based or w.connection_state == "open" %}
 <div class="team-wa">
   <span class="wa-status {{ 'on' if on else 'off' }}">{{ "Conectado" if on else "Desconectado" }}</span>
   <span class="team-wa-phone">{{ w.phone_number|fone or "sem número" }}</span>

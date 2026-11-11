@@ -10,7 +10,7 @@ import re
 from typing import Optional
 
 from app.models import WhatsAppNumber
-from app.services import evolution_client, instagram, whatsapp_client
+from app.services import evolution_client, instagram, uazapi_client, whatsapp_client
 from app.services.whatsapp_client import media_kind_for_mime  # noqa: F401  (reexportado pro Inbox)
 
 logger = logging.getLogger("messaging")
@@ -60,6 +60,14 @@ def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dic
         ok, mid, error = instagram.send_text(number, phone, body, human=human)
         _last.error = error
         return ok, mid, ""
+    if number.provider == uazapi_client.PROVIDER:
+        try:
+            return True, uazapi_client.send_text(number.access_token, phone, body, (quote or {}).get("id", "")), ""
+        except uazapi_client.UazapiTimeout:
+            return None, "", ""
+        except uazapi_client.UazapiError as exc:
+            _last.error = friendly_error(exc)
+            return False, "", ""
     if number.provider == "evolution":
         try:
             wa_id, secret = _healing(number, lambda: evolution_client.send_text(number.evolution_instance, phone, body, quote))
@@ -102,6 +110,17 @@ def send_media(
     """Devolve (ok, id_da_mensagem, media_id_pra_guardar, erro, messageSecret)."""
     if number.provider == instagram.PROVIDER or instagram.is_ig_contact(phone):
         return False, "", "", "arquivo ainda não sai pelo CRM no Instagram. Mande pelo app do Instagram", ""
+    if number.provider == uazapi_client.PROVIDER:
+        try:
+            if media_kind == "audio":  # mensagem de voz (a bolinha verde)
+                wa_id = uazapi_client.send_audio(number.access_token, phone, content)
+            else:
+                wa_id = uazapi_client.send_media(number.access_token, phone, content, filename, mime_type, media_kind, caption)
+        except uazapi_client.UazapiTimeout:
+            return None, "", "", "", ""
+        except uazapi_client.UazapiError as exc:
+            return False, "", "", friendly_error(exc), ""
+        return True, wa_id, wa_id, "", ""  # a mídia é buscada depois pelo id da própria mensagem
     if number.provider == "evolution":
         try:
             if media_kind == "audio":  # vai como mensagem de voz (legenda não existe em áudio)
@@ -142,6 +161,8 @@ def friendly_error(exc: Exception) -> str:
 def fetch_media(number: WhatsAppNumber, media_id: str, url: str = "") -> tuple[Optional[bytes], Optional[str]]:
     if number is not None and number.provider == instagram.PROVIDER:
         return instagram.fetch_media(url)  # o Instagram manda o link do arquivo (guardado em media_url)
+    if number.provider == uazapi_client.PROVIDER:
+        return uazapi_client.fetch_media(number.access_token, media_id)
     if number.provider == "evolution":
         return evolution_client.fetch_media(number.evolution_instance, media_id)
     return whatsapp_client.fetch_media(number, media_id)

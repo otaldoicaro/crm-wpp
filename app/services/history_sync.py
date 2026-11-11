@@ -246,12 +246,21 @@ def _days_now() -> float:
 
 
 def schedule(delay_seconds: int = 300) -> None:
-    if not evolution_client.is_configured():
+    from app.services import uazapi_client
+
+    if not evolution_client.is_configured() and not uazapi_client.is_configured():
         return
 
     def run():
         try:
-            result = sync_all(_days_now(), apply=True)
+            days = _days_now()
+            try:  # 📱 números do UAZapi: o webhook dele não repete entrega que falhou
+                from app.routers.webhooks_uazapi import catch_up
+
+                catch_up(hours=days * 24)
+            except Exception:
+                logger.exception("history_sync: conferência do UAZapi falhou")
+            result = sync_all(days, apply=True)
             imported = sum(r.get("importar_cliente", 0) + r.get("importar_nossas", 0) for r in result.values())
             if imported:
                 logger.warning("history_sync: %s mensagem(ns) que tinham escapado foram recuperadas", imported)

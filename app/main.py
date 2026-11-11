@@ -19,6 +19,7 @@ from app.routers import (
     team,
     dashboard,
     webhooks_evolution,
+    webhooks_uazapi,
     webhooks_site,
     webhooks_whatsapp,
     whatsapp_connect,
@@ -135,6 +136,7 @@ async def friendly_http_errors(request: Request, exc: StarletteHTTPException):
 app.include_router(admin_setup.router)
 app.include_router(webhooks_whatsapp.router)
 app.include_router(webhooks_evolution.router)
+app.include_router(webhooks_uazapi.router)
 app.include_router(webhooks_site.router)
 app.include_router(instagram_router.router)
 app.include_router(google_ads_router.router)

@@ -76,13 +76,13 @@ def team_page(
     # WhatsApps de cada pessoa (conectado primeiro) e os sem dono (número compartilhado)
     numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True),
                                               WhatsAppNumber.provider != "instagram").all()
-    numbers.sort(key=lambda n: (n.provider == "evolution" and n.connection_state != "open", n.label.lower()))
+    numbers.sort(key=lambda n: (n.qr_based and n.connection_state != "open", n.label.lower()))
     numbers_by_owner: dict = {}
     for n in numbers:
         if n.owner_user_id:
             numbers_by_owner.setdefault(n.owner_user_id, []).append(n)
     shared_numbers = [n for n in numbers if not n.owner_user_id]
-    connected_total = sum(1 for n in numbers if n.provider != "evolution" or n.connection_state == "open")
+    connected_total = sum(1 for n in numbers if not n.qr_based or n.connection_state == "open")
     seller_teams = teams.tenant_teams(db, tenant.id)
     return templates.TemplateResponse(
         request,
@@ -316,6 +316,14 @@ def _remove_member(db: Session, tenant: Tenant, member: User, reassign: bool, dr
         for number in db.query(WhatsAppNumber).filter(
             WhatsAppNumber.owner_user_id == member.id, WhatsAppNumber.is_active.is_(True)
         ):
+            if number.provider == "uazapi":
+                from app.services import uazapi_client
+
+                for call in (uazapi_client.disconnect, uazapi_client.delete_instance):
+                    try:
+                        call(number.access_token)
+                    except uazapi_client.UazapiError:
+                        pass
             if number.provider == "evolution":
                 for call in (evolution_client.logout, evolution_client.delete_instance):
                     try:

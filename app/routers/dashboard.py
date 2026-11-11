@@ -22,7 +22,7 @@ from app.deps import current_tenant, current_user_required
 from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app import features, segments
-from app.services import teams
+from app.services import teams, uazapi_client
 from app.services import after_hours, autofollow, autostage, car_deal, channels, comments, deals, handover, invalid_contact, lead_profile, trash, notify, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
@@ -540,7 +540,7 @@ def _start_numbers(db: Session, tenant: Tenant, user: User, lead: Lead) -> list:
     numbers = [
         n for n in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True))
         .order_by(WhatsAppNumber.label)
-        if n.provider != "instagram" and (n.provider != "evolution" or n.connection_state == "open")
+        if n.provider != "instagram" and (not n.qr_based or n.connection_state == "open")
     ]
     if user.role != "admin":
         numbers = [n for n in numbers if n.owner_user_id == user.id]
@@ -1505,7 +1505,7 @@ def _inbox_context(
                 .all()
                 if n.id != active_conversation.whatsapp_number_id and n.provider != "instagram"
                 and not selected_lead.phone.startswith("ig:")
-                and (n.provider != "evolution" or n.connection_state == "open")
+                and (not n.qr_based or n.connection_state == "open")
             ]
 
     return {
@@ -1585,7 +1585,7 @@ def _transfer_options(db: Session, tenant: Tenant, lead: Lead) -> list:
         for n in db.query(WhatsAppNumber).filter(
             WhatsAppNumber.tenant_id == tenant.id, WhatsAppNumber.is_active.is_(True), WhatsAppNumber.owner_user_id.isnot(None)
         )
-        if n.provider != "evolution" or n.connection_state == "open"
+        if not n.qr_based or n.connection_state == "open"
     }
     current = lead.active_conversation.whatsapp_number_id if lead.active_conversation else None
     return [
@@ -2489,9 +2489,9 @@ def lead_avatar(
     lead = _visible_lead(db, tenant, user, lead_id)
     conversation = lead.active_conversation if lead else None
     number = conversation.whatsapp_number if conversation else None
-    if not lead or not number or number.provider != "evolution":
+    if not lead or not number or not number.qr_based:
         return _blank_avatar(86400)
-    instance, phone = number.evolution_instance, lead.phone
+    instance, phone, provider, token = number.evolution_instance, lead.phone, number.provider, number.access_token
     db.close()  # devolve a conexão do banco antes de ir no WhatsApp
 
     if not _AVATAR_SLOTS.acquire(blocking=False):
@@ -2499,7 +2499,8 @@ def lead_avatar(
     try:
         content = b""
         try:
-            url = evolution_client.profile_picture_url(instance, phone)
+            url = (uazapi_client.profile_picture_url(token, phone) if provider == uazapi_client.PROVIDER
+                   else evolution_client.profile_picture_url(instance, phone))
             if url:
                 resp = requests.get(url, timeout=6)
                 content = resp.content if resp.ok else b""
@@ -2850,11 +2851,14 @@ def edit_message(
     if datetime.datetime.utcnow() - message.created_at > EDIT_WINDOW:
         return JSONResponse({"ok": False, "error": "O WhatsApp só deixa editar até 15 minutos depois do envio"}, status_code=400)
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
-    if number is None or number.provider != "evolution":
+    if number is None or not number.qr_based:
         return JSONResponse({"ok": False, "error": "Este número não permite editar"}, status_code=400)
     try:
-        evolution_client.edit_text(number.evolution_instance, message.wa_message_id, text)
-    except evolution_client.EvolutionError as exc:
+        if number.provider == uazapi_client.PROVIDER:
+            uazapi_client.edit_text(number.access_token, message.wa_message_id, text)
+        else:
+            evolution_client.edit_text(number.evolution_instance, message.wa_message_id, text)
+    except (evolution_client.EvolutionError, uazapi_client.UazapiError) as exc:
         logger.warning("editar mensagem: %s", exc)
         return JSONResponse({"ok": False, "error": "O WhatsApp não aceitou a edição"}, status_code=502)
     message.body = text
@@ -2939,11 +2943,14 @@ def delete_message(
     if datetime.datetime.utcnow() - message.created_at > DELETE_WINDOW:
         return JSONResponse({"ok": False, "error": "O WhatsApp só deixa apagar pra todos até 2 dias depois do envio"}, status_code=400)
     number = db.get(WhatsAppNumber, conversation.whatsapp_number_id)
-    if number is None or number.provider != "evolution":
+    if number is None or not number.qr_based:
         return JSONResponse({"ok": False, "error": "Este número não permite apagar"}, status_code=400)
     try:
-        evolution_client.delete_for_everyone(number.evolution_instance, message.wa_message_id)
-    except evolution_client.EvolutionError as exc:
+        if number.provider == uazapi_client.PROVIDER:
+            uazapi_client.delete_for_everyone(number.access_token, message.wa_message_id)
+        else:
+            evolution_client.delete_for_everyone(number.evolution_instance, message.wa_message_id)
+    except (evolution_client.EvolutionError, uazapi_client.UazapiError) as exc:
         logger.warning("apagar mensagem: %s", exc)
         return JSONResponse({"ok": False, "error": "O WhatsApp não aceitou apagar"}, status_code=502)
     message.body = f"🚫 Mensagem apagada no WhatsApp: {message.body}"  # mesmo formato do apagado pelo celular

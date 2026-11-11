@@ -41,10 +41,23 @@ def fill_from_form(lead, tenant, data: dict) -> None:
         if not value or profile.get(key):
             continue
         if key in picks:
-            value = next((o for o in picks[key] if _same(o, value)), "")
+            value = next((o for o in picks[key] if _same(o, value)), "") or (_cargo_like(value, picks[key]) if key == "cargo" else "")
         if value:
             profile[key] = value
     lead.profile = json.dumps(profile, ensure_ascii=False)
+
+
+CARGO_WORDS = (("sócio", "socio", "ceo", "dono", "proprietári", "fundador"), ("diretor",), ("head", "gerente", "coordenador"),
+               ("analista", "assistente"))
+
+
+def _cargo_like(value: str, options: list) -> str:
+    """"Dono/Sócio(a)/CEO" (chat do site) → "Sócio(a) / CEO" (ficha): pela palavra do cargo."""
+    text = value.lower()
+    for words, option in zip(CARGO_WORDS, options):
+        if any(w in text for w in words):
+            return option
+    return ""
 
 
 def _int(value: str):

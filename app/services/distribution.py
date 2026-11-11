@@ -114,7 +114,7 @@ def pick_number_for_click(db: Session, tenant_id: str) -> WhatsAppNumber | None:
     load = _open_leads_by_user(db, tenant_id)
 
     def eligible(n: WhatsAppNumber) -> bool:
-        if n.provider == "evolution" and n.connection_state != "open":
+        if n.qr_based and n.connection_state != "open":
             return False
         if not n.phone_number or not n.owner_user_id or n.dispatch:
             return False
@@ -126,7 +126,7 @@ def pick_number_for_click(db: Session, tenant_id: str) -> WhatsAppNumber | None:
     candidates = [n for n in numbers if eligible(n)]
     if not candidates:
         # ninguém disponível no rodízio: manda pra qualquer número conectado
-        candidates = [n for n in numbers if n.phone_number and not n.dispatch and (n.provider != "evolution" or n.connection_state == "open")]
+        candidates = [n for n in numbers if n.phone_number and not n.dispatch and (not n.qr_based or n.connection_state == "open")]
     if not candidates:
         return None
 

@@ -20,7 +20,7 @@ def usable(number: Optional[WhatsAppNumber]) -> bool:
     if number is not None and number.provider == "instagram":  # 📸 Direct: manda enquanto estiver conectado
         return number.is_active and bool(number.access_token)
     return (number is not None and number.is_active and bool(number.phone_number)
-            and (number.provider != "evolution" or number.connection_state == "open"))
+            and (not number.qr_based or number.connection_state == "open"))
 
 
 def own_number(db, user_id: Optional[str], tenant_id: str) -> Optional[WhatsAppNumber]:
