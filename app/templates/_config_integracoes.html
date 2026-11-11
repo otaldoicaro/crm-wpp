@@ -7,7 +7,57 @@ document.addEventListener("submit", function (e) {
 </script>
 <div class="card">
   {% if user.role == "admin" %}
-  <details class="traffic-accounts capi-box" id="eventos-meta" open>
+  <h3 class="cfg-group">📥 Entrada de leads <span class="muted">— de onde os contatos chegam no CRM</span></h3>
+  {% set ig = ig_info(tenant) %}
+  <details class="traffic-accounts capi-box" id="instagram" {{ "open" if request.query_params.get("ig") }}>
+    <summary><b>📸 Direct do Instagram</b> <span class="muted">— {% if ig.account and ig.account.connection_state != "close" %}<b class="goal-ok">conectado</b> · {{ ig.account.label }}{% elif ig.account %}<b class="goal-bad">conexão expirou</b> · conecte de novo{% else %}desconectado{% endif %} · as DMs caem no Inbox e viram card no Pipeline</span></summary>
+    {% if request.query_params.get("ig") %}<p class="capi-msg">{{ request.query_params.get("ig") }}</p>{% endif %}
+    <p class="muted">API oficial da Meta, sem custo por mensagem. Regras da Meta: dá pra responder pelo CRM até <b>24h</b> depois da última mensagem do cliente, ou até <b>7 dias</b> quando a Meta aprovar o recurso "Human Agent" do app (Meta for Developers → app → Revisão do app → Permissões e recursos → Human Agent). Depois disso, só pelo app do Instagram; foto/áudio que o cliente manda aparecem aqui, mas arquivo nosso sai só pelo app. Comentários em post não entram, só o Direct.</p>
+    <ol class="muted" style="margin:0 0 10px 18px;padding:0">
+      <li>O Instagram tem que ser <b>conta profissional</b> (Comercial ou Criador de conteúdo).</li>
+      <li>No <b>Meta for Developers</b> → seu app → <b>Instagram</b> → <b>Configuração da API com login do Instagram</b>: em <b>Webhooks</b>, cole a URL e o token abaixo, clique em <b>Verificar e salvar</b> e ative o campo <b>messages</b>.</li>
+      <li>Na mesma página, em <b>Gerar tokens de acesso</b>, adicione a conta do Instagram, clique em <b>Gerar token</b>, copie e cole aqui embaixo.</li>
+    </ol>
+    <table class="table-simple" style="margin-bottom:10px">
+      <tr><td>URL de retorno</td><td><code>{{ ig.callback }}</code></td></tr>
+      <tr><td>Verificar token</td><td><code>{{ ig.verify }}</code></td></tr>
+    </table>
+    <form method="post" action="/configuracoes/instagram" class="capi-form">
+      <label>Token da conta do Instagram <input name="token" type="password" autocomplete="new-password" placeholder="{{ 'já conectado (cole um novo só pra trocar de conta)' if ig.account else 'cole aqui o token gerado no app' }}"></label>
+      <div><button class="btn small" type="submit" name="acao" value="conectar" data-busy="Conectando no Instagram…">{{ "Trocar token / conta" if ig.account else "Conectar Instagram" }}</button>
+      {% if ig.account %}<button class="btn ghost small" type="submit" name="acao" value="desconectar" onclick="return confirm('Desconectar o Instagram? As conversas continuam no CRM, mas mensagens novas do Direct não entram mais.')">Desconectar</button>{% endif %}</div>
+    </form>
+  </details>
+  <details class="traffic-accounts capi-box" id="leadster">
+    <summary><b>💬 Leadster (chat do site)</b> <span class="muted">— cada contato do chat vira lead no CRM, como o formulário da LP</span></summary>
+    <p class="muted">No Leadster: <b>Integrações</b> → <b>Webhook</b> → cole o endereço abaixo e salve. O CRM pega nome, WhatsApp e e-mail (com o nome que o Leadster der pra cada campo), e as outras respostas do chat ficam na ficha do lead.</p>
+    <p><code>{{ ig.lp }}?origem=leadster</code></p>
+  </details>
+  <h3 class="cfg-group">📊 Investimento dos anúncios <span class="muted">— gasto das campanhas no 📊 Tráfego</span></h3>
+  {% set gads = google_ads_info(tenant) %}
+  <details class="traffic-accounts capi-box" id="google-ads">
+    <summary><b>📊 Google Ads (investimento)</b> <span class="muted">— {% if gads.rows %}✅ recebendo · último dia com gasto: {{ gads.last_day }}{% else %}desligado: ainda não recebeu nada{% endif %}</span></summary>
+    <p class="muted">O gasto, as impressões e os cliques de cada campanha entram no 📊 Tráfego, junto com os leads da campanha (pelo nome da campanha no link). Sem custo e sem pedir aprovação pro Google: um script que roda dentro da conta do Google Ads 1x por dia.</p>
+    <ol class="muted">
+      <li>No Google Ads da conta deste cliente: <b>Ferramentas</b> (🔧) → <b>Ações em massa</b> → <b>Scripts</b> → botão <b>＋</b> → <b>Novo script</b>.</li>
+      <li>Apague o que vier escrito, clique em <b>Copiar script</b> aqui embaixo e cole lá. Dê o nome <b>CRM</b>.</li>
+      <li>Clique em <b>Autorizar</b> e entre com a conta do Google. Depois em <b>Executar</b>: no fim aparece “CRM respondeu 200”.</li>
+      <li>Salve e, na lista de scripts, em <b>Frequência</b>, escolha <b>Diariamente</b>.</li>
+    </ol>
+    <p class="muted">⚠️ O script tem a chave deste cliente no endereço: não mande ele pra fora da agência.</p>
+    <textarea id="gadsScript" rows="8" readonly style="width:100%; font-family:monospace; font-size:.75rem">{{ gads.script }}</textarea>
+    <button class="btn small" type="button" onclick="var t=document.getElementById('gadsScript'); t.select(); navigator.clipboard.writeText(t.value).then(()=>{this.textContent='✓ Copiado'})">Copiar script</button>
+  </details>
+  <details class="traffic-accounts">
+    <summary class="muted">⚙ Contas de anúncio do Meta deste cliente: {{ meta_accounts or "detectando pelos anúncios dos leads…" }}</summary>
+    <form method="post" action="/dashboard/meta-contas">
+      <input name="contas" value="{{ meta_accounts }}" placeholder="ex: 1234567890 (vários separados por vírgula)">
+      <button class="btn small" type="submit">Salvar e buscar o investimento agora</button>
+      <div class="muted">Normalmente é detectado sozinho. Só mexa se faltar alguma conta (o número fica no Gerenciador de Anúncios, ao lado do nome da conta).</div>
+    </form>
+  </details>
+  <h3 class="cfg-group">📤 Conversões pro Meta <span class="muted">— o CRM avisa o Meta de oportunidades e vendas</span></h3>
+  <details class="traffic-accounts capi-box" id="eventos-meta" {{ "open" if capi_msg }}>
     <summary><b>📤 Eventos do CRM pro Meta</b> <span class="muted">— {% if tenant.meta_capi_enabled %}<b class="goal-ok">ligado</b>{{ " (modo teste)" if tenant.meta_capi_test_code }}{% else %}desligado{% endif %} · Oportunidade (Negociando) e Venda (Ganho) voltam pro Gerenciador de Anúncios</span></summary>
     {% if capi_msg %}<p class="capi-msg">{{ capi_msg }}</p>{% endif %}
     <p class="muted">Cada cliente usa o <b>próprio</b> conjunto de dados (pixel). Ao salvar, o CRM confere no Meta se o pixel é de uma das contas de anúncio deste cliente ({{ meta_accounts or "nenhuma ainda" }}); se não for, não liga. Só vão leads que vieram de anúncio do Meta, uma vez por lead, a partir de agora. Telefone, e-mail e nome vão criptografados.</p>
@@ -47,53 +97,6 @@ document.addEventListener("submit", function (e) {
       <tbody>{% for ev in capi_events %}<tr><td>{{ ev.created_at|hora("%d/%m %H:%M") }}</td><td>{{ {"InitiateCheckout": "Oportunidade", "Purchase": "Venda"}.get(ev.event_name, ev.event_name) }}</td><td><a href="/inbox/{{ ev.lead_id }}">abrir</a></td><td class="{{ 'goal-ok' if ev.status == 'sent' else ('goal-bad' if ev.status == 'failed' else 'muted') }}" title="{{ ev.error }}">{{ {"sent": "enviado", "pending": "na fila", "failed": "falhou", "skipped": "não enviado"}.get(ev.status, ev.status) }}</td></tr>{% endfor %}</tbody>
     </table>
     {% endif %}
-  </details>
-  {% set ig = ig_info(tenant) %}
-  <details class="traffic-accounts capi-box" id="instagram" {{ "open" if request.query_params.get("ig") }}>
-    <summary><b>📸 Direct do Instagram</b> <span class="muted">— {% if ig.account and ig.account.connection_state != "close" %}<b class="goal-ok">conectado</b> · {{ ig.account.label }}{% elif ig.account %}<b class="goal-bad">conexão expirou</b> · conecte de novo{% else %}desconectado{% endif %} · as DMs caem no Inbox e viram card no Pipeline</span></summary>
-    {% if request.query_params.get("ig") %}<p class="capi-msg">{{ request.query_params.get("ig") }}</p>{% endif %}
-    <p class="muted">API oficial da Meta, sem custo por mensagem. Regras da Meta: dá pra responder pelo CRM até <b>24h</b> depois da última mensagem do cliente, ou até <b>7 dias</b> quando a Meta aprovar o recurso "Human Agent" do app (Meta for Developers → app → Revisão do app → Permissões e recursos → Human Agent). Depois disso, só pelo app do Instagram; foto/áudio que o cliente manda aparecem aqui, mas arquivo nosso sai só pelo app. Comentários em post não entram, só o Direct.</p>
-    <ol class="muted" style="margin:0 0 10px 18px;padding:0">
-      <li>O Instagram tem que ser <b>conta profissional</b> (Comercial ou Criador de conteúdo).</li>
-      <li>No <b>Meta for Developers</b> → seu app → <b>Instagram</b> → <b>Configuração da API com login do Instagram</b>: em <b>Webhooks</b>, cole a URL e o token abaixo, clique em <b>Verificar e salvar</b> e ative o campo <b>messages</b>.</li>
-      <li>Na mesma página, em <b>Gerar tokens de acesso</b>, adicione a conta do Instagram, clique em <b>Gerar token</b>, copie e cole aqui embaixo.</li>
-    </ol>
-    <table class="table-simple" style="margin-bottom:10px">
-      <tr><td>URL de retorno</td><td><code>{{ ig.callback }}</code></td></tr>
-      <tr><td>Verificar token</td><td><code>{{ ig.verify }}</code></td></tr>
-    </table>
-    <form method="post" action="/configuracoes/instagram" class="capi-form">
-      <label>Token da conta do Instagram <input name="token" type="password" autocomplete="new-password" placeholder="{{ 'já conectado (cole um novo só pra trocar de conta)' if ig.account else 'cole aqui o token gerado no app' }}"></label>
-      <div><button class="btn small" type="submit" name="acao" value="conectar" data-busy="Conectando no Instagram…">{{ "Trocar token / conta" if ig.account else "Conectar Instagram" }}</button>
-      {% if ig.account %}<button class="btn ghost small" type="submit" name="acao" value="desconectar" onclick="return confirm('Desconectar o Instagram? As conversas continuam no CRM, mas mensagens novas do Direct não entram mais.')">Desconectar</button>{% endif %}</div>
-    </form>
-  </details>
-  <details class="traffic-accounts capi-box" id="leadster">
-    <summary><b>💬 Leadster (chat do site)</b> <span class="muted">— cada contato do chat vira lead no CRM, como o formulário da LP</span></summary>
-    <p class="muted">No Leadster: <b>Integrações</b> → <b>Webhook</b> → cole o endereço abaixo e salve. O CRM pega nome, WhatsApp e e-mail (com o nome que o Leadster der pra cada campo), e as outras respostas do chat ficam na ficha do lead.</p>
-    <p><code>{{ ig.lp }}?origem=leadster</code></p>
-  </details>
-  {% set gads = google_ads_info(tenant) %}
-  <details class="traffic-accounts capi-box" id="google-ads">
-    <summary><b>📊 Google Ads (investimento)</b> <span class="muted">— {% if gads.rows %}✅ recebendo · último dia com gasto: {{ gads.last_day }}{% else %}desligado: ainda não recebeu nada{% endif %}</span></summary>
-    <p class="muted">O gasto, as impressões e os cliques de cada campanha entram no 📊 Tráfego, junto com os leads da campanha (pelo nome da campanha no link). Sem custo e sem pedir aprovação pro Google: um script que roda dentro da conta do Google Ads 1x por dia.</p>
-    <ol class="muted">
-      <li>No Google Ads da conta deste cliente: <b>Ferramentas</b> (🔧) → <b>Ações em massa</b> → <b>Scripts</b> → botão <b>＋</b> → <b>Novo script</b>.</li>
-      <li>Apague o que vier escrito, clique em <b>Copiar script</b> aqui embaixo e cole lá. Dê o nome <b>CRM</b>.</li>
-      <li>Clique em <b>Autorizar</b> e entre com a conta do Google. Depois em <b>Executar</b>: no fim aparece “CRM respondeu 200”.</li>
-      <li>Salve e, na lista de scripts, em <b>Frequência</b>, escolha <b>Diariamente</b>.</li>
-    </ol>
-    <p class="muted">⚠️ O script tem a chave deste cliente no endereço: não mande ele pra fora da agência.</p>
-    <textarea id="gadsScript" rows="8" readonly style="width:100%; font-family:monospace; font-size:.75rem">{{ gads.script }}</textarea>
-    <button class="btn small" type="button" onclick="var t=document.getElementById('gadsScript'); t.select(); navigator.clipboard.writeText(t.value).then(()=>{this.textContent='✓ Copiado'})">Copiar script</button>
-  </details>
-  <details class="traffic-accounts">
-    <summary class="muted">⚙ Contas de anúncio do Meta deste cliente: {{ meta_accounts or "detectando pelos anúncios dos leads…" }}</summary>
-    <form method="post" action="/dashboard/meta-contas">
-      <input name="contas" value="{{ meta_accounts }}" placeholder="ex: 1234567890 (vários separados por vírgula)">
-      <button class="btn small" type="submit">Salvar e buscar o investimento agora</button>
-      <div class="muted">Normalmente é detectado sozinho. Só mexa se faltar alguma conta (o número fica no Gerenciador de Anúncios, ao lado do nome da conta).</div>
-    </form>
   </details>
   {% endif %}
 </div>

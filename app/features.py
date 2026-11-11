@@ -37,6 +37,25 @@ FEATURES = {
     "transcrever_audios": "🎙️ Transcrever os áudios do WhatsApp (o texto aparece embaixo do áudio e entra nas regras "
                           "automáticas e na busca). Custo no Groq: ~US$ 0,04 por hora de áudio",
 }
+# ⚙ Configurações → ⚙️ Recursos: os recursos agrupados por assunto (o que faltar aqui cai em "Outros")
+GROUPS = [
+    ("🧭 Funil e etapas", ["funil_manual", "visita_negociando", "agendamentos", "lead_frio", "sem_prazos", "tentativas_contato"]),
+    ("💬 Conversas e Inbox", ["interessados_negociando", "sem_popup_outro_vendedor", "transcrever_audios"]),
+    ("👥 Vendedores", ["sem_passar_lead", "passar_troca_numero"]),
+    ("🤖 Mensagens automáticas pro cliente", ["followup_automatico", "followup_so_24h", "mensagem_fora_horario"]),
+    ("💰 Venda e pagamento", ["pagamento_parcelado"]),
+    ("🗑️ Lixeira", ["lixeira_apaga"]),
+]
+
+
+def grouped() -> list:
+    """[(assunto, [chaves])] na ordem da tela, com o que não está em GROUPS no fim ("Outros")."""
+    seen = {k for _, keys in GROUPS for k in keys}
+    groups = [(name, [k for k in keys if k in FEATURES]) for name, keys in GROUPS]
+    rest = [k for k in FEATURES if k not in seen]
+    return [g for g in groups if g[1]] + ([("Outros", rest)] if rest else [])
+
+
 DEFAULTS_BY_SEGMENT = {
     "seminovos": ("pagamento_parcelado", "visita_negociando"),
     "agencia": ("funil_manual", "interessados_negociando", "lixeira_apaga", "sem_prazos", "tentativas_contato"),

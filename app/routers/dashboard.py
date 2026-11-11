@@ -802,10 +802,11 @@ def settings_page(
     mensagem automática, recursos) e 🔌 Integrações (eventos pro Meta, WhatsApps/WABA, contas de anúncio)."""
     if user.role != "admin":
         raise HTTPException(status_code=403)
-    aba = aba if aba in ("prazos", "integracoes") else "prazos"
+    aba = aba if aba in ("prazos", "mensagens", "recursos", "integracoes") else "prazos"
     ctx = {"tenant": tenant, "user": user, "active_nav": "config", "aba": aba, "is_admin": True}
-    if aba == "prazos":
+    if aba != "integracoes":  # as 3 abas são um formulário só (salva tudo junto); a aba só escolhe o que aparece
         ctx.update({
+            "feature_groups": features.grouped(),
             "stages": funnel._stages(db, tenant.id),
             "hello_default": first_contact.default_text(tenant).replace("{empresa}", tenant.name),
             "hello_generic_default": first_contact.generic_text(SimpleNamespace(auto_hello_generic_text="", segment=tenant.segment))
@@ -895,7 +896,8 @@ async def save_deadlines(
         db.commit()
 
     await run_in_threadpool(apply)
-    return RedirectResponse(url="/configuracoes?aba=prazos&salvo=1", status_code=302)
+    aba = form.get("aba") if form.get("aba") in ("prazos", "mensagens", "recursos") else "prazos"
+    return RedirectResponse(url=f"/configuracoes?aba={aba}&salvo=1", status_code=302)
 
 
 @router.post("/leads/{lead_id}/proximo-contato")

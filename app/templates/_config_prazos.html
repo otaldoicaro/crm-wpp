@@ -1,5 +1,7 @@
 {# ⚙ Configurações → Prazos e automações #}
 <form method="post" action="/prazos" class="card prazos-form">
+  <input type="hidden" name="aba" value="{{ aba }}">
+  <section class="cfg-sec" data-aba="prazos" {% if aba != "prazos" %}hidden{% endif %}>
   <h3 style="margin-top:0">⏰ Prazo de cada etapa</h3>
   <p class="muted">Em horas (24 = 1 dia). 0 = sem prazo. O card fica amarelo perto do prazo e vermelho quando passa.</p>
   <table class="table-simple">
@@ -31,7 +33,10 @@
   </label>
   <p class="muted">Bom pra vendas mais longas (serviços, projetos). Pra venda rápida, os prazos por etapa costumam bastar.</p>
 
-  <h3 id="mensagem-automatica">🤖 Mensagem automática pro lead do formulário</h3>
+</section>
+<section class="cfg-sec" data-aba="mensagens" {% if aba != "mensagens" %}hidden{% endif %}>
+  <p class="muted" style="margin-top:0">Tudo que sai sozinho pro cliente. Cada uma só funciona se estiver ligada (aqui ou em ⚙️ Recursos).</p>
+  <h3 id="mensagem-automatica" style="margin-top:0">🤖 Mensagem automática pro lead do formulário</h3>
   <label class="check"><input type="checkbox" name="auto_hello_enabled" value="1" {{ "checked" if tenant.auto_hello_enabled }}>
     Quem preenche o formulário e não chama no WhatsApp recebe esta mensagem depois de
     <input type="number" min="1" max="60" step="1" name="auto_hello_minutes" value="{{ tenant.auto_hello_minutes or 3 }}" style="width:70px"> minutos,
@@ -46,7 +51,7 @@
   <textarea name="auto_hello_generic_text" rows="4" style="width:100%;max-width:560px;margin-top:6px">{{ tenant.auto_hello_generic_text or hello_generic_default }}</textarea>
   <p class="muted">Dá pra usar {nome}, {vendedor} e {empresa}.</p>
 
-  <h3 id="followup-automatico">🤖 Follow-up automático {% if "followup_automatico" in features_on or autofu_only_first %}<span class="goal-ok" style="font-size:.8rem">ligado</span>{% else %}<span class="muted" style="font-size:.8rem">(desligado — ligue em Recursos, abaixo)</span>{% endif %}</h3>
+  <h3 id="followup-automatico">🤖 Follow-up automático {% if "followup_automatico" in features_on or autofu_only_first %}<span class="goal-ok" style="font-size:.8rem">ligado</span>{% else %}<span class="muted" style="font-size:.8rem">(desligado — ligue na aba ⚙️ Recursos)</span>{% endif %}</h3>
   {% if autofu_only_first %}
   <p class="muted">Só de 24h: a gente chamou o cliente e ele não respondeu em 24h → sai esta mensagem, uma vez. Sai pelo WhatsApp do vendedor do lead, só no horário de atendimento acima, e só pras conversas depois de ligar.</p>
   {% else %}
@@ -60,7 +65,7 @@
   <p class="muted">{nome} = 1º nome do cliente (ex: Renato). Sem nome, a 2ª começa com “Opa, tudo bem? Como parece…”.</p>
   {% endif %}
 
-  <h3 id="fora-do-horario">🌙 Mensagem fora do horário {% if "mensagem_fora_horario" in features_on %}<span class="goal-ok" style="font-size:.8rem">ligado</span>{% else %}<span class="muted" style="font-size:.8rem">(desligado — ligue em Recursos, abaixo)</span>{% endif %}</h3>
+  <h3 id="fora-do-horario">🌙 Mensagem fora do horário {% if "mensagem_fora_horario" in features_on %}<span class="goal-ok" style="font-size:.8rem">ligado</span>{% else %}<span class="muted" style="font-size:.8rem">(desligado — ligue na aba ⚙️ Recursos)</span>{% endif %}</h3>
   <p class="muted">O cliente escreveu com a loja fechada ({{ after_hours_label }}): sai esta resposta pelo WhatsApp onde ele escreveu, uma vez por noite.
     Não sai se o vendedor falou com ele nos últimos 30 minutos, e o cliente continua aparecendo como aguardando resposta.</p>
   {% if after_hours_detail_default %}
@@ -83,11 +88,19 @@
   <textarea name="agenda_reminder_text" rows="3" style="width:100%;max-width:560px">{{ at.reminder }}</textarea>
   {% endif %}
 
-  <h3 id="recursos">⚙️ Recursos deste CRM</h3>
+</section>
+<section class="cfg-sec" data-aba="recursos" {% if aba != "recursos" %}hidden{% endif %}>
+  <h3 id="recursos" style="margin-top:0">⚙️ Recursos deste CRM <span class="muted" style="font-size:.85rem;font-weight:400">— liga/desliga, vale só pra {{ tenant.name }}</span></h3>
   <input type="hidden" name="features_form" value="1">
-  {% for key, label in feature_list.items() %}
-  <label class="check"><input type="checkbox" name="feature" value="{{ key }}" {{ "checked" if key in features_on }}> {{ label }}</label>
+  {% for group, keys in feature_groups %}
+  <fieldset class="cfg-features">
+    <legend>{{ group }}</legend>
+    {% for key in keys %}
+    <label class="check"><input type="checkbox" name="feature" value="{{ key }}" {{ "checked" if key in features_on }}> {{ feature_list[key] }}</label>
+    {% endfor %}
+  </fieldset>
   {% endfor %}
+</section>
 
   <button class="btn" type="submit">Salvar</button>
 </form>

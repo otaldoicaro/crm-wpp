@@ -1277,3 +1277,10 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 dialog.novo-lead { max-width: 640px; width: calc(100% - 32px); border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--panel); color: var(--text); padding: 20px; }
 dialog.novo-lead::backdrop { background: rgba(0, 0, 0, .45); }
+
+/* ⚙ Configurações agrupadas por assunto */
+.cfg-group { margin: 22px 0 8px; font-size: 1.02rem; }
+.cfg-group:first-of-type { margin-top: 4px; }
+.cfg-group .muted { font-size: .82rem; font-weight: 400; }
+fieldset.cfg-features { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px 6px; margin: 0 0 14px; }
+fieldset.cfg-features legend { font-weight: 700; padding: 0 6px; }
