@@ -27,6 +27,8 @@ FEATURES = {
                     "sem Perdido automático por 7 dias parado",
     "sem_passar_lead": "🚫 Sem passar lead pra outro vendedor: some a opção “Passar pra” da conversa, da ficha do lead e do "
                        "“Selecionar várias” (cada lead fica com quem atendeu)",
+    "passar_so_na_ficha": "↪ Passar o lead pra outro vendedor só em “📋 Ver status do lead” (some do “⋯ Mais” e do clique "
+                          "direito da conversa no Inbox)",
     "lixeira_apaga": "🗑️ Lixeira com prazo: lead excluído fica na Lixeira por 30 dias (dá pra restaurar) e depois é apagado de vez, "
                      "com a conversa",
     "sem_prazos": "⏰ Sem alertas de prazo (venda longa): some o “⏰ há X dias na etapa”, o “📞 follow-up · sem resposta” e o "
@@ -41,7 +43,7 @@ FEATURES = {
 GROUPS = [
     ("🧭 Funil e etapas", ["funil_manual", "visita_negociando", "agendamentos", "lead_frio", "sem_prazos", "tentativas_contato"]),
     ("💬 Conversas e Inbox", ["interessados_negociando", "sem_popup_outro_vendedor", "transcrever_audios"]),
-    ("👥 Vendedores", ["sem_passar_lead", "passar_troca_numero"]),
+    ("👥 Vendedores", ["sem_passar_lead", "passar_troca_numero", "passar_so_na_ficha"]),
     ("🤖 Mensagens automáticas pro cliente", ["followup_automatico", "followup_so_24h", "mensagem_fora_horario"]),
     ("💰 Venda e pagamento", ["pagamento_parcelado"]),
     ("🗑️ Lixeira", ["lixeira_apaga"]),

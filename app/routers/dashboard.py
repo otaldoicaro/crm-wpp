@@ -438,7 +438,8 @@ def lead_detail(
             "voltar": request.query_params.get("voltar", ""),
             "platform": resolve_platform(lead.attribution),
             "platform_label": PLATFORM_LABEL[resolve_platform(lead.attribution)],
-            "people": team_members(db, tenant.id, only_active=True) if user.role == "admin" else [],
+            "people": team_members(db, tenant.id, only_active=True)
+            if user.role == "admin" or (features.has(tenant, "passar_so_na_ficha") and _can_transfer(user, tenant)) else [],
             "start_numbers": _start_numbers(db, tenant, user, lead),
             "wa_link": _wa_link(lead),
             "deal_info": None if lead.is_group else deals.summary(db, lead),
@@ -1560,9 +1561,11 @@ def _inbox_context(
             "active_conversation": active_conversation,
             "other_numbers": other_numbers,
             "platform": resolve_platform(selected_lead.attribution) if selected_lead else None,
-            "bulk_people": [p for p in team_members(db, tenant.id, only_active=True)] if _can_transfer(user, tenant) else [],
+            "bulk_people": [p for p in team_members(db, tenant.id, only_active=True)]
+            if _can_transfer(user, tenant) and not features.has(tenant, "passar_so_na_ficha") else [],
             "transfer_people": _transfer_options(db, tenant, selected_lead)
-            if selected_lead and not selected_lead.is_group and _can_transfer(user, tenant) else [],
+            if selected_lead and not selected_lead.is_group and _can_transfer(user, tenant)
+            and not features.has(tenant, "passar_so_na_ficha") else [],
             "stages": db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
             if selected_lead and not selected_lead.is_group else [],
             "deal_info": deals.summary(db, selected_lead) if selected_lead and not selected_lead.is_group else None,
@@ -1962,6 +1965,11 @@ def settle_lead(
     if ajax:
         return JSONResponse({"ok": True})
     return RedirectResponse(url=back, status_code=302)
+
+
+def _can_transfer_here(user: User, tenant: Tenant) -> bool:
+    """Passar pelo Inbox (⋯ Mais, clique direito, várias): não no cliente com "passar_so_na_ficha"."""
+    return _can_transfer(user, tenant) and not features.has(tenant, "passar_so_na_ficha")
 
 
 def _can_transfer(user: User, tenant: Tenant) -> bool:
@@ -2420,7 +2428,8 @@ def team_thread(
     head = templates.get_template("_team_thread_head.html").render({
         "tenant": tenant, "lead": lead, "closed": closed, "truncated": len(all_messages) > TEAM_THREAD_LAST,
         "can_settle": not lead.is_group and bool(response_times.waiting_since(lead)),
-        "transfer_people": [] if lead.is_group or not _can_transfer(user, tenant) else _transfer_options(db, tenant, lead),
+        "transfer_people": [] if lead.is_group or not _can_transfer(user, tenant) or features.has(tenant, "passar_so_na_ficha")
+        else _transfer_options(db, tenant, lead),
         "stages": [] if lead.is_group else db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all(),
     })
     body = templates.get_template("_inbox_messages.html").render({"messages": messages})
