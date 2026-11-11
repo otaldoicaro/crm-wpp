@@ -155,6 +155,44 @@ def health():
     return {"ok": True}
 
 
+@app.get("/privacidade", response_class=HTMLResponse)
+def privacy_policy(request: Request):
+    """Política de privacidade pública (a Meta pede o endereço pra publicar o app do Instagram/WhatsApp).
+    Usa o nome do cliente do domínio; sem cliente, o nome genérico."""
+    from app.tenancy import get_tenant
+
+    db = SessionLocal()
+    try:
+        tenant = get_tenant(request, db)
+        name = html.escape(tenant.name if tenant else "nossa empresa")
+    finally:
+        db.close()
+    body = f"""<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Política de privacidade · {name}</title>
+<div style="font-family:system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;line-height:1.6;color:#222">
+<h1>Política de privacidade</h1>
+<p>Esta política explica como {name} trata os dados de quem fala com a gente pelo WhatsApp, pelo Direct do
+Instagram, pelos formulários e pelo chat do nosso site.</p>
+<h2>Quais dados recebemos</h2>
+<p>Nome, telefone, e-mail, nome de usuário do Instagram e as mensagens e arquivos que você nos envia, além das
+respostas que você preenche nos nossos formulários e de onde você chegou até nós (por exemplo, um anúncio).</p>
+<h2>Para que usamos</h2>
+<p>Só para responder e atender você: tirar dúvidas, enviar propostas, combinar reuniões e acompanhar o seu
+atendimento. Usamos também, de forma agregada, para medir quais canais e campanhas trazem contatos.</p>
+<h2>Com quem compartilhamos</h2>
+<p>Não vendemos seus dados. Eles ficam no nosso sistema de atendimento (CRM) e só a nossa equipe tem acesso.
+Plataformas que usamos para conversar com você (Meta: WhatsApp e Instagram; Google) seguem as políticas delas.</p>
+<h2>Por quanto tempo guardamos</h2>
+<p>Enquanto houver relação de atendimento ou comercial, ou pelo prazo exigido por lei.</p>
+<h2>Seus direitos (LGPD)</h2>
+<p>Você pode pedir a qualquer momento para ver, corrigir ou apagar os seus dados. Basta mandar uma mensagem
+pelo mesmo canal em que falou com a gente (WhatsApp ou Direct do Instagram) pedindo a exclusão, e removemos
+o seu cadastro e as suas conversas.</p>
+<p style="color:#777;font-size:.9em">Última atualização: novembro de 2026.</p>
+</div></html>"""
+    return HTMLResponse(body)
+
+
 @app.get("/internal/caddy-ask")
 def caddy_ask(domain: str = ""):
     """O Caddy (HTTPS automático no VPS) pergunta aqui se pode emitir
