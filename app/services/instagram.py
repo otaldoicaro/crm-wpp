@@ -30,6 +30,7 @@ logger = logging.getLogger("instagram")
 PROVIDER = "instagram"
 PREFIX = "ig:"  # Lead.phone de quem veio pelo Direct
 GRAPH = "https://graph.instagram.com"
+GRAPH_FB = "https://graph.facebook.com"  # token do Facebook ("login unificado", usuário do sistema)
 VERSION = "v23.0"
 TIMEOUT = 15
 
@@ -56,8 +57,23 @@ def verify_token() -> str:
     return "crm-ig-" + hashlib.sha256(f"{SECRET_KEY}|instagram-webhook".encode()).hexdigest()[:20]
 
 
+def is_fb_token(token: str) -> bool:
+    """Token do Facebook (app novo da Meta, "login unificado": usuário do sistema, nunca expira) em vez do
+    token do login do Instagram: usa graph.facebook.com e o id da conta no lugar do "me"."""
+    return (token or "").startswith("EAA")
+
+
+def _host(token: str) -> str:
+    return GRAPH_FB if is_fb_token(token) else GRAPH
+
+
+def _me(number) -> str:
+    """"me" (token do Instagram) ou o id da conta (token do Facebook)."""
+    return number.waba_phone_number_id if is_fb_token(number.access_token) else "me"
+
+
 def _get(path: str, token: str, params: Optional[dict] = None) -> dict:
-    resp = requests.get(f"{GRAPH}/{VERSION}/{path}", params={**(params or {}), "access_token": token}, timeout=TIMEOUT)
+    resp = requests.get(f"{_host(token)}/{VERSION}/{path}", params={**(params or {}), "access_token": token}, timeout=TIMEOUT)
     data = resp.json() if resp.content else {}
     if not resp.ok:
         raise InstagramError((data.get("error") or {}).get("message") or f"HTTP {resp.status_code}")
@@ -65,7 +81,7 @@ def _get(path: str, token: str, params: Optional[dict] = None) -> dict:
 
 
 def _post(path: str, token: str, json: Optional[dict] = None, params: Optional[dict] = None) -> dict:
-    resp = requests.post(f"{GRAPH}/{VERSION}/{path}", params=params, json=json,
+    resp = requests.post(f"{_host(token)}/{VERSION}/{path}", params=params, json=json,
                          headers={"Authorization": f"Bearer {token}"}, timeout=TIMEOUT)
     data = resp.json() if resp.content else {}
     if not resp.ok:
@@ -73,14 +89,21 @@ def _post(path: str, token: str, json: Optional[dict] = None, params: Optional[d
     return data
 
 
-def account(token: str) -> dict:
-    """{"user_id": id que vem no webhook, "username": "agenciajunta", "id": ...} da conta do token."""
+def account(token: str, account_id: str = "") -> dict:
+    """{"user_id": id que vem no webhook, "username": "agenciajunta", ...} da conta do token. Token do
+    Facebook: precisa do id da conta (Meta for Developers → Gerar tokens de acesso, embaixo do nome)."""
+    if is_fb_token(token):
+        if not account_id:
+            raise InstagramError("esse token é do Facebook: preencha também o ID da conta do Instagram")
+        info = _get(account_id, token, {"fields": "id,username,name"})
+        return {**info, "user_id": info.get("id", account_id)}
     return _get("me", token, {"fields": "user_id,username,name"})
 
 
-def subscribe(token: str) -> None:
+def subscribe(token: str, account_id: str = "") -> None:
     """Liga o aviso de mensagem nova (webhook) pra esta conta."""
-    _post("me/subscribed_apps", token, params={"subscribed_fields": "messages", "access_token": token})
+    path = f"{account_id}/subscribed_apps" if is_fb_token(token) else "me/subscribed_apps"
+    _post(path, token, params={"subscribed_fields": "messages", "access_token": token})
 
 
 def friendly(exc: Exception) -> str:
@@ -108,14 +131,14 @@ def send_text(number, contact: str, body: str, human: bool = False) -> tuple:
     igsid = contact[len(PREFIX):] if is_ig_contact(contact) else contact
     message = {"recipient": {"id": igsid}, "message": {"text": body[:1000]}}
     try:
-        data = _post("me/messages", number.access_token, json=message)
+        data = _post(f"{_me(number)}/messages", number.access_token, json=message)
         return True, data.get("message_id", ""), ""
     except (InstagramError, requests.RequestException) as exc:
         if not (human and isinstance(exc, InstagramError) and _outside_window(exc)):
             return False, "", friendly(exc)
         logger.info("instagram: fora das 24h, tentando como agente humano")
     try:
-        data = _post("me/messages", number.access_token, json={**message, "messaging_type": "MESSAGE_TAG", "tag": "HUMAN_AGENT"})
+        data = _post(f"{_me(number)}/messages", number.access_token, json={**message, "messaging_type": "MESSAGE_TAG", "tag": "HUMAN_AGENT"})
         return True, data.get("message_id", ""), ""
     except (InstagramError, requests.RequestException) as exc:
         return False, "", friendly(InstagramError(f"window: {exc}"))
@@ -158,8 +181,8 @@ def refresh_all() -> int:
     try:
         limit = datetime.datetime.utcnow() - datetime.timedelta(days=20)
         for number in db.query(WhatsAppNumber).filter(WhatsAppNumber.provider == PROVIDER, WhatsAppNumber.is_active.is_(True)):
-            if number.token_renewed_at and number.token_renewed_at > limit:
-                continue
+            if (number.token_renewed_at and number.token_renewed_at > limit) or is_fb_token(number.access_token):
+                continue  # token do Facebook (usuário do sistema) nunca expira
             try:
                 resp = requests.get(f"{GRAPH}/refresh_access_token",
                                     params={"grant_type": "ig_refresh_token", "access_token": number.access_token}, timeout=TIMEOUT)

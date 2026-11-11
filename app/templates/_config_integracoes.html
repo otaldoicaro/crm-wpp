@@ -15,7 +15,7 @@ document.addEventListener("submit", function (e) {
     <p class="muted">API oficial da Meta, sem custo por mensagem. Regras da Meta: dá pra responder pelo CRM até <b>24h</b> depois da última mensagem do cliente, ou até <b>7 dias</b> quando a Meta aprovar o recurso "Human Agent" do app (Meta for Developers → app → Revisão do app → Permissões e recursos → Human Agent). Depois disso, só pelo app do Instagram; foto/áudio que o cliente manda aparecem aqui, mas arquivo nosso sai só pelo app. Comentários em post não entram, só o Direct.</p>
     <ol class="muted" style="margin:0 0 10px 18px;padding:0">
       <li>O Instagram tem que ser <b>conta profissional</b> (Comercial ou Criador de conteúdo).</li>
-      <li>No <b>Meta for Developers</b> → seu app → <b>Instagram</b> → <b>Configuração da API com login do Instagram</b>: em <b>Webhooks</b>, cole a URL e o token abaixo, clique em <b>Verificar e salvar</b> e ative o campo <b>messages</b>.</li>
+      <li>No <b>Meta for Developers</b> → seu app → <b>Instagram</b> → <b>Configuração da API com login do Instagram</b> (app novo: <b>API setup with Unified login</b>, com a configuração criada no passo 1): em <b>Webhooks</b>, cole a URL e o token abaixo, clique em <b>Verificar e salvar</b> e ative o campo <b>messages</b>.</li>
       <li>Na mesma página, em <b>Gerar tokens de acesso</b>, adicione a conta do Instagram, clique em <b>Gerar token</b>, copie e cole aqui embaixo.</li>
     </ol>
     <table class="table-simple" style="margin-bottom:10px">
@@ -23,6 +23,8 @@ document.addEventListener("submit", function (e) {
       <tr><td>Verificar token</td><td><code>{{ ig.verify }}</code></td></tr>
     </table>
     <form method="post" action="/configuracoes/instagram" class="capi-form">
+      <label>ID da conta do Instagram <span class="muted">(só pra app novo da Meta: o número embaixo do nome da conta, em Gerar tokens de acesso)</span>
+        <input name="conta_id" inputmode="numeric" value="{{ ig.account.waba_phone_number_id if ig.account else '' }}" placeholder="ex: 17841461637463984"></label>
       <label>Token da conta do Instagram <input name="token" type="password" autocomplete="new-password" placeholder="{{ 'já conectado (cole um novo só pra trocar de conta)' if ig.account else 'cole aqui o token gerado no app' }}"></label>
       <div><button class="btn small" type="submit" name="acao" value="conectar" data-busy="Conectando no Instagram…">{{ "Trocar token / conta" if ig.account else "Conectar Instagram" }}</button>
       {% if ig.account %}<button class="btn ghost small" type="submit" name="acao" value="desconectar" onclick="return confirm('Desconectar o Instagram? As conversas continuam no CRM, mas mensagens novas do Direct não entram mais.')">Desconectar</button>{% endif %}</div>

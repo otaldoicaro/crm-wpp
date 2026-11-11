@@ -147,6 +147,7 @@ def _back(msg: str) -> RedirectResponse:
 @router.post("/configuracoes/instagram")
 def connect(
     token: str = Form(""),
+    conta_id: str = Form(""),
     acao: str = Form("conectar"),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
@@ -166,12 +167,21 @@ def connect(
     token = token.strip()
     if not token:
         return _back("⚠️ Cole o token gerado no Meta for Developers.")
+    conta_id = "".join(ch for ch in conta_id if ch.isdigit())[:30]
+    if instagram.is_fb_token(token) and not conta_id:
+        return _back("⚠️ Esse token é do Facebook (login unificado): preencha também o ID da conta do Instagram "
+                     "(o número embaixo do nome da conta, em Gerar tokens de acesso).")
     try:
-        info = instagram.account(token)
+        info = instagram.account(token, conta_id)
         account_id = str(info.get("user_id") or info.get("id") or "")
         if not account_id:
             raise instagram.InstagramError("a Meta não devolveu o id da conta")
-        instagram.subscribe(token)
+        try:
+            instagram.subscribe(token, account_id)
+        except instagram.InstagramError as exc:
+            if not instagram.is_fb_token(token):
+                raise
+            logger.warning("instagram: não ligou o webhook pela API (%s); ligue em Assinatura do webhook no Meta", exc)
     except Exception as exc:  # noqa: BLE001 — mensagem pro admin, detalhe no log
         logger.warning("instagram: falha ao conectar: %s", exc)
         return _back(f"⚠️ Não conectou: {exc}. Confira se o token é da conta do Instagram certa e tem as permissões de mensagens.")
