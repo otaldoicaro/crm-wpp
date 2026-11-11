@@ -137,7 +137,8 @@ def audit_page(
     ordem = ordem if ordem in dict(COLUMNS) else "entrou"
     descending = dir != "asc" if dir in ("asc", "desc") else ordem in ("entrou", "recebeu", "respondeu")
     day_from, day_to = _parse_day(de), _parse_day(ate)
-    query = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.is_group.is_(False))
+    query = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.is_group.is_(False),
+                                  Lead.deleted_at.is_(None))  # excluído (Lixeira) não aparece na Auditoria
     if q:
         digits = "".join(ch for ch in q if ch.isdigit())
         query = query.filter(or_(Lead.name.ilike(f"%{q}%"), *([Lead.phone.like(f"%{digits}%")] if len(digits) >= 4 else [])))
