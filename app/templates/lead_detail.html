@@ -22,7 +22,7 @@
       {{ m.platform_badge(platform, platform_label, lead.source) }}
     </h2>
     {% if has_feature(tenant, "tentativas_contato") and not lead.is_group and not (lead.stage and (lead.stage.is_won or lead.stage.is_lost)) %}
-    <div class="attempt-row">{{ m.attempt_chip(lead) or "" }}{% if not lead.contact_attempts %}<span class="muted" style="font-size:.85rem">📞 Nenhuma tentativa de contato ainda</span>{% endif %}{% if not user.read_only %}{{ m.attempt_button(lead, "/leads/" ~ lead.id) }}{% endif %}</div>
+    {{ m.attempt_box(lead, "/leads/" ~ lead.id, not user.read_only) }}
     {% endif %}
 
     <form method="post" action="/leads/{{ lead.id }}/update" id="leadForm">

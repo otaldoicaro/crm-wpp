@@ -136,6 +136,7 @@
           </div>
         </div>
         {% set not_sales = selected_lead.tag in ("time", "outro") and not selected_lead.is_group %}{# Time/Outro: fora do funil #}
+        {% if has_feature(tenant, "tentativas_contato") and not selected_lead.is_group and not closed and not not_sales %}{{ m.attempt_box(selected_lead, "/inbox/" ~ selected_lead.id, not user.read_only) }}{% endif %}
         {% if selected_lead.is_group %}<div class="muted" style="font-size:.76rem">👥 Grupo de WhatsApp — não conta como lead</div>{% endif %}
         {% if not_sales %}<div class="muted" style="font-size:.76rem">{{ tag_label[selected_lead.tag] }} — fora do funil: não conta como lead, sem etapa e sem valor</div>{% endif %}
         {% if stages and not not_sales %}
@@ -169,7 +170,6 @@
       <div class="head-summary">
         <div class="head-chips">
           {% if agenda_on %}{{ m.agenda_chip(selected_lead) }}{% endif %}
-          {% if has_feature(tenant, "tentativas_contato") and not selected_lead.is_group and not closed %}{{ m.attempt_chip(selected_lead) }}{{ m.attempt_button(selected_lead, "/inbox/" ~ selected_lead.id) }}{% endif %}
           {{ m.platform_badge(platform, platform_label, selected_lead.source) }}
           {% if not selected_lead.is_group %}
           {% if selected_lead.tag %}<span class="tag-pill">{{ tag_label[selected_lead.tag] }}</span>{% endif %}

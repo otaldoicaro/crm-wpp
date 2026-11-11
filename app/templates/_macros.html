@@ -113,8 +113,27 @@
 {% set label = rt.attempt_label(lead) %}{% if label %}<span class="attempt-chip n{{ [lead.contact_attempts, 4]|min }}" title="O time chamou o cliente em {{ lead.contact_attempts }} dia(s) diferente(s) e ele ainda não respondeu{{ ' · última tentativa em ' ~ (lead.contact_attempt_at|hora('%d/%m %H:%M')) if lead.contact_attempt_at }}">📞 {{ label }}{% if lead.contact_attempt_at %} · {{ lead.contact_attempt_at|hora("%d/%m") }}{% endif %}</span>{% endif %}
 {%- endmacro %}
 
-{% macro attempt_button(lead, voltar) -%}
-<form method="post" action="/leads/{{ lead.id }}/tentativa" class="attempt-form"><input type="hidden" name="voltar" value="{{ voltar }}">
-  <button class="btn small ghost" type="submit" title="Chamou o cliente por fora (ligação, e-mail, outro WhatsApp) e ele não respondeu: conta mais uma tentativa">📞 + tentativa</button>
-</form>
+{% macro attempt_box(lead, voltar, can_edit=True) -%}
+{# 📞 1º/2º/3º contato sempre à vista + registrar tentativa (data, canal e observação opcionais) #}
+<div class="attempt-box">
+  <span class="attempt-title">📞 Tentativas de contato</span>
+  {% for st in rt.attempt_steps(lead) %}
+  <span class="attempt-step {{ 'done' if st.done }}" title="{% if st.done %}{{ st.label }}{{ ' · ' ~ (st.when|hora('%d/%m %H:%M')) if st.when }}{{ ' · ' ~ st.channel if st.channel }}{{ ' · ' ~ st.who if st.who }}{{ ' — ' ~ st.note if st.note }}{% else %}Ainda não{% endif %}">{{ "✓" if st.done else "○" }} {{ st.label }}{% if st.done and st.when %} · {{ st.when|hora("%d/%m") }}{% endif %}{% if st.done and st.channel and st.channel != "Mensagem" %} · {{ st.channel }}{% endif %}</span>
+  {% endfor %}
+  {% if can_edit %}
+  <details class="attempt-add">
+    <summary class="btn small">＋ Registrar tentativa</summary>
+    <form method="post" action="/leads/{{ lead.id }}/tentativa" class="attempt-pop">
+      <input type="hidden" name="voltar" value="{{ voltar }}">
+      <p class="muted" style="margin:0 0 6px">Chamou o cliente e ele não respondeu? Registre aqui. Tudo é opcional: em branco = agora.</p>
+      <label>Quando<input type="datetime-local" name="quando"></label>
+      <label>Como<select name="canal"><option value="">—</option>{% for c in rt.ATTEMPT_CHANNELS %}<option>{{ c }}</option>{% endfor %}</select></label>
+      <label>Observação<input name="nota" maxlength="200" placeholder="ex: caiu na caixa postal"></label>
+      <button class="btn small" type="submit">Registrar {{ rt.ATTEMPT_LABELS.get((lead.contact_attempts or 0) + 1, "tentativa") }}</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
 {%- endmacro %}
+
+

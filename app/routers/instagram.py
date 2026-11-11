@@ -68,11 +68,21 @@ def _process(payload: dict) -> list:
         media = []
         for entry in payload.get("entry", []) if isinstance(payload, dict) else []:
             account_id = str(entry.get("id", ""))
-            number = (db.query(WhatsAppNumber)
-                      .filter(WhatsAppNumber.provider == instagram.PROVIDER, WhatsAppNumber.is_active.is_(True),
-                              WhatsAppNumber.waba_phone_number_id == account_id).first()) if account_id else None
+            # a conta vem no entry.id; em alguns formatos da Meta (login unificado) pode vir só como
+            # destinatário (mensagem do cliente) ou remetente (eco do que a conta mandou)
+            ids = [account_id] + [str((ev.get(side) or {}).get("id") or "") for ev in entry.get("messaging", [])
+                                  for side in ("recipient", "sender")]
+            number = None
+            for candidate in [i for i in ids if i]:
+                number = (db.query(WhatsAppNumber)
+                          .filter(WhatsAppNumber.provider == instagram.PROVIDER, WhatsAppNumber.is_active.is_(True),
+                                  WhatsAppNumber.waba_phone_number_id == candidate).first())
+                if number is not None:
+                    account_id = candidate
+                    break
+            logger.info("instagram: webhook entry=%s campos=%s conta=%s", entry.get("id"), sorted(entry.keys()),
+                        number.label if number else "não conectada")
             if number is None:
-                logger.info("instagram: mensagem pra conta não conectada %s", account_id)
                 continue
             for event in entry.get("messaging", []):
                 message = _handle(db, number, account_id, event)

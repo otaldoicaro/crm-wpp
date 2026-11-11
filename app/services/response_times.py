@@ -24,7 +24,7 @@ FOLLOWUP_BURST = datetime.timedelta(hours=1)  # várias mensagens seguidas conta
 def mark_inbound(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
     lead.last_inbound_at = when or datetime.datetime.utcnow()
     lead.unanswered_outs = 0  # o cliente respondeu
-    lead.contact_attempts, lead.contact_attempt_at = 0, None  # 📞 contato feito: zera as tentativas
+    lead.contact_attempts, lead.contact_attempt_at, lead.contact_log = 0, None, ""  # 📞 contato feito: zera as tentativas
 
 
 def mark_outbound(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
@@ -38,7 +38,8 @@ def mark_outbound(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
         lead.first_response_at = when
 
 
-def count_attempt(lead: Lead, when: Optional[datetime.datetime] = None, force: bool = False) -> None:
+def count_attempt(lead: Lead, when: Optional[datetime.datetime] = None, force: bool = False,
+                  channel: str = "", note: str = "", who: str = "") -> None:
     """📞 1º/2º/3º contato: cada dia (horário de Brasília) em que o time chama o cliente sem resposta
     conta uma tentativa; várias mensagens no mesmo dia são uma só. force=True ("+ tentativa" na
     conversa: ligação, e-mail, mensagem por fora) conta mesmo no mesmo dia."""
@@ -50,11 +51,38 @@ def count_attempt(lead: Lead, when: Optional[datetime.datetime] = None, force: b
         return  # mensagem antiga (recuperada) de antes da última resposta do cliente
     if force or last is None or to_local(when).date() > to_local(last).date():
         lead.contact_attempts = (lead.contact_attempts or 0) + 1
+        line = "|".join(x.replace("|", "/").replace("\n", " ").strip() for x in
+                        (when.isoformat(timespec="minutes"), channel or ("" if force else "Mensagem"), note[:200], who[:60]))
+        lead.contact_log = "\n".join([l for l in (lead.contact_log or "").split("\n") if l][-9:] + [line])
     if last is None or when > last:
         lead.contact_attempt_at = when
 
 
 ATTEMPT_LABELS = {1: "1º contato", 2: "2º contato", 3: "3º contato"}
+ATTEMPT_CHANNELS = ("Ligação", "WhatsApp", "E-mail", "Instagram", "Pessoalmente", "Outro")
+
+
+def attempt_steps(lead: Lead) -> list:
+    """[{n, label, when, channel, note, who}] das 3 primeiras tentativas (e das que passaram de 3), em ordem.
+    Tentativa sem registro (lead antigo) aparece sem data."""
+    entries = []
+    for line in (lead.contact_log or "").split("\n"):
+        parts = (line.split("|") + ["", "", "", ""])[:4]
+        try:
+            when = datetime.datetime.fromisoformat(parts[0]) if parts[0] else None
+        except ValueError:
+            when = None
+        if line.strip():
+            entries.append({"when": when, "channel": parts[1], "note": parts[2], "who": parts[3]})
+    total = max(lead.contact_attempts or 0, 0)
+    entries.sort(key=lambda e: e["when"] or datetime.datetime.min)  # tentativa registrada com data antiga entra no lugar certo
+    blank = {"when": None, "channel": "", "note": "", "who": ""}
+    entries = ([blank] * max(0, total - len(entries)) + entries)[-total:] if total else []
+    steps = []
+    for n in range(1, max(3, total) + 1):
+        e = entries[n - 1] if n <= len(entries) else None
+        steps.append({"n": n, "label": ATTEMPT_LABELS.get(n, f"{n}ª tentativa"), "done": e is not None, **(e or {})})
+    return steps
 
 
 def attempt_label(lead: Lead) -> str:

@@ -30,7 +30,7 @@ from app.services.people import removed_user_ids, team_members
 from app.services.platform import PLATFORM_LABEL, resolve_platform
 from app.services.messaging import media_kind_for_mime
 from app.templating import templates
-from app.timeutil import local_to_utc, to_local
+from app.timeutil import fmt_local, local_to_utc, to_local
 
 logger = logging.getLogger("dashboard")
 router = APIRouter()
@@ -2114,6 +2114,9 @@ def lead_flag(
 def lead_attempt(
     lead_id: str,
     voltar: str = Form(""),
+    quando: str = Form(""),
+    canal: str = Form(""),
+    nota: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -2122,8 +2125,18 @@ def lead_attempt(
     lead = _visible_lead(db, tenant, user, lead_id)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado")
-    response_times.count_attempt(lead, force=True)
-    _add_note(db, lead, f"📞 {user.name} registrou uma tentativa de contato ({response_times.attempt_label(lead)})")
+    when = None
+    if quando:
+        try:  # data/hora opcional (horário de Brasília); vazio = agora
+            when = local_to_utc(datetime.datetime.fromisoformat(quando[:16]))
+        except ValueError:
+            when = None
+    if when and when > datetime.datetime.utcnow():
+        when = datetime.datetime.utcnow()
+    canal = canal if canal in response_times.ATTEMPT_CHANNELS else ""
+    response_times.count_attempt(lead, when, force=True, channel=canal, note=nota.strip(), who=user.name)
+    extra = " · ".join(x for x in (canal, (when and fmt_local(when)) or "", nota.strip()[:120]) if x)
+    _add_note(db, lead, f"📞 {user.name} registrou o {response_times.attempt_label(lead)}" + (f" ({extra})" if extra else ""))
     db.add(lead)
     db.commit()
     back = voltar if voltar.startswith(("/inbox/", "/leads/")) else f"/leads/{lead_id}"

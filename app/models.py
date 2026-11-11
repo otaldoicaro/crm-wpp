@@ -267,6 +267,8 @@ class Lead(Base):
     # o time chamou (mensagem ou "+ tentativa" na conversa) sem o cliente responder. Zera quando ele responde.
     contact_attempts: Mapped[int] = mapped_column(Integer, default=0)
     contact_attempt_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    # uma linha por tentativa da rodada atual: "quando ISO|canal|observação|quem" (zera junto com a contagem)
+    contact_log: Mapped[str] = mapped_column(Text, default="")
     next_action_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     next_action_note: Mapped[str] = mapped_column(String(255), default="")
     # comprovante de pagamento que o cliente mandou (lido pela IA): o vendedor confirma a venda
