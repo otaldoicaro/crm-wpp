@@ -13,5 +13,6 @@
   {% endfor %}
 </nav>
 {% if request.query_params.get("salvo") and aba != "integracoes" %}<p class="capi-msg">✅ Salvo.</p>{% endif %}
+{% if aba == "prazos" %}{% include "_config_etapas.html" %}{% endif %}
 {% if aba == "integracoes" %}{% include "_config_integracoes.html" %}{% else %}{% include "_config_prazos.html" %}{% endif %}
 {% endblock %}

@@ -1,0 +1,30 @@
+{# 🧭 Etapas do funil deste cliente (POST /configuracoes/etapas → funnel.edit_stages) #}
+<details class="card" id="etapas" {{ "open" if request.query_params.get("etapas") }} style="margin-bottom:16px">
+  <summary><b>🧭 Etapas do funil</b> <span class="muted">— {{ stages|map(attribute="name")|join(" → ") }}</span></summary>
+  {% set msg = request.query_params.get("etapas", "") %}{% if msg %}<p class="capi-msg">{{ msg }}</p>{% endif %}
+  <p class="muted">Vale só pra {{ tenant.name }}. Mude o nome ou o número da ordem, crie etapas embaixo, ou tire uma etapa escolhendo pra onde vão os leads dela.
+    A etapa de venda (💰) e as de perda (❌) continuam funcionando igual; uma etapa nova é uma etapa comum do meio do funil.</p>
+  <form method="post" action="/configuracoes/etapas" onsubmit="return confirm('Salvar as etapas do funil? Quem estiver numa etapa tirada vai pra etapa escolhida.')">
+    <table class="table-simple">
+      <thead><tr><th>Ordem</th><th>Etapa</th><th>Tirar e mover os leads pra…</th></tr></thead>
+      <tbody>
+      {% for st in stages %}
+      <tr>
+        <td><input type="number" step="0.5" name="ordem_{{ st.id }}" value="{{ loop.index }}" style="width:70px"></td>
+        <td><input name="nome_{{ st.id }}" value="{{ st.name }}" maxlength="80" style="width:220px"> {{ "💰" if st.is_won }}{{ "❌" if st.is_lost }}{% if auto_stage(st) %} <span class="muted">(automática)</span>{% endif %}</td>
+        <td>{% if auto_stage(st) %}—{% else %}<select name="tirar_{{ st.id }}"><option value="">fica</option>{% for o in stages if o.id != st.id %}<option value="{{ o.id }}">tirar → {{ o.name }}</option>{% endfor %}</select>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      {% for i in range(1, 7) %}
+      <tr class="muted">
+        <td><input type="number" step="0.5" name="novo_ordem_{{ i }}" placeholder="ex: 2.5" style="width:70px"></td>
+        <td><input name="novo_nome_{{ i }}" placeholder="Etapa nova (opcional)" maxlength="80" style="width:220px"></td>
+        <td>nova</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted">Dica: pra pôr uma etapa nova entre a 2 e a 3, use 2.5.</p>
+    <button class="btn" type="submit">Salvar etapas</button>
+  </form>
+</details>

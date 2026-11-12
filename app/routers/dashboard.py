@@ -831,6 +831,34 @@ def settings_page(
     return templates.TemplateResponse(request, "configuracoes.html", ctx)
 
 
+@router.post("/configuracoes/etapas")
+async def save_stages(
+    request: Request,
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """🧭 Editor de etapas do funil deste cliente (renomear, ordem, criar, tirar movendo os leads)."""
+    if user.role != "admin" or user.read_only:
+        raise HTTPException(status_code=403)
+    form = await request.form()
+
+    def num(value, default):
+        try:
+            return float(str(value).replace(",", "."))
+        except ValueError:
+            return default
+
+    existing = [(st, str(form.get(f"nome_{st.id}", st.name)), num(form.get(f"ordem_{st.id}"), st.order),
+                 str(form.get(f"tirar_{st.id}", "")))
+                for st in funnel._stages(db, tenant.id)]
+    added = [(str(form.get(f"novo_nome_{i}", "")).strip(), num(form.get(f"novo_ordem_{i}"), 99))
+             for i in range(1, 7) if str(form.get(f"novo_nome_{i}", "")).strip()]
+    error = await run_in_threadpool(funnel.edit_stages, db, tenant, existing, added)
+    msg = ("⚠️ " + error) if error else "✅ Etapas salvas."
+    return RedirectResponse(url="/configuracoes?aba=prazos&etapas=" + msg.replace(" ", "+") + "#etapas", status_code=302)
+
+
 @router.post("/prazos")
 async def save_deadlines(
     request: Request,

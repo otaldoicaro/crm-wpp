@@ -458,3 +458,55 @@ def _create_no_chat_stage(db, tenant: Tenant) -> None:
     )
     db.commit()
     logger.info("funil: etapa %s criada em %s (%s leads sem conversa movidos)", NO_CHAT_NAME, tenant.name, moved)
+
+
+def edit_stages(db, tenant: Tenant, existing: list, added: list) -> str:
+    """🧭 Editor de etapas (⚙ Configurações → Funil e prazos), só deste cliente.
+    existing: [(etapa, novo nome, ordem, id da etapa destino se for tirada ou "")]
+    added: [(nome, ordem)] etapas novas (abertas: nem venda nem perda).
+    Tirar uma etapa move os leads dela pra etapa escolhida. Devolve "" ou o erro."""
+    stages = _stages(db, tenant.id)
+    by_id = {s.id: s for s in stages}
+    removing = {stage.id: target for stage, _name, _order, target in existing if target}
+    for stage_id, target in removing.items():
+        if target not in by_id or target in removing:
+            return "Escolha pra onde vão os leads de cada etapa que você tirou (uma etapa que fica)."
+        if is_automatic(by_id[stage_id]):
+            return "“Lead sem conversa” e “Novo” são automáticas: não dá pra tirar."
+    kept = [(stage, name, order) for stage, name, order, target in existing if not target]
+    if not any(s.is_won for s, _n, _o in kept) or not any(s.is_lost for s, _n, _o in kept):
+        return "O funil precisa de pelo menos uma etapa de venda e uma de perda."
+    names = [(_plain(n) or _plain(s.name)) for s, n, _o in kept] + [_plain(n) for n, _o in added]
+    if len(set(names)) != len(names):
+        return "Tem duas etapas com o mesmo nome."
+    for stage_id, target in removing.items():
+        db.query(Lead).filter(Lead.stage_id == stage_id).update(
+            {Lead.stage_id: target, Lead.updated_at: Lead.updated_at}, synchronize_session=False)
+    old_order = {s.id: s.order for s in stages}
+    rows = [(order, old_order[s.id], s, name) for s, name, order in kept]
+    for i, (name, order) in enumerate(added):
+        stage = PipelineStage(tenant_id=tenant.id, name=name[:80])
+        db.add(stage)
+        rows.append((order, 1000 + i, stage, name))
+    db.flush()
+    rows.sort(key=lambda r: (r[0], r[1]))
+    for new_order, (_o, _old, stage, name) in enumerate(rows):
+        if name.strip():
+            stage.name = name.strip()[:80]
+        stage.order = new_order
+    # a etapa mais avançada de cada lead acompanha a nova ordem
+    mapping = {old_order[s.id]: s.order for _o, _old, s, _n in rows if s.id in old_order}
+    for removed_id, target in removing.items():
+        mapping[old_order[removed_id]] = by_id[target].order
+    leads = db.query(Lead).filter(Lead.tenant_id == tenant.id, Lead.reached_order.isnot(None)).all()
+    for lead in leads:
+        old = lead.reached_order or 0
+        prev = max((p for p in mapping if p <= old), default=None)
+        db.query(Lead).filter(Lead.id == lead.id).update(
+            {Lead.reached_order: mapping[prev] if prev is not None else 0, Lead.updated_at: Lead.updated_at},
+            synchronize_session=False)
+    for stage_id in removing:
+        db.delete(by_id[stage_id])
+    db.commit()
+    logger.info("funil: etapas editadas em %s: %s", tenant.name, [s.name for _o, _old, s, _n in rows])
+    return ""
