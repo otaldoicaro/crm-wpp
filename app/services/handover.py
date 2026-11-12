@@ -77,7 +77,12 @@ def _owner_id(conv: Conversation) -> Optional[str]:
 
 def visible_conversations(lead: Lead, user) -> list:
     """Conversas desse contato que a pessoa pode ver. Admin vê todas; em contato Time/Outro o vendedor
-    vê só a do WhatsApp dele (e a de número sem dono, se o contato é dele). O histórico de cada um continua."""
+    vê só a do WhatsApp dele (e a de número sem dono, se o contato é dele). O histórico de cada um continua.
+    🔒 Contato "não espelhar": nenhuma, pra ninguém (inclusive admin)."""
+    from app.services import inbox_state
+
+    if not inbox_state.mirrored(lead):
+        return []
     if getattr(user, "role", "") == "admin" or not private(lead):
         return list(lead.conversations)
     user_id = getattr(user, "id", None)
@@ -86,6 +91,10 @@ def visible_conversations(lead: Lead, user) -> list:
 
 
 def visible_messages(lead: Lead, user) -> list:
+    from app.services import inbox_state
+
+    if not inbox_state.mirrored(lead):
+        return []  # 🔒 "não espelhar"
     if getattr(user, "role", "") == "admin" or not private(lead):
         return lead.all_messages
     return sorted((m for c in visible_conversations(lead, user) for m in c.messages), key=lambda m: m.created_at)

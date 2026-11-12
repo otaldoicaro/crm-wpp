@@ -15,6 +15,33 @@ TAGS = [("", "Lead"), ("cliente", "Cliente"), ("outro", "Outro"), ("time", "Time
 # não é venda: sai do Pipeline, do Dashboard e do rodízio ("time" = alguém da própria equipe/empresa)
 NOT_SALES_TAGS = ("outro", "time")
 TAG_LABEL = dict(TAGS)
+NO_MIRROR_FEATURE = "sem_espelhar_time_outro"
+
+
+def mirrored(lead: Lead, tenant=None) -> bool:
+    """🔒 False = conversa com esse contato não é guardada nem mostrada no CRM: marcado "não espelhar"
+    (Lead.no_mirror) ou Time/Outro num cliente com o recurso "sem_espelhar_time_outro" ligado."""
+    if lead.no_mirror:
+        return False
+    if (lead.tag or "") not in NOT_SALES_TAGS:
+        return True
+    from sqlalchemy.orm import object_session
+
+    from app import features
+    from app.models import Tenant
+
+    tenant = tenant or lead.tenant
+    if tenant is None and lead.tenant_id and object_session(lead) is not None:
+        tenant = object_session(lead).get(Tenant, lead.tenant_id)
+    return tenant is None or not features.has(tenant, NO_MIRROR_FEATURE)
+
+
+def mirrored_sql(tenant):
+    """A mesma regra de mirrored() pras listas (Inbox, busca, Auditoria)."""
+    from app import features
+
+    cond = Lead.no_mirror.is_(False)
+    return and_(cond, Lead.tag.notin_(NOT_SALES_TAGS)) if features.has(tenant, NO_MIRROR_FEATURE) else cond
 
 
 def ensure_baseline(db: Session, user: User) -> None:

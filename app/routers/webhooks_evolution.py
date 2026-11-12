@@ -639,7 +639,9 @@ def _apply_call(db: Session, number: WhatsAppNumber, call: dict) -> None:
         return
     phone = _phone_from_key({"remoteJid": jid}, call, db, number)
     lead = find_lead_by_phone(db, number.tenant_id, phone) if phone else None
-    if lead is None or lead.is_group:
+    from app.services import inbox_state
+
+    if lead is None or lead.is_group or not inbox_state.mirrored(lead):
         return
     conversation = (db.query(Conversation).filter(Conversation.lead_id == lead.id, Conversation.whatsapp_number_id == number.id).first()
                     or lead.active_conversation)

@@ -12,6 +12,9 @@ FEATURES = {
     "agendamentos": "📅 A etapa Negociando passa a se chamar Agendamento (visita marcada na loja). Preço ou parcela "
                     "enviados não mudam mais a etapa; só a visita combinada leva pra Agendamento",
     "lead_frio": "❄️ Lead frio: 7 dias sem o cliente responder, o lead vai pra etapa Lead frio (em vez de ir pra Perdido)",
+    "sem_espelhar_time_outro": "🔒 Contato marcado como Time ou Outro não é espelhado no CRM: as mensagens com ele deixam de "
+                               "ser guardadas e a conversa some do Inbox, da busca e da Auditoria pra todos (inclusive admin). "
+                               "Evita ver conversa pessoal. Desmarcar a etiqueta (ou desligar aqui) volta a mostrar o que já estava guardado",
     "sem_popup_outro_vendedor": "👥 Sem o aviso grande “Esse cliente também fala com…” ao abrir a conversa (fica só a faixa fina no topo)",
     "passar_troca_numero": "↪ Passar o lead pra outro vendedor já troca o WhatsApp de envio pro dele (sem a opção separada de "
                            "trocar o número)",
@@ -42,7 +45,7 @@ FEATURES = {
 # ⚙ Configurações → ⚙️ Recursos: os recursos agrupados por assunto (o que faltar aqui cai em "Outros")
 GROUPS = [
     ("🧭 Funil e etapas", ["funil_manual", "visita_negociando", "agendamentos", "lead_frio", "sem_prazos", "tentativas_contato"]),
-    ("💬 Conversas e Inbox", ["interessados_negociando", "sem_popup_outro_vendedor", "transcrever_audios"]),
+    ("💬 Conversas e Inbox", ["interessados_negociando", "sem_popup_outro_vendedor", "transcrever_audios", "sem_espelhar_time_outro"]),
     ("👥 Vendedores", ["sem_passar_lead", "passar_troca_numero", "passar_so_na_ficha"]),
     ("🤖 Mensagens automáticas pro cliente", ["followup_automatico", "followup_so_24h", "mensagem_fora_horario"]),
     ("💰 Venda e pagamento", ["pagamento_parcelado"]),

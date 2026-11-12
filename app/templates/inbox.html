@@ -364,6 +364,7 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
   form.querySelector("[data-cancel]").addEventListener("click", function () { sel.value = ""; box.hidden = true; });
 });
 </script>
+    {% if not_mirrored %}<div class="shared-band">🔒 Conversa não espelhada no CRM (contato pessoal): as mensagens com ele não ficam guardadas aqui.</div>{% endif %}
     {% if other_sellers %}
     {# 👥 cliente que fala com mais de um vendedor: faixa fina sempre; aviso grande só na 1ª vez que abre #}
     {% set names = other_sellers|map(attribute="name")|join(" e ") %}

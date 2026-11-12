@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import Conversation, Lead, Message, WhatsAppNumber
-from app.services import attribution, autofollow, autostage, buying, deals, followup, funnel, handover, ownership, response_times, suggestions
+from app.services import attribution, autofollow, autostage, buying, deals, followup, funnel, handover, inbox_state, ownership, response_times, suggestions
 from app.services.distribution import assign_lead
 from app.services.lead_match import find_lead_by_phone
 
@@ -88,6 +88,8 @@ def ingest_inbound(
         return None  # webhook reenviado
 
     lead = find_lead_by_phone(db, number.tenant_id, from_phone)
+    if lead is not None and not inbox_state.mirrored(lead):
+        return None  # 🔒 contato "não espelhar": a conversa com ele não entra no CRM
 
     if lead is None:
         first_stage = funnel.entry_stage(db, number.tenant_id, with_chat=True)  # já chegou falando: "Novo"
@@ -223,8 +225,8 @@ def record_outbound_from_phone(
     if message_exists(db, wa_message_id):
         return None  # já registrada quando foi enviada pelo próprio CRM
     lead = find_lead_by_phone(db, number.tenant_id, to_phone)
-    if lead is None or lead.deleted_at:
-        return None
+    if lead is None or lead.deleted_at or not inbox_state.mirrored(lead):
+        return None  # sem lead, na lixeira ou 🔒 "não espelhar"
 
     conversation = _get_or_create_conversation(db, number, lead)
     pending = _unconfirmed_match(db, lead, body, media_type, when)

@@ -1123,6 +1123,7 @@ def _text_search(db: Session, tenant: Tenant, user: User, q: str, vendedor: str 
         .filter(
             Conversation.tenant_id == tenant.id, Lead.deleted_at.is_(None),
             Message.direction != "note", or_(Message.body.ilike(f"%{q}%"), Message.transcript.ilike(f"%{q}%")),
+            inbox_state.mirrored_sql(tenant),  # 🔒 conversa "não espelhar" não aparece na busca
         )
     )
     if user.role != "admin":
@@ -1300,7 +1301,7 @@ def _inbox_query(
     query = (
         db.query(Conversation)
         .join(Lead, Lead.id == Conversation.lead_id)
-        .filter(Conversation.tenant_id == tenant.id, Lead.deleted_at.is_(None))
+        .filter(Conversation.tenant_id == tenant.id, Lead.deleted_at.is_(None), inbox_state.mirrored_sql(tenant))  # 🔒
     )
     if user.role != "admin":
         # no rodízio cada vendedor só enxerga os leads que caíram pra ele; admin vê tudo. E a conversa
@@ -1605,6 +1606,7 @@ def _inbox_context(
             "other_sellers": handover.other_sellers(db, selected_lead, user) if selected_lead and not selected_lead.is_group else [],
             "shared_leads": handover.shared_lead_ids(db, [c.lead_id for c in conversations]),
             "private_view": bool(selected_lead and user.role != "admin" and handover.private(selected_lead)),
+            "not_mirrored": bool(selected_lead and not inbox_state.mirrored(selected_lead)),
     }
 
 
@@ -2191,6 +2193,26 @@ def set_lead_tag(
     if ajax:
         return JSONResponse({"ok": True})
     return RedirectResponse(url=voltar if voltar.startswith("/") else f"/inbox/{lead_id}", status_code=302)
+
+
+@router.post("/leads/{lead_id}/espelhar")
+def set_lead_mirror(
+    lead_id: str,
+    valor: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """🔒 Não espelhar este contato no CRM (conversa pessoal): só admin liga/desliga."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Só o admin muda isso")
+    lead = db.query(Lead).filter(Lead.id == lead_id, Lead.tenant_id == tenant.id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado")
+    lead.no_mirror = valor == "1"
+    db.add(lead)
+    db.commit()
+    return RedirectResponse(url=f"/leads/{lead_id}?salvo=1", status_code=302)
 
 
 @router.get("/inbox-atualizar")

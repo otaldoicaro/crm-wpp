@@ -229,6 +229,8 @@ class Lead(Base):
     stage_id: Mapped[Optional[str]] = mapped_column(ForeignKey("pipeline_stages.id"), nullable=True, index=True)
     assigned_user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     whatsapp_number_id: Mapped[Optional[str]] = mapped_column(ForeignKey("whatsapp_numbers.id"), nullable=True)
+    # 🔒 não espelhar: a conversa com esse contato não é guardada nem mostrada no CRM (conversa pessoal)
+    no_mirror: Mapped[bool] = mapped_column(Boolean, default=False)
     deal_value: Mapped[Optional[float]] = mapped_column(nullable=True)  # valor fechado, preenchido na etapa "Ganho"
     loss_reason: Mapped[str] = mapped_column(String(255), default="")  # motivo (lista do ramo do cliente, app/segments.py)
     loss_detail: Mapped[str] = mapped_column(Text, default="")  # o que houve, escrito pelo vendedor

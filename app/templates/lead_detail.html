@@ -145,6 +145,17 @@
       </select>
     </label>
   </form>
+  {% if user.role == "admin" %}
+  {% set mirror_auto = lead.tag in ("outro", "time") and has_feature(tenant, "sem_espelhar_time_outro") %}
+  <form method="post" action="/leads/{{ lead.id }}/espelhar" style="margin-bottom:12px">
+    <label class="check" title="A conversa com esse contato deixa de ser guardada e some do Inbox, da busca e da Auditoria pra todos">
+      <input type="checkbox" name="valor" value="1" {{ "checked" if lead.no_mirror or mirror_auto }} {{ "disabled" if mirror_auto }}
+             onchange="if (!this.checked || confirm('Não espelhar este contato no CRM?\n\nAs mensagens com ele deixam de ser guardadas e a conversa some do Inbox, da busca e da Auditoria pra todos (inclusive admin). O que já estava guardado fica escondido; desmarcando, volta a aparecer.')) this.form.submit(); else this.checked = false;">
+      🔒 Não espelhar esta conversa no CRM (contato pessoal)
+    </label>
+    {% if mirror_auto %}<p class="muted" style="margin:4px 0 0">Ligado pelo recurso “Time/Outro não espelhado” (⚙ Configurações → Recursos).</p>{% endif %}
+  </form>
+  {% endif %}
   <p class="muted" style="margin:0">Atendente responsável</p>
   {% if people and not lead.deleted_at and not has_feature(tenant, "sem_passar_lead") %}
   <form method="post" action="/leads/{{ lead.id }}/transferir" class="owner-form"

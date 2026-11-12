@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
 from app.models import Conversation, Lead, Message, Tenant, User
-from app.services import ownership
+from app.services import inbox_state, ownership
 from app.services.people import team_members
 from app.services.platform import PLATFORM_LABEL, resolve_platform
 from app.templating import templates
@@ -92,6 +92,8 @@ def _summaries(db: Session, lead_ids: list) -> dict:
 def _timeline(lead: Lead) -> list:
     """[(quando, tipo, título, texto, quem)] em ordem de hora. tipo: entrada | out | in | auto | note | dono."""
     events = [(lead.created_at, "entrada", "Entrou no CRM", "", "")]
+    if not inbox_state.mirrored(lead):  # 🔒 "não espelhar": a conversa não aparece nem aqui
+        return events + [(lead.created_at, "auto", "🔒 Conversa não espelhada no CRM", "", "")]
     for conv in lead.conversations:
         number = conv.whatsapp_number.label if conv.whatsapp_number else "WhatsApp removido"
         for msg in conv.messages:
