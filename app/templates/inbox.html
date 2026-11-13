@@ -37,6 +37,7 @@
   {# 🏷 abas das conversas marcadas (clique de novo pra voltar a ver todas) #}
   <nav class="inbox-tabs status-chips flag-tabs">
     {% for key, label in inbox_flags %}<a data-reset-scroll class="flag-tab flag-{{ key }} {{ 'on' if marca == key }}" href="{{ path }}?marca={{ '' if marca == key else key }}" title="{{ 'Voltar a ver todas as conversas' if marca == key else 'Só as conversas marcadas como ' ~ label }}">{{ label }} <span class="unread-total {{ 'zero' if not status_counts[key] }}" data-status="{{ key }}">{{ status_counts[key] }}</span></a>{% endfor %}
+    {% if user.role != "admin" and (status_counts.repassados or marca == "repassados") %}<a data-reset-scroll class="flag-tab flag-repassados {{ 'on' if marca == 'repassados' }}" href="{{ path }}?marca={{ '' if marca == 'repassados' else 'repassados' }}" title="{{ 'Voltar pras suas conversas' if marca == 'repassados' else 'Leads que você passou pra outro vendedor: saem das suas conversas, mas dá pra ver aqui' }}">↪ Repassados <span class="unread-total zero" data-status="repassados">{{ status_counts.repassados }}</span></a>{% endif %}
   </nav>
   {% if f %}
   <div class="filter-chips">
@@ -400,7 +401,8 @@ document.querySelectorAll(".transfer-form").forEach(function (form) {
     </div>
     <div class="attach-tray" id="attachTray" hidden></div>
     <div class="reply-quote" id="replyQuote" hidden><div><b class="quote-who"></b><div class="quote-text"></div></div><button type="button" data-x title="Cancelar resposta">×</button></div>
-    <form class="reply-box" method="post" action="/leads/{{ selected_lead.id }}/reply" id="replyForm" style="position:relative;">
+    {% if passed_view %}<div class="shared-band">↪ Você passou este lead para <b>{{ selected_lead.assigned_user.name }}</b>. A conversa fica aqui só pra consulta (aba ↪ Repassados).</div>{% endif %}
+    <form class="reply-box" method="post" action="/leads/{{ selected_lead.id }}/reply" id="replyForm" style="position:relative;" {{ "hidden" if passed_view }}>
       <button type="button" class="btn ghost small" id="attachToggle" title="Anexar" style="flex:0 0 auto;">📎</button>
       <input type="file" id="attachInput" accept="image/*,video/*,audio/*,application/pdf" multiple hidden>
       <button type="button" class="btn ghost small" id="emojiToggle" title="Emojis" style="flex:0 0 auto;">🙂</button>

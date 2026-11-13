@@ -314,6 +314,8 @@ class Lead(Base):
     interest_text: Mapped[str] = mapped_column(String(255), default="")
     # ↪ trocas de vendedor ("P|" ainda sem nota na conversa, "N|" já com nota): ver services/ownership.py
     owner_trail: Mapped[str] = mapped_column(Text, default="")
+    # ↪ vendedores que passaram este lead pra outro (ids separados por vírgula): some do Inbox deles e vai pra aba "Repassados"
+    passed_by: Mapped[str] = mapped_column(String(400), default="")
     # 🤖 quando a 1ª mensagem automática saiu (ou foi tentada): manda uma vez só por negócio
     auto_hello_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # foto de perfil do WhatsApp (URL temporária do WhatsApp; renovada a cada 24h em /leads/{id}/avatar)

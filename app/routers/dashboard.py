@@ -64,6 +64,12 @@ def _visible_lead(db: Session, tenant: Tenant, user: User, lead_id: str) -> Opti
     return query.first()
 
 
+def _passed_away(lead: Lead, user: User) -> bool:
+    """↪ Vendedor que passou este lead pra outro (e não é mais dele): só consulta na aba "Repassados"."""
+    return (user.role != "admin" and bool(lead.assigned_user_id) and lead.assigned_user_id != user.id
+            and user.id in (lead.passed_by or "").split(","))
+
+
 def _visible_conversation(db: Session, tenant: Tenant, user: User, conversation) -> Optional[Lead]:
     """Lead da conversa, se esta pessoa pode ver ESSA conversa (🔒 Time/Outro: só a do WhatsApp dela)."""
     if conversation is None or conversation.tenant_id != tenant.id:
@@ -1336,6 +1342,10 @@ def _inbox_query(
         query = query.filter(followup.stale_condition(funnel._stages(db, tenant.id), tenant))
     if etapa:
         query = query.filter(Lead.stage_id == etapa)
+    if user.role != "admin":
+        # ↪ lead que o vendedor passou pra outro: fora do Inbox dele, só na aba "Repassados"
+        passed = and_(Lead.passed_by.like(f"%{user.id}%"), Lead.assigned_user_id.isnot(None), Lead.assigned_user_id != user.id)
+        query = query.filter(passed if marca == "repassados" else ~passed)
     if marca in INBOX_FLAGS:  # 🏷 ⚠️ Problema / 📌 Importante
         query = query.filter(INBOX_FLAGS[marca][1].isnot(None))
     if fav:  # ⭐ favoritas desta pessoa (junta com os outros filtros)
@@ -1379,6 +1389,7 @@ INBOX_FLAGS = {
     "problema": ("⚠️ Problema", Lead.flag_problem_at),
     "importante": ("📌 Importante", Lead.flag_important_at),
 }
+INBOX_MARCAS = (*INBOX_FLAGS, "repassados")  # + ↪ Repassados (vendedor: leads que ele passou pra outro)
 
 
 def _seller_tokens(vendedor: str) -> list:
@@ -1488,7 +1499,7 @@ def _inbox_context(
     if user.role != "admin":
         numero = ""
     vendedor = _clean_vendedor(db, tenant, user, vendedor)
-    marca = marca if marca in INBOX_FLAGS else ""
+    marca = marca if marca in INBOX_MARCAS else ""
     query, removed_ids = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa, aviso, fav, quando, marca)
 
     def count(status: str) -> int:  # quantas em cada situação, com os outros filtros atuais
@@ -1502,7 +1513,7 @@ def _inbox_context(
         return q.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
 
     status_counts["interesse"], status_counts["venda"] = aviso_count("interesse"), aviso_count("venda")
-    for key in INBOX_FLAGS:  # abas ⚠️ Problema / 📌 Importante: quantas conversas marcadas (com os filtros da gaveta)
+    for key in (INBOX_MARCAS if user.role != "admin" else INBOX_FLAGS):  # abas ⚠️ Problema / 📌 Importante / ↪ Repassados
         q, _ = _inbox_query(db, tenant, user, "", numero, vendedor, tipo, "", etapa, "", fav, quando, key)
         status_counts[key] = q.with_entities(func.count(func.distinct(Conversation.lead_id))).scalar() or 0
     unread_total, naolidas_total = status_counts["naorespondidas"], status_counts["naolidas"]
@@ -1521,6 +1532,7 @@ def _inbox_context(
         selected_lead = db.query(Lead).filter(Lead.id == selected_lead_id, Lead.tenant_id == tenant.id).first()
         if (selected_lead and user.role != "admin" and selected_lead.assigned_user_id != user.id
                 and not teams.shares(selected_lead, teams.peer_ids(db, user))  # 👥 lead de colega da equipe
+                and not _passed_away(selected_lead, user)  # ↪ repassado: abre só pra consulta
                 and not (handover.private(selected_lead) and handover.visible_conversations(selected_lead, user))):
             selected_lead = None  # vendedor só abre conversa de lead dele (ex: link antigo de um lead transferido)
         if selected_lead and handover.visible_conversations(selected_lead, user):
@@ -1607,6 +1619,7 @@ def _inbox_context(
             "shared_leads": handover.shared_lead_ids(db, [c.lead_id for c in conversations]),
             "private_view": bool(selected_lead and user.role != "admin" and handover.private(selected_lead)),
             "not_mirrored": bool(selected_lead and not inbox_state.mirrored(selected_lead)),
+            "passed_view": bool(selected_lead and _passed_away(selected_lead, user)),
     }
 
 
@@ -1650,7 +1663,7 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
     if quando not in dict(INBOX_DATES):
         quando = ""
     marca = qp.get("marca", saved[9])
-    if marca not in INBOX_FLAGS:
+    if marca not in INBOX_MARCAS:
         marca = ""
     if tipo == "favoritas":  # antes "Favoritas" era um tipo; agora é um botão que junta com os outros
         tipo, fav = "semgrupos", "1"
@@ -2016,6 +2029,10 @@ def _transfer(db: Session, tenant: Tenant, user: User, lead: Lead, target: User,
     previous = lead.assigned_user.name if lead.assigned_user else "ninguém"
     previous_id = lead.assigned_user_id
     lead.assigned_user_id = target.id
+    passed = [i for i in (lead.passed_by or "").split(",") if i and i != target.id]  # voltou pra alguém: sai da lista dele
+    if previous_id and previous_id != target.id and previous_id not in passed:
+        passed.append(previous_id)  # ↪ quem tinha o lead: some do Inbox dele (aba "Repassados")
+    lead.passed_by = ",".join(passed)[-400:]
     ownership.changed(db, lead, previous_id, f"transferido por {user.name}", note=False)  # a nota de transferência vem abaixo
     lead.seen_at = None  # o novo vendedor ainda não viu
     for conversation in lead.conversations:
@@ -2244,7 +2261,7 @@ def inbox_refresh(
         numero = ""
     vendedor = _clean_vendedor(db, tenant, user, vendedor)
     limit = _list_limit(qtd)
-    marca = marca if marca in INBOX_FLAGS else ""
+    marca = marca if marca in INBOX_MARCAS else ""
     query, _ = _inbox_query(db, tenant, user, busca, numero, vendedor, tipo, lidas, etapa, aviso, fav, quando, marca)
     rows = _first_per_lead(
         query.with_entities(Conversation.id, Conversation.lead_id, Conversation.last_message_at)
@@ -2627,7 +2644,7 @@ def reply_lead(
     user: User = Depends(current_user_required),
 ):
     lead = _visible_lead(db, tenant, user, lead_id)
-    if not lead or not handover.visible_conversations(lead, user):
+    if not lead or not handover.visible_conversations(lead, user) or _passed_away(lead, user):  # ↪ repassado: só consulta
         return RedirectResponse(url=f"/inbox/{lead_id}", status_code=302)
 
     conversation = handover.ensure_sendable(db, lead, user)  # 📱 a conversa do WhatsApp de quem responde
@@ -3080,7 +3097,7 @@ def reply_lead_media(
     é um form comum) pra dar pra mostrar 'enviando...' sem recarregar a
     página até a resposta da Meta confirmar."""
     lead = _visible_lead(db, tenant, user, lead_id)
-    if not lead or not handover.visible_conversations(lead, user):
+    if not lead or not handover.visible_conversations(lead, user) or _passed_away(lead, user):  # ↪ repassado: só consulta
         return JSONResponse({"ok": False, "error": "conversa não encontrada"}, status_code=404)
 
     content = file.file.read()
