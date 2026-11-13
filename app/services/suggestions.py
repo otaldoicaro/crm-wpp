@@ -236,6 +236,8 @@ def _applies(lead: Lead, kind: str) -> bool:
     if stage.is_won or stage.is_lost:
         return False
     if kind == "qualificado":
+        if funnel._agency(lead.tenant):
+            return False  # 📊 "dash_agencia": qualificado vem das respostas (faturamento/investimento), não da conversa
         return stage.order < funnel.levels(funnel._stages_cached(lead))["qualified"]
     return True
 
