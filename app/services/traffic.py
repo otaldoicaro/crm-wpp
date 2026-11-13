@@ -108,7 +108,7 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
         if att is None:
             continue
         if att.gclid and att.gclid in by_gclid:
-            nodes = path("google", "", by_gclid[att.gclid][0], "", "", "", "")
+            nodes = path("google", "", by_gclid[att.gclid][0], "", by_gclid[att.gclid][1], "", "")
         elif att.ad_id and att.ad_id in by_ad:
             cid, sid, cname, sname, aname = by_ad[att.ad_id]
             nodes = path("meta", cid, cname, sid, sname, att.ad_id, aname)

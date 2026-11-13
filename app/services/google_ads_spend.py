@@ -55,7 +55,8 @@ def save(db, tenant_id: str, payload: dict) -> int:
         name = str(item.get("campaign") or "").strip()[:160]
         if not name:
             continue
-        rows.append((day, name, round(_num(item.get("spend")), 2), _num(item.get("impressions"), int), _num(item.get("clicks"), int)))
+        rows.append((day, name, str(item.get("adset") or "").strip()[:160], round(_num(item.get("spend")), 2),
+                     _num(item.get("impressions"), int), _num(item.get("clicks"), int)))
     start = payload.get("from")
     try:
         start = datetime.date.fromisoformat(str(start)[:10]) if start else None
@@ -68,8 +69,8 @@ def save(db, tenant_id: str, payload: dict) -> int:
     _save_clicks(db, tenant_id, payload.get("clicks") or [])
     db.query(CampaignSpend).filter(CampaignSpend.tenant_id == tenant_id, CampaignSpend.platform == "google",
                                    CampaignSpend.source == SOURCE, CampaignSpend.date >= start).delete(synchronize_session=False)
-    for day, name, spend, impressions, clicks in rows:
-        db.add(CampaignSpend(tenant_id=tenant_id, platform="google", campaign=name, date=day, spend=spend,
+    for day, name, adset, spend, impressions, clicks in rows:
+        db.add(CampaignSpend(tenant_id=tenant_id, platform="google", campaign=name, adset=adset, date=day, spend=spend,
                              impressions=impressions, clicks=clicks, source=SOURCE))
     db.commit()
     logger.info("google ads: %s linhas de gasto gravadas pro cliente %s (desde %s, conta %s)",
@@ -117,7 +118,7 @@ def last_sync(db, tenant_id: str):
         CampaignSpend.tenant_id == tenant_id, CampaignSpend.source == SOURCE).one()
 
 
-SCRIPT = """// CRM da Agência Junta: manda o gasto das campanhas do Google Ads pro CRM (versão 2: com os cliques).
+SCRIPT = """// CRM da Agência Junta: manda o gasto das campanhas do Google Ads pro CRM (versão 3: campanha, grupo de anúncios e cliques).
 // Rode 1x (Visualizar/Executar) e programe pra rodar Diariamente.
 var CRM_URL = "%(url)s";
 var DIAS = 30;
@@ -128,8 +129,8 @@ function main() {
   var tz = AdsApp.currentAccount().getTimeZone();
   var de = Utilities.formatDate(inicio, tz, "yyyy-MM-dd");
   var ate = Utilities.formatDate(hoje, tz, "yyyy-MM-dd");
-  var consulta = "SELECT segments.date, campaign.name, metrics.cost_micros, metrics.impressions, metrics.clicks " +
-                 "FROM campaign WHERE segments.date BETWEEN '" + de + "' AND '" + ate + "' AND metrics.impressions > 0";
+  var consulta = "SELECT segments.date, campaign.name, ad_group.name, metrics.cost_micros, metrics.impressions, metrics.clicks " +
+                 "FROM ad_group WHERE segments.date BETWEEN '" + de + "' AND '" + ate + "' AND metrics.impressions > 0";
   var linhas = [];
   var it = AdsApp.search(consulta);
   while (it.hasNext()) {
@@ -137,6 +138,7 @@ function main() {
     linhas.push({
       date: r.segments.date,
       campaign: r.campaign.name,
+      adset: r.adGroup ? r.adGroup.name : "",
       spend: Number(r.metrics.costMicros || 0) / 1000000,
       impressions: Number(r.metrics.impressions || 0),
       clicks: Number(r.metrics.clicks || 0)
