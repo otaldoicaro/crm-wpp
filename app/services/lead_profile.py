@@ -152,3 +152,51 @@ def contract_total(profile: dict):
         return None
     return round((profile.get("setup") or 0) + monthly * months, 2)
 
+
+
+# 📊 recurso "dash_agencia": qualificado pelo que o lead respondeu (formulário da LP ou Leadster)
+QUALIFIED_MIN_REVENUE = 100_000  # faturamento por mês a partir de R$ 100 mil
+QUALIFIED_MIN_INVEST = 3_000  # ou investimento em marketing a partir de R$ 3 mil
+_FORM_KEYS = {"faturamento": ("faturamento", "faturamentoempresa"), "investimento": ("investimento", "investimentotrafego")}
+
+
+def floor_value(text: str):
+    """Começo da faixa em reais: "R$ 50 mil a R$ 100 mil" → 50000; "Mais de R$ 500 mil" → 500000;
+    "Até R$ 2 mil" / "Menos de R$ 3 mil" → 0; sem número → None."""
+    plain = (text or "").lower().replace(".", "").replace(",", ".")
+    if not plain.strip():
+        return None
+    if re.match(r"\s*(até|ate|menos)", plain):
+        return 0.0
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(milh|mil|k|mi\b|m\b)?", plain)
+    if not m:
+        return None
+    value = float(m.group(1))
+    unit = m.group(2) or ""
+    if unit in ("mil", "k"):
+        value *= 1_000
+    elif unit:
+        value *= 1_000_000
+    return value
+
+
+def _answers(lead) -> dict:
+    """Faturamento e investimento que o lead respondeu (ficha + formulários/Leadster)."""
+    found = {}
+    profile = load(lead)
+    for field in ("faturamento", "investimento"):
+        if profile.get(field):
+            found[field] = str(profile[field])
+    for line in (lead.form_details or "").split("\n"):
+        key, _, value = line.partition(":")
+        key = "".join(key.lower().split())
+        for field, names in _FORM_KEYS.items():
+            if field not in found and value.strip() and (key in names or key.startswith(field)):
+                found[field] = value.strip()
+    return found
+
+
+def money_qualified(lead) -> bool:
+    answers = _answers(lead)
+    revenue, invest = floor_value(answers.get("faturamento", "")), floor_value(answers.get("investimento", ""))
+    return (revenue is not None and revenue >= QUALIFIED_MIN_REVENUE) or (invest is not None and invest >= QUALIFIED_MIN_INVEST)

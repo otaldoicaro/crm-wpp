@@ -81,6 +81,7 @@
   {% for key, label in ((("comercial", "📊 Comercial"), ("clientes", "🔁 Clientes")) if own_traffic else (("comercial", "📊 Comercial"), ("trafego", "📣 Tráfego"), ("clientes", "🔁 Clientes"))) %}
   <a class="dash-tab {{ 'on' if aba == key }}" href="/dashboard?aba={{ key }}&{{ tab_qs }}">{{ label }}</a>
   {% endfor %}
+  {% if has_feature(tenant, "auditoria_no_dashboard") and not user.read_only %}<a class="dash-tab" href="/auditoria" title="Quando cada lead entrou e cada contato que ele recebeu">🔎 Auditoria</a>{% endif %}
 </nav>
 {% endif %}
 

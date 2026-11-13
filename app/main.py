@@ -54,7 +54,10 @@ from app.services.conversions import queue as conversions_queue  # noqa: E402
 conversions_queue.schedule()
 from app.services import instagram as _instagram  # noqa: E402
 
-_instagram.schedule()  # 📸 renova o token das contas do Instagram conectadas  # 📤 eventos do CRM pro Meta (por cliente)  # recupera do Evolution mensagens que escaparam (a cada 5 min, última 1h)  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)
+_instagram.schedule()
+from app.services import tasks as _tasks  # noqa: E402
+
+_tasks.schedule()  # ✅ avisa as tarefas do dia  # 📸 renova o token das contas do Instagram conectadas  # 📤 eventos do CRM pro Meta (por cliente)  # recupera do Evolution mensagens que escaparam (a cada 5 min, última 1h)  # gasto dos anúncios do Meta (a cada 3h; só com META_ADS_ACCESS_TOKEN)
 webhooks_evolution.clean_legacy_placeholders()
 with SessionLocal() as _db:
     response_times.backfill(_db)

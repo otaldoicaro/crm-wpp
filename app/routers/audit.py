@@ -12,6 +12,7 @@ de ação e por quem mandou."""
 
 import datetime
 
+from app import features
 from fastapi import APIRouter, Depends, HTTPException, Request
 from urllib.parse import urlencode
 from fastapi.responses import HTMLResponse
@@ -185,7 +186,8 @@ def audit_page(
         return link(ordem=column, dir="desc" if column in ("entrou", "recebeu", "respondeu") else "asc", lead=lead)
 
     return templates.TemplateResponse(request, "auditoria.html", {
-        "tenant": tenant, "user": user, "active_nav": "auditoria", "periodo": periodo, "periods": PERIODS,
+        "tenant": tenant, "user": user,
+        "active_nav": "dashboard" if features.has(tenant, "auditoria_no_dashboard") else "auditoria", "periodo": periodo, "periods": PERIODS,
         "q": q, "leads": leads, "total": total, "summaries": summaries, "limit": LIST_LIMIT,
         "people": people, "vendedor": vendedor, "origem": origem, "origins": list(PLATFORM_LABEL.items()),
         "situacao": situacao, "situations": SITUATIONS, "de": filters["de"], "ate": filters["ate"],

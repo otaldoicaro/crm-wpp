@@ -65,6 +65,7 @@ def save(db, tenant_id: str, payload: dict) -> int:
         start = min([start] + [r[0] for r in rows]) if start else min(r[0] for r in rows)
     if start is None:
         return 0
+    _save_clicks(db, tenant_id, payload.get("clicks") or [])
     db.query(CampaignSpend).filter(CampaignSpend.tenant_id == tenant_id, CampaignSpend.platform == "google",
                                    CampaignSpend.source == SOURCE, CampaignSpend.date >= start).delete(synchronize_session=False)
     for day, name, spend, impressions, clicks in rows:
@@ -74,6 +75,36 @@ def save(db, tenant_id: str, payload: dict) -> int:
     logger.info("google ads: %s linhas de gasto gravadas pro cliente %s (desde %s, conta %s)",
                 len(rows), tenant_id, start, payload.get("account", ""))
     return len(rows)
+
+
+def _save_clicks(db, tenant_id: str, clicks: list) -> None:
+    """Cliques (gclid → campanha/grupo) dos dias que vieram: troca esses dias, sem duplicar."""
+    from app.models import GoogleClick
+
+    rows = []
+    for item in clicks[:MAX_ROWS * 5]:
+        if not isinstance(item, dict) or not item.get("gclid"):
+            continue
+        try:
+            day = datetime.date.fromisoformat(str(item.get("date", ""))[:10])
+        except ValueError:
+            continue
+        rows.append((str(item["gclid"])[:255], str(item.get("campaign") or "")[:160], str(item.get("adset") or "")[:160], day))
+    if not rows:
+        return
+    days = {r[3] for r in rows}
+    db.query(GoogleClick).filter(GoogleClick.tenant_id == tenant_id, GoogleClick.date.in_(days)).delete(synchronize_session=False)
+    for gclid, campaign, adset, day in rows:
+        db.add(GoogleClick(tenant_id=tenant_id, gclid=gclid, campaign=campaign, adset=adset, date=day))
+    logger.info("google ads: %s cliques (gclid) gravados pro cliente %s", len(rows), tenant_id)
+
+
+def clicks_by_gclid(db, tenant_id: str) -> dict:
+    """{gclid: (campanha, grupo)} de todos os cliques conhecidos do cliente."""
+    from app.models import GoogleClick
+
+    return {g: (c, a) for g, c, a in db.query(GoogleClick.gclid, GoogleClick.campaign, GoogleClick.adset)
+            .filter(GoogleClick.tenant_id == tenant_id)}
 
 
 def last_sync(db, tenant_id: str):
@@ -86,7 +117,7 @@ def last_sync(db, tenant_id: str):
         CampaignSpend.tenant_id == tenant_id, CampaignSpend.source == SOURCE).one()
 
 
-SCRIPT = """// CRM da Agência Junta: manda o gasto das campanhas do Google Ads pro CRM.
+SCRIPT = """// CRM da Agência Junta: manda o gasto das campanhas do Google Ads pro CRM (versão 2: com os cliques).
 // Rode 1x (Visualizar/Executar) e programe pra rodar Diariamente.
 var CRM_URL = "%(url)s";
 var DIAS = 30;
@@ -111,10 +142,23 @@ function main() {
       clicks: Number(r.metrics.clicks || 0)
     });
   }
+  // cliques (gclid) de cada dia: liga o lead à campanha mesmo com a UTM escrita à mão
+  var cliques = [];
+  for (var d = 0; d < DIAS; d++) {
+    var dia = Utilities.formatDate(new Date(hoje.getTime() - d * 24 * 60 * 60 * 1000), tz, "yyyy-MM-dd");
+    try {
+      var c = AdsApp.search("SELECT click_view.gclid, campaign.name, ad_group.name, segments.date FROM click_view " +
+                            "WHERE segments.date = '" + dia + "'");
+      while (c.hasNext()) {
+        var k = c.next();
+        cliques.push({ gclid: k.clickView.gclid, campaign: k.campaign.name, adset: k.adGroup ? k.adGroup.name : "", date: dia });
+      }
+    } catch (e) { Logger.log("cliques de " + dia + ": " + e); }
+  }
   var resposta = UrlFetchApp.fetch(CRM_URL, {
     method: "post",
     contentType: "application/json",
-    payload: JSON.stringify({ account: AdsApp.currentAccount().getCustomerId(), from: de, rows: linhas }),
+    payload: JSON.stringify({ account: AdsApp.currentAccount().getCustomerId(), from: de, rows: linhas, clicks: cliques }),
     muteHttpExceptions: true
   });
   Logger.log("CRM respondeu " + resposta.getResponseCode() + ": " + resposta.getContentText());

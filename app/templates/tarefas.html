@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Tarefas{% endblock %}
+{% block content %}
+<div class="kanban-toolbar">
+  <div>
+    <h2 style="margin:0">✅ Tarefas</h2>
+    <span class="muted">Crie na conversa ou na ficha do lead (＋ Nova tarefa). No dia, a pessoa recebe o aviso.</span>
+  </div>
+  {% if user.role == "admin" %}<div class="toolbar-links"><a class="btn ghost small {{ 'pill-on' if minhas }}" href="/tarefas{{ '' if minhas else '?minhas=1' }}">{{ "Ver de todo mundo" if minhas else "Só as minhas" }}</a></div>{% endif %}
+</div>
+{% macro rows(items, done=False) -%}
+<table class="table-simple task-table">
+  {% for t in items %}
+  <tr class="{{ 'task-late' if not done and t.due_date < b.today_date }}">
+    <td style="white-space:nowrap">{{ when_label(t) }}</td>
+    <td><b>{{ t.title }}</b></td>
+    <td><a href="{{ '/inbox/' if t.lead.conversations else '/leads/' }}{{ t.lead.id }}">{{ t.lead.name or t.lead.phone }}</a></td>
+    <td class="muted">{{ t.user.name if t.user else "—" }}</td>
+    <td style="white-space:nowrap">
+      {% if not user.read_only %}
+      {% if done %}<form method="post" action="/tarefas/{{ t.id }}/reabrir" class="inline-form"><button class="btn ghost small">Reabrir</button></form>
+      {% else %}<form method="post" action="/tarefas/{{ t.id }}/feita" class="inline-form"><button class="btn small">✓ Feita</button></form>{% endif %}
+      <form method="post" action="/tarefas/{{ t.id }}/excluir" class="inline-form" onsubmit="return confirm('Excluir esta tarefa?')"><button class="btn ghost small">Excluir</button></form>
+      {% endif %}
+    </td>
+  </tr>
+  {% else %}<tr><td class="muted">Nada aqui.</td></tr>{% endfor %}
+</table>
+{%- endmacro %}
+<div class="card"><h3 style="margin-top:0">⚠️ Atrasadas ({{ b.late|length }})</h3>{{ rows(b.late) }}</div>
+<div class="card" style="margin-top:14px"><h3 style="margin-top:0">📌 Hoje ({{ b.today|length }})</h3>{{ rows(b.today) }}</div>
+<div class="card" style="margin-top:14px"><h3 style="margin-top:0">🗓️ Próximas ({{ b.next|length }})</h3>{{ rows(b.next) }}</div>
+<details class="card" style="margin-top:14px"><summary><b>Feitas (últimas 30)</b></summary>{{ rows(b.done, True) }}</details>
+{% endblock %}

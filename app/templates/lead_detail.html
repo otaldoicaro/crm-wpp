@@ -24,6 +24,9 @@
     {% if has_feature(tenant, "tentativas_contato") and not lead.is_group and not (lead.stage and (lead.stage.is_won or lead.stage.is_lost)) %}
     {{ m.attempt_box(lead, "/leads/" ~ lead.id, not user.read_only) }}
     {% endif %}
+    {% if has_feature(tenant, "tarefas") and not lead.is_group %}
+    {{ m.task_box(lead, "/leads/" ~ lead.id, not user.read_only, task_people_for(tenant, user)) }}
+    {% endif %}
 
     <form method="post" action="/leads/{{ lead.id }}/update" id="leadForm">
       <input type="hidden" name="voltar" value="{{ voltar }}">

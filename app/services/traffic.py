@@ -85,6 +85,8 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
     campaign_by_name = {names[2]: names[0] for names in by_ad.values()}
     adset_by_name = {(names[0], names[3]): names[1] for names in by_ad.values()}
     ad_by_name = {(names[1], names[4]): ad_id for ad_id, names in by_ad.items()}
+    _names = [names[4] for names in by_ad.values()]
+    ad_by_unique_name = {names[4]: ad_id for ad_id, names in by_ad.items() if names[4] and _names.count(names[4]) == 1}
 
     campaigns: dict = {}
 
@@ -97,13 +99,26 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
         ad = adset["children"].setdefault(akey, _node(aname or "(sem anúncio)", platform, _key(akey)))
         return camp, adset, ad
 
+    from app.services.google_ads_spend import clicks_by_gclid
+
+    by_gclid = clicks_by_gclid(db, tenant_id)  # 📊 clique do Google → campanha (script do Google Ads)
+
     for lead in leads:
         att = lead.attribution
         if att is None:
             continue
-        if att.ad_id and att.ad_id in by_ad:
+        if att.gclid and att.gclid in by_gclid:
+            nodes = path("google", "", by_gclid[att.gclid][0], "", "", "", "")
+        elif att.ad_id and att.ad_id in by_ad:
             cid, sid, cname, sname, aname = by_ad[att.ad_id]
             nodes = path("meta", cid, cname, sid, sname, att.ad_id, aname)
+        elif (att.utm_campaign or att.utm_content) and resolve_platform(att) == "meta" \
+                and att.utm_campaign not in campaign_by_name and ad_by_unique_name.get(att.utm_content or ""):
+            # UTM de campanha errada (ex: copiada de outro anúncio), mas o nome do anúncio é de um anúncio
+            # nosso do Meta: casa pelo anúncio
+            ad_id = ad_by_unique_name[att.utm_content]
+            cid, sid, cname, sname, aname = by_ad[ad_id]
+            nodes = path("meta", cid, cname, sid, sname, ad_id, aname)
         elif att.utm_campaign:
             platform = "meta" if att.ad_id else resolve_platform(att)
             cname, sname, aname = att.utm_campaign, att.utm_term, att.utm_content

@@ -518,6 +518,42 @@ class ConversionEvent(Base):
     destination: Mapped[str] = mapped_column(String(40), default="")  # pixel/conta que recebeu (auditoria)
 
 
+class LeadTask(Base):
+    """✅ Tarefa ligada a um lead (recurso "tarefas"): o que fazer, pra quando e de quem é. No dia, a pessoa
+    recebe o aviso (services/tasks.py) e vê em ✅ Tarefas."""
+
+    __tablename__ = "lead_tasks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    lead_id: Mapped[str] = mapped_column(ForeignKey("leads.id"), index=True)
+    user_id: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)  # de quem é
+    created_by_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    due_date: Mapped[datetime.date] = mapped_column(Date, index=True)
+    due_time: Mapped[str] = mapped_column(String(5), default="")  # "14:30" (opcional, horário de Brasília)
+    done_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    notified_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+
+    lead: Mapped["Lead"] = relationship()
+    user: Mapped[Optional["User"]] = relationship(foreign_keys=[user_id])
+
+
+class GoogleClick(Base):
+    """Clique de anúncio do Google (gclid) e a campanha/grupo dele, mandado pelo script do Google Ads
+    (services/google_ads_spend.py): liga o lead (que traz o gclid) à campanha mesmo com UTM escrita à mão."""
+
+    __tablename__ = "google_clicks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    gclid: Mapped[str] = mapped_column(String(255), index=True)
+    campaign: Mapped[str] = mapped_column(String(160), default="")
+    adset: Mapped[str] = mapped_column(String(160), default="")  # grupo de anúncios
+    date: Mapped[datetime.date] = mapped_column(Date)
+
+
 class CampaignSpend(Base):
     """Gasto de anúncio por dia, importado de uma fonte externa (Meta Ads,
     Google Ads, Windsor.ai, planilha manual, etc). Casamos com os leads pelo

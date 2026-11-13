@@ -137,3 +137,27 @@
 {%- endmacro %}
 
 
+
+{% macro task_box(lead, voltar, can_edit=True, people=[]) -%}
+{# ✅ tarefas abertas do lead + criar (recurso "tarefas") #}
+{% set ts = lead_tasks(lead) %}
+<div class="task-box">
+  <span class="attempt-title">✅ Tarefas</span>
+  {% for t in ts %}<span class="task-chip {{ 'late' if t.late }} {{ 'today' if t.today }}" title="{{ t.who }}">{{ t.title }} · {{ t.when }}
+    {% if can_edit %}<form method="post" action="/tarefas/{{ t.id }}/feita" class="inline-form"><input type="hidden" name="voltar" value="{{ voltar }}"><button class="task-done" title="Marcar como feita">✓</button></form>{% endif %}</span>{% else %}<span class="muted">nenhuma aberta</span>{% endfor %}
+  {% if can_edit %}
+  <details class="attempt-add">
+    <summary class="btn small ghost">＋ Nova tarefa</summary>
+    <form method="post" action="/leads/{{ lead.id }}/tarefas" class="attempt-pop">
+      <input type="hidden" name="voltar" value="{{ voltar }}">
+      <label>O que fazer<input name="titulo" maxlength="255" placeholder="ex: Fazer follow-up da proposta" required></label>
+      <label>Dia<input type="date" name="dia" value="{{ (agora() + timedelta_days(1))|hora('%Y-%m-%d') }}"></label>
+      <label>Hora (opcional)<input type="time" name="hora"></label>
+      {% if people %}<label>De quem<select name="para">{% for p in people %}<option value="{{ p.id }}" {{ "selected" if p.id == lead.assigned_user_id }}>{{ p.name }}</option>{% endfor %}</select></label>{% endif %}
+      <button class="btn small" type="submit">Criar tarefa</button>
+      <span class="muted" style="font-size:.75rem">No dia, chega um aviso pra pessoa e a tarefa aparece em ✅ Tarefas.</span>
+    </form>
+  </details>
+  {% endif %}
+</div>
+{%- endmacro %}

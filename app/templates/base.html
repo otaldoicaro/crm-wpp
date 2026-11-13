@@ -31,13 +31,16 @@
       <a href="/equipe" class="{{ 'active' if active_nav == 'equipe' or (team_wa and active_nav == 'whatsapp') else '' }}" {% if pending_access %}title="Pedidos de acesso esperando aprovação"{% elif team_wa and wa_down %}title="WhatsApp desconectado"{% endif %}>Equipe{% if pending_access or (team_wa and wa_down) %}<span class="nav-dot"></span>{% endif %}</a>
       {% endif %}
       {% if not user.read_only and not team_wa %}<a href="/whatsapp" class="{{ 'active' if active_nav == 'whatsapp' else '' }}" {% if wa_down %}title="WhatsApp desconectado"{% endif %}>{{ "WhatsApp" if user.role == "admin" else "Meu WhatsApp" }}{% if wa_down or (user.role != "admin" and not (my_numbers|selectattr("is_active")|list)) %}<span class="nav-dot"></span>{% endif %}</a>{% endif %}
-      {% if user.role == "admin" and not user.read_only %}<a href="/auditoria" class="{{ 'active' if active_nav == 'auditoria' else '' }}" title="Quando cada lead entrou e cada contato que ele recebeu">🔎 Auditoria</a>{% endif %}
+      {% if user.role == "admin" and not user.read_only and not has_feature(tenant, "auditoria_no_dashboard") %}<a href="/auditoria" class="{{ 'active' if active_nav == 'auditoria' else '' }}" title="Quando cada lead entrou e cada contato que ele recebeu">🔎 Auditoria</a>{% endif %}
       {% if user.role == "admin" and not user.read_only %}<a href="/configuracoes" class="nav-config {{ 'active' if active_nav == 'config' else '' }}" title="Prazos, mensagem automática, recursos e integrações">⚙ Configurações</a>{% endif %}
     </nav>
     <div class="user">
       {% if not user.read_only %}
       {% if has_feature(tenant, "agendamentos") %}{% set ag = agenda_count(tenant, user) %}
       <a href="/agendamentos" class="nav-recados {{ 'active' if active_nav == 'agenda' else '' }}" title="Visitas agendadas na loja">📅 Agendamentos{% if ag %}<span class="nav-badge">{{ ag }}</span>{% endif %}</a>
+      {% endif %}
+      {% if has_feature(tenant, "tarefas") %}{% set td = tasks_due(tenant, user) %}
+      <a href="/tarefas" class="nav-recados {{ 'active' if active_nav == 'tarefas' else '' }}" title="Suas tarefas de hoje e atrasadas">✅ Tarefas{% if td %}<span class="nav-badge">{{ td }}</span>{% endif %}</a>
       {% endif %}
       {% set rec = recados_pending(user) %}
       <a href="/recados" class="nav-recados {{ 'active' if active_nav == 'recados' else '' }}" title="Recados entre admin e vendedor sobre os leads">💬 Recados{% if rec %}<span class="nav-badge">{{ rec }}</span>{% endif %}</a>

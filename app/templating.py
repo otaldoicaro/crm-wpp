@@ -190,3 +190,45 @@ def _recados_pending(user) -> int:
 
 
 templates.env.globals["recados_pending"] = _recados_pending
+
+
+def _tasks_due(tenant, user) -> int:
+    """✅ Tarefas de hoje e atrasadas desta pessoa (número no menu)."""
+    from app import features
+    from app.db import SessionLocal
+    from app.services import tasks
+
+    if not features.has(tenant, "tarefas"):
+        return 0
+    with SessionLocal() as db:
+        try:
+            return tasks.due_count(db, tenant, user)
+        except Exception:
+            return 0
+
+
+def _lead_tasks(lead) -> list:
+    from app.db import SessionLocal
+    from app.services import tasks
+
+    with SessionLocal() as db:
+        rows = tasks.open_for_lead(db, lead)
+        return [{"id": t.id, "title": t.title, "when": tasks.when_label(t), "late": t.due_date < tasks.today(),
+                 "today": t.due_date == tasks.today(), "who": t.user.name if t.user else ""} for t in rows]
+
+
+templates.env.globals["tasks_due"] = _tasks_due
+templates.env.globals["lead_tasks"] = _lead_tasks
+templates.env.globals["timedelta_days"] = lambda n: datetime.timedelta(days=n)
+
+
+def _task_people(tenant, user) -> list:
+    """Admin escolhe de quem é a tarefa; vendedor cria pra ele mesmo (lista vazia)."""
+    if getattr(user, "role", "") != "admin":
+        return []
+    from app.db import SessionLocal
+    from app.services.people import team_members
+
+    with SessionLocal() as db:
+        return [type("P", (), {"id": p.id, "name": p.name}) for p in team_members(db, tenant.id, only_active=True)]
+templates.env.globals["task_people_for"] = _task_people

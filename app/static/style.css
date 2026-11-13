@@ -1296,3 +1296,12 @@ fieldset.cfg-features legend { font-weight: 700; padding: 0 6px; }
 .attempt-pop { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: 280px; display: flex; flex-direction: column; gap: 8px;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
 .attempt-pop label { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--muted); }
+
+/* ✅ tarefas */
+.task-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 6px; font-size: .8rem; }
+.task-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.task-chip.today { border-color: var(--y, #d9a400); font-weight: 600; }
+.task-chip.late { border-color: #d9534f; color: #d9534f; font-weight: 600; }
+.task-done { border: 0; background: var(--panel-2); border-radius: 999px; cursor: pointer; padding: 0 6px; }
+.inline-form { display: inline; }
+.task-table tr.task-late td:first-child { color: #d9534f; font-weight: 600; }

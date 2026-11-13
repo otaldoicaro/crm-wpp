@@ -733,7 +733,7 @@ def campaign_leads(
     tree = traffic.build(
         db, tenant.id, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
-        funnel.is_qualified(stages), {st.id for st in stages if st.is_won}, funnel.is_opportunity(stages),
+        funnel.is_qualified(stages, tenant), {st.id for st in stages if st.is_won}, funnel.is_opportunity(stages),
     )
     trail = traffic.find(tree, c, s, a)
     if trail is None:
@@ -2760,6 +2760,88 @@ def recados_page(
     })
 
 
+@router.get("/tarefas", response_class=HTMLResponse)
+def tasks_page(
+    request: Request,
+    minhas: str = "",
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """✅ Tarefas (recurso "tarefas"): atrasadas, de hoje, próximas e as últimas feitas."""
+    from app.services import tasks
+
+    if not features.has(tenant, "tarefas"):
+        return RedirectResponse(url="/", status_code=302)
+    return templates.TemplateResponse(request, "tarefas.html", {
+        "tenant": tenant, "user": user, "active_nav": "tarefas",
+        "b": tasks.buckets(db, tenant, user, only_mine=bool(minhas)), "minhas": bool(minhas),
+        "when_label": tasks.when_label,
+    })
+
+
+@router.post("/leads/{lead_id}/tarefas")
+def create_task(
+    lead_id: str,
+    titulo: str = Form(""),
+    dia: str = Form(""),
+    hora: str = Form(""),
+    para: str = Form(""),
+    voltar: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """✅ Nova tarefa do lead: o que fazer, dia (padrão amanhã), hora opcional e de quem é."""
+    from app.models import LeadTask
+    from app.services import tasks
+
+    lead = _visible_lead(db, tenant, user, lead_id)
+    if not lead or user.read_only or not features.has(tenant, "tarefas"):
+        raise HTTPException(status_code=404)
+    try:
+        day = datetime.date.fromisoformat(dia) if dia else tasks.today() + datetime.timedelta(days=1)
+    except ValueError:
+        day = tasks.today() + datetime.timedelta(days=1)
+    hora = hora if re.fullmatch(r"\d{2}:\d{2}", hora or "") else ""
+    owner = lead.assigned_user_id or user.id
+    if para and user.role == "admin" and any(p.id == para for p in team_members(db, tenant.id, only_active=True)):
+        owner = para
+    title = titulo.strip()[:255] or "Fazer follow-up"
+    db.add(LeadTask(tenant_id=tenant.id, lead_id=lead.id, user_id=owner, created_by_id=user.id, title=title,
+                    due_date=day, due_time=hora))
+    _add_note(db, lead, f"✅ {user.name} criou a tarefa “{title}” pra {day.strftime('%d/%m')}" + (f" às {hora}" if hora else ""))
+    db.commit()
+    back = voltar if voltar.startswith(("/inbox/", "/leads/", "/tarefas")) else f"/leads/{lead_id}"
+    return RedirectResponse(url=back, status_code=302)
+
+
+@router.post("/tarefas/{task_id}/{acao}")
+def task_action(
+    task_id: str,
+    acao: str,
+    voltar: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """✅ Marcar como feita / desfazer / excluir (quem é dono da tarefa ou admin)."""
+    from app.models import LeadTask
+
+    task = db.query(LeadTask).filter(LeadTask.id == task_id, LeadTask.tenant_id == tenant.id).first()
+    if task is None or user.read_only or (user.role != "admin" and task.user_id != user.id):
+        raise HTTPException(status_code=404)
+    if acao == "feita":
+        task.done_at = datetime.datetime.utcnow()
+        _add_note(db, task.lead, f"✅ {user.name} concluiu a tarefa “{task.title}”")
+    elif acao == "reabrir":
+        task.done_at = None
+    elif acao == "excluir":
+        db.delete(task)
+    db.commit()
+    return RedirectResponse(url=voltar if voltar.startswith("/") else "/tarefas", status_code=302)
+
+
 @router.get("/agendamentos", response_class=HTMLResponse)
 def agenda_page(
     request: Request,
@@ -3336,7 +3418,7 @@ def dashboard_view(
         mine_rt = response_times.summary(mine, hours)
         mine_fu = [followup.state(l) for l in mine_open]  # uma vez por lead (antes eram duas)
         mine_open_rt = response_times.summary(mine_open)
-        fsum = funnel.summary(mine, stages)  # Lead > Qualificado > Negociando > Venda (etapa mais longe alcançada)
+        fsum = funnel.summary(mine, stages, tenant)  # Lead > Qualificado > Negociando > Venda (etapa mais longe alcançada)
         return {
             "user": person,
             "steps": fsum["steps"][1:],
@@ -3367,7 +3449,7 @@ def dashboard_view(
         seller_rows.append(seller_row(s, mine))
     seller_rows.sort(key=lambda r: (r["won"], r["total"]), reverse=True)
     team_row = seller_row(None, all_period_leads if heavy else [])
-    commercial_funnel = funnel.summary(leads, stages)
+    commercial_funnel = funnel.summary(leads, stages, tenant)
     lost_leads = [lead for lead in leads if lead.stage_id in lost_stage_ids]
     loss_counts: dict = {}
     for lead in lost_leads:
@@ -3380,7 +3462,7 @@ def dashboard_view(
     my_numbers = None
     if not is_admin and heavy:
         mine = [lead for lead in all_period_leads if lead.assigned_user_id == user.id]
-        my_numbers = {"row": seller_row(user, mine), "funnel": funnel.summary(mine, stages)}
+        my_numbers = {"row": seller_row(user, mine), "funnel": funnel.summary(mine, stages, tenant)}
     unassigned = sum(1 for lead in all_period_leads if not lead.assigned_user_id)
 
     platform_counts: dict[str, dict] = {}
@@ -3439,12 +3521,12 @@ def dashboard_view(
     traffic_data = traffic.build(
         db, tenant.id, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
-        funnel.is_qualified(stages), set(won_stage_ids), funnel.is_opportunity(stages), channel=canal,
+        funnel.is_qualified(stages, tenant), set(won_stage_ids), funnel.is_opportunity(stages), channel=canal,
     ) if aba == "trafego" else None  # cada aba calcula só o que mostra
     traffic_daily = traffic.daily(
         db, tenant.id, traffic_data, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
-        funnel.is_qualified(stages), funnel.is_opportunity(stages), channel=canal,
+        funnel.is_qualified(stages, tenant), funnel.is_opportunity(stages), channel=canal,
     ) if traffic_data else {}
 
     return templates.TemplateResponse(

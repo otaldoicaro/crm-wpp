@@ -32,6 +32,12 @@ FEATURES = {
                        "“Selecionar várias” (cada lead fica com quem atendeu)",
     "passar_so_na_ficha": "↪ Passar o lead pra outro vendedor só em “📋 Ver status do lead” (some do “⋯ Mais” e do clique "
                           "direito da conversa no Inbox)",
+    "auditoria_no_dashboard": "🔎 Auditoria vira uma aba do Dashboard (no fim das abas), em vez de ficar no menu de cima",
+    "tarefas": "✅ Tarefas: na conversa e na ficha do lead dá pra criar uma tarefa com data (ex: fazer follow-up); a aba ✅ Tarefas "
+               "mostra as de hoje, atrasadas e futuras, e no dia aparece o aviso no menu",
+    "dash_agencia": "📊 Dashboard de agência: Leads = todos que entraram · Qualificados = faturamento a partir de R$ 100 mil ou "
+                    "investimento a partir de R$ 3 mil (formulário ou Leadster) · Propostas = chegou em Proposta Enviada ou depois · "
+                    "Vendas = fechou",
     "lixeira_apaga": "🗑️ Lixeira com prazo: lead excluído fica na Lixeira por 30 dias (dá pra restaurar) e depois é apagado de vez, "
                      "com a conversa",
     "sem_prazos": "⏰ Sem alertas de prazo (venda longa): some o “⏰ há X dias na etapa”, o “📞 follow-up · sem resposta” e o "
@@ -49,6 +55,7 @@ GROUPS = [
     ("👥 Vendedores", ["sem_passar_lead", "passar_troca_numero", "passar_so_na_ficha"]),
     ("🤖 Mensagens automáticas pro cliente", ["followup_automatico", "followup_so_24h", "mensagem_fora_horario"]),
     ("💰 Venda e pagamento", ["pagamento_parcelado"]),
+    ("📊 Dashboard e telas", ["auditoria_no_dashboard", "dash_agencia", "tarefas"]),
     ("🗑️ Lixeira", ["lixeira_apaga"]),
 ]
 

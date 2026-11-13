@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Auditoria{% endblock %}
 {% block content %}
+{% if has_feature(tenant, "auditoria_no_dashboard") %}
+<nav class="dash-tabs">
+  <a class="dash-tab" href="/dashboard?aba=comercial">📊 Comercial</a>
+  <a class="dash-tab" href="/dashboard?aba=clientes">🔁 Clientes</a>
+  <a class="dash-tab on" href="/auditoria">🔎 Auditoria</a>
+</nav>
+{% endif %}
 <div class="kanban-toolbar">
   <div>
     <h2 style="margin:0">🔎 Auditoria</h2>

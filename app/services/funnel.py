@@ -259,12 +259,13 @@ def levels(stages: list) -> dict:
     }
 
 
-def summary(leads: list, stages: list) -> dict:
+def summary(leads: list, stages: list, tenant=None) -> dict:
     """Números do funil + taxa de passagem de cada degrau."""
     lv = levels(stages)
     total = len(leads)
-    qualified = sum(1 for l in leads if (l.reached_order or 0) >= lv["qualified"] or l.stage_id in lv["won_ids"])
-    negotiating = sum(1 for l in leads if (l.reached_order or 0) >= lv["negotiation"] or l.stage_id in lv["won_ids"])
+    is_q, is_opp = is_qualified(stages, tenant), is_opportunity(stages)
+    qualified = sum(1 for l in leads if is_q(l))
+    negotiating = sum(1 for l in leads if is_opp(l))
     won = sum(1 for l in leads if l.stage_id in lv["won_ids"])
 
     def rate(part, whole):
@@ -274,7 +275,8 @@ def summary(leads: list, stages: list) -> dict:
         "steps": [
             {"label": "Leads", "count": total, "rate": None, "rate_label": ""},
             {"label": "Qualificados", "count": qualified, "rate": rate(qualified, total), "rate_label": "dos leads"},
-            {"label": "Oportunidades", "count": negotiating, "rate": rate(negotiating, qualified), "rate_label": "dos qualificados"},
+            {"label": "Propostas" if _agency(tenant) else "Oportunidades", "count": negotiating,
+             "rate": rate(negotiating, qualified), "rate_label": "dos qualificados"},
             {"label": "Vendas", "count": won, "rate": rate(won, negotiating), "rate_label": "das oportunidades"},
         ],
         "overall": rate(won, total),
@@ -287,9 +289,21 @@ def is_opportunity(stages: list):
     return lambda lead: (lead.reached_order or 0) >= lv["negotiation"] or lead.stage_id in lv["won_ids"]
 
 
-def is_qualified(stages: list):
-    """Função lead -> bool (pro cruzamento com o tráfego pago)."""
+def _agency(tenant) -> bool:
+    from app import features
+
+    return tenant is not None and features.has(tenant, "dash_agencia")
+
+
+def is_qualified(stages: list, tenant=None):
+    """Função lead -> bool (pro cruzamento com o tráfego pago). Recurso "dash_agencia": qualificado é quem
+    respondeu faturamento/investimento acima do mínimo (lead_profile.money_qualified) ou já chegou na proposta."""
     lv = levels(stages)
+    if _agency(tenant):
+        from app.services import lead_profile
+
+        return lambda lead: (lead_profile.money_qualified(lead) or (lead.reached_order or 0) >= lv["negotiation"]
+                             or lead.stage_id in lv["won_ids"])
     return lambda lead: (lead.reached_order or 0) >= lv["qualified"] or lead.stage_id in lv["won_ids"]
 
 
