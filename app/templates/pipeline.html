@@ -32,6 +32,7 @@
       {% if origens %}
       <label>Canal de origem<select name="origem" id="novoOrigem"><option value="">—</option>{% for o in origens %}<option>{{ o }}</option>{% endfor %}</select></label>
       <label id="novoIndicado" hidden>Quem indicou<input name="indicado_por" maxlength="300"></label>
+      <label id="novoDetalhe" class="ficha-wide" hidden><span id="novoDetalheRot">Detalhes da origem</span><textarea name="origem_detalhe" rows="2" maxlength="1000" id="novoDetalheTxt"></textarea></label>
       {% endif %}
       {% if user.role == "admin" %}
       <label>Vendedor<select name="vendedor">{% for p in sellers %}<option value="{{ p.id }}" {{ "selected" if p.id == user.id }}>{{ p.name }}</option>{% endfor %}</select></label>
@@ -46,7 +47,16 @@
 <script>
 (function () {
   var o = document.getElementById("novoOrigem"), box = document.getElementById("novoIndicado");
-  if (o && box) o.addEventListener("change", function () { box.hidden = o.value !== "Indicação de cliente"; });
+  // 📍 detalhe da origem: aparece depois de escolher o canal, com o texto certo pra cada um
+  var det = document.getElementById("novoDetalhe"), rot = document.getElementById("novoDetalheRot"), txt = document.getElementById("novoDetalheTxt");
+  var DICAS = {"Evento": ["Qual evento?", "Ex: RD Summit 2026, conversamos no estande"],
+               "Indicação de cliente": ["Detalhes da indicação", "Ex: cliente da Rafa Bem, indicou pelo WhatsApp"],
+               "Prospecção ativa": ["Como foi a prospecção?", "Ex: lista do LinkedIn, ligação fria"],
+               "Outro": ["De onde veio?", "Escreva por extenso"]};
+  if (o && box) o.addEventListener("change", function () {
+    box.hidden = o.value !== "Indicação de cliente";
+    if (det) { var d = DICAS[o.value] || ["Detalhes da origem", "Opcional"]; det.hidden = !o.value; rot.textContent = d[0]; txt.placeholder = d[1]; }
+  });
   if (new URLSearchParams(location.search).get("novo") === "1") document.getElementById("novoLead").showModal();
 })();
 </script>

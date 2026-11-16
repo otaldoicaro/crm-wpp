@@ -469,6 +469,7 @@ def create_manual_lead(
     email: str = Form(""),
     origem: str = Form(""),
     indicado_por: str = Form(""),
+    origem_detalhe: str = Form(""),
     vendedor: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
@@ -513,6 +514,8 @@ def create_manual_lead(
             profile["origem"] = origem
             if indicado_por.strip() and origem == "Indicação de cliente":
                 profile["indicado_por"] = indicado_por.strip()[:300]
+            if origem_detalhe.strip():
+                profile["origem_detalhe"] = origem_detalhe.strip()[:1000]
         lead.profile = json.dumps(profile, ensure_ascii=False)
     if stage is not None:
         lead.stage_entered_at, lead.reached_order = datetime.datetime.utcnow(), stage.order

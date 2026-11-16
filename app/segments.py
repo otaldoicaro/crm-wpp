@@ -50,8 +50,9 @@ LEAD_PROFILE_AGENCIA = {
             ("prazo_meses", "Prazo do contrato (meses)", "inteiro"),
         ]},
         {"id": "origem", "titulo": "📍 Origem do lead", "campos": [
-            ("origem", "Canal de origem", "opcao", ["Indicação de cliente", "WhatsApp", "Instagram", "Site",
+            ("origem", "Canal de origem", "opcao", ["Indicação de cliente", "Evento", "WhatsApp", "Instagram", "Site",
                                                      "Prospecção ativa", "Outro"]),
+            ("origem_detalhe", "Detalhes da origem (qual evento, quem indicou, onde conheceu...)", "longo"),
         ]},
         {"id": "indicacao", "titulo": "🎁 Indicação e bonificação", "so_se": ("origem", "Indicação de cliente"), "campos": [
             ("indicado_por", "Quem indicou", "texto"),
