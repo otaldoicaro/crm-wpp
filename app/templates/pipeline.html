@@ -132,6 +132,7 @@
     <div class="kanban-cards" data-stage-id="{{ stage.id }}" data-keep-scroll="col-{{ stage.id }}">
       {% for lead in leads_by_stage[stage.id] %}
       <div class="lead-card" draggable="true" data-lead-id="{{ lead.id }}">
+        {% if lead.conversations %}<a class="card-status" href="/leads/{{ lead.id }}" title="Ver status do lead" aria-label="Ver status do lead">📋</a>{% endif %}
         {% set empresa = empresa_de(lead) %}<span class="name"><a href="{{ '/inbox/' if lead.conversations else '/leads/' }}{{ lead.id }}">{% if empresa %}<span class="card-company">🏢 {{ empresa }}</span><span class="card-person">{{ lead.name or lead.phone or lead.email or "(sem nome)" }}</span>{% else %}{{ lead.name or lead.phone or lead.email or "(sem nome)" }}{% endif %}</a></span>{% if lead.deal_number and lead.deal_number > 1 %}<span class="deal-badge" title="Cliente recorrente: {{ lead.deal_number }}º negócio">🔁 {{ lead.deal_number }}º</span>{% endif %}
         <span class="phone">{{ (lead.phone or lead.email)|contato }}</span>
         <div class="meta-row">

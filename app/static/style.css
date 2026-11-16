@@ -1305,3 +1305,11 @@ fieldset.cfg-features legend { font-weight: 700; padding: 0 6px; }
 .task-done { border: 0; background: var(--panel-2); border-radius: 999px; cursor: pointer; padding: 0 6px; }
 .inline-form { display: inline; }
 .task-table tr.task-late td:first-child { color: #d9534f; font-weight: 600; }
+
+/* 📋 atalho discreto no card do Pipeline: abre o status do lead (o nome abre a conversa) */
+.lead-card { position: relative; }
+.lead-card .card-status { position: absolute; top: 6px; right: 6px; font-size: .78rem; line-height: 1; padding: 3px 4px;
+  border-radius: 5px; text-decoration: none; opacity: .4; transition: opacity .15s, background .15s; }
+.lead-card:hover .card-status, .lead-card .card-status:focus-visible { opacity: 1; }
+.lead-card .card-status:hover { background: var(--line); }
+.lead-card:has(.card-status) .name { padding-right: 20px; }
