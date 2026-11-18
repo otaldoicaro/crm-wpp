@@ -112,7 +112,7 @@ def _known_phone(db, key: dict, rec: dict) -> str:
 def sync_number(number_id: str, days: int, apply: bool, instance: str = "") -> dict:
     """instance: ler de outra sessão do mesmo WhatsApp (ex: uma antiga, antes de apagar). Devolve {"vistas", "ja_no_crm", "importar_cliente", "importar_nossas", "ignoradas",
     "novos_leads", "leads": {nome: quantidade}}."""
-    from app.routers.webhooks_evolution import _digits, _parse_content, _phone_from_key, _remember_lid
+    from app.routers.webhooks_evolution import _digits, _parse_content, _phone_from_key, _referral_from_context, _remember_lid
     from app.services.inbound import ingest_inbound, message_exists, record_outbound_from_phone
     from app.services.lead_match import find_lead_by_phone
 
@@ -179,7 +179,7 @@ def sync_number(number_id: str, days: int, apply: bool, instance: str = "") -> d
             if message_exists(db, key["id"]):
                 stats["ja_no_crm"] += 1
                 continue
-            body, media_type, _ = _parse_content(rec.get("message") or {})
+            body, media_type, context_info = _parse_content(rec.get("message") or {})
             if not body and not media_type:
                 stats["ignoradas"] += 1
                 continue
@@ -204,8 +204,11 @@ def sync_number(number_id: str, days: int, apply: bool, instance: str = "") -> d
             elif from_me:
                 record_outbound_from_phone(db, number, phone, key["id"], body, media_id, media_type, when=when)
             else:
+                # 📣 clique no anúncio de WhatsApp: a origem vem junto (sem isso, o lead que entrou pela
+                # recuperação ficava como "Direto" e a venda não contava pro tráfego)
+                referral = _referral_from_context(rec.get("contextInfo") or context_info or {})
                 ingest_inbound(db, number, from_phone=phone, wa_message_id=key["id"], body=body, media_id=media_id,
-                               media_type=media_type, profile_name=rec.get("pushName") or "", when=when)
+                               media_type=media_type, profile_name=rec.get("pushName") or "", referral=referral, when=when)
         for phone, wa_id, body, media_id, media_type, when in deferred:
             if not message_exists(db, wa_id):
                 record_outbound_from_phone(db, number, phone, wa_id, body, media_id, media_type, when=when)

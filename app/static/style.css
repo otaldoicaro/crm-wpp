@@ -1313,3 +1313,9 @@ fieldset.cfg-features legend { font-weight: 700; padding: 0 6px; }
 .lead-card:hover .card-status, .lead-card .card-status:focus-visible { opacity: 1; }
 .lead-card .card-status:hover { background: var(--line); }
 .lead-card:has(.card-status) .name { padding-right: 20px; }
+
+/* ↕ ordenar qualquer tabela clicando no título da coluna (static/table-sort.js) */
+th.js-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.js-sortable:hover { color: var(--text); }
+th.js-sortable.sorted-desc::after { content: " ▼"; font-size: .7em; }
+th.js-sortable.sorted-asc::after { content: " ▲"; font-size: .7em; }

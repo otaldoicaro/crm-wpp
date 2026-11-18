@@ -2955,6 +2955,16 @@ def agenda_status(
         raise HTTPException(status_code=404, detail="Agendamento não encontrado")
     appt.status, appt.done_at = acao, datetime.datetime.utcnow()
     _add_note(db, appt.lead, f"📅 Visita de {agenda.when_label(appt)}: {agenda.DONE_LABEL[acao]} · marcado por {user.name}")
+    if acao in ("veio", "nao_veio") and features.has(tenant, "tarefa_pos_visita") and features.has(tenant, "tarefas"):
+        # 📅➜✅ não deixar o cliente esfriar depois da visita (ou da visita que furou)
+        from app.models import LeadTask
+        from app.services import tasks
+
+        title = "Follow-up da visita (veio na loja)" if acao == "veio" else "Chamar o cliente pra remarcar a visita"
+        day = tasks.today() + datetime.timedelta(days=1 if acao == "veio" else 0)
+        owner = appt.user_id or appt.lead.assigned_user_id or user.id
+        db.add(LeadTask(tenant_id=tenant.id, lead_id=appt.lead_id, user_id=owner, created_by_id=user.id, title=title, due_date=day))
+        _add_note(db, appt.lead, f"✅ Tarefa criada sozinha: “{title}” pra {day.strftime('%d/%m')}")
     db.commit()
     return RedirectResponse(url=voltar if voltar.startswith("/") else "/agendamentos", status_code=302)
 
@@ -3366,6 +3376,44 @@ def dashboard_view(
             and lead.created_at < last_24h
         )
 
+    # 💰 Vendas fechadas no período: a receita REAL do período (pela data em que a venda fechou, inclusive
+    # de lead que entrou antes), separada por origem. Os outros números da aba contam os leads que
+    # ENTRARAM no período; o 🔁 Clientes também conta pela data da venda (bate com este total)
+    sales_box = None
+    if aba == "comercial":
+        closed_when = func.coalesce(Lead.closed_at, Lead.updated_at, Lead.created_at)
+        sales_q = db.query(Lead).filter(
+            Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS),
+            Lead.is_group.is_(False), Lead.stage_id.in_([s.id for s in stages if s.is_won] or [""]),
+        ).options(selectinload(Lead.attribution))
+        if range_from:
+            sales_q = sales_q.filter(closed_when >= range_from)
+        if range_to:
+            sales_q = sales_q.filter(closed_when <= range_to)
+        if seller:
+            sales_q = sales_q.filter(Lead.assigned_user_id == seller)
+        sales = sales_q.all()
+        if canal:
+            by_ad_sales = channels.campaign_by_ad(db, tenant.id)
+            sales = [lead for lead in sales if channels.lead_matches(lead, canal, by_ad_sales)]
+        sales_total = sum(lead.deal_value or 0 for lead in sales)
+        sales_groups: dict = {}
+        for lead in sales:
+            key = resolve_platform(lead.attribution)
+            row = sales_groups.setdefault(key, {"key": key, "label": PLATFORM_LABEL[key], "count": 0, "revenue": 0.0})
+            row["count"] += 1
+            row["revenue"] += lead.deal_value or 0
+        for row in sales_groups.values():
+            row["pct"] = round(100 * row["revenue"] / sales_total, 1) if sales_total else 0
+            row["paid"] = row["key"] in ("meta", "google", "bing", "tiktok")
+        sales_box = {
+            "count": len(sales), "revenue": sales_total,
+            "rows": sorted(sales_groups.values(), key=lambda r: (r["revenue"], r["count"]), reverse=True),
+            "paid_count": sum(r["count"] for r in sales_groups.values() if r["paid"]),
+            "paid_revenue": sum(r["revenue"] for r in sales_groups.values() if r["paid"]),
+            "older": sum(1 for lead in sales if range_from and lead.created_at < range_from),
+        }
+
     # ---- KPIs fixos (sempre sobre a base inteira do tenant) ----
     total_leads = len(leads)
     new_24h = sum(1 for lead in leads if lead.created_at >= last_24h)
@@ -3540,6 +3588,7 @@ def dashboard_view(
             "new_24h": new_24h,
             "open_no_contact_24h": open_no_contact_24h,
             "won_count": len(won_leads),
+            "sales_box": sales_box,
             "revenue": revenue,
             "best_creative": best_creative,
             "stage_counts": stage_counts,

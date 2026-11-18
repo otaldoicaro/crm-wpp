@@ -20,6 +20,8 @@ CHANNELS = [
     ("meta", "Só Meta (todas)"),
     ("google", "Só Google"),
     ("outros", "Sem anúncio (orgânico / direto)"),
+    ("organico", "· Só Orgânico (link com origem, sem anúncio)"),
+    ("direto", "· Só Direto (sem origem registrada)"),
 ]
 CHANNEL_KEYS = {k for k, _ in CHANNELS}
 
@@ -58,6 +60,10 @@ def lead_matches(lead, channel: str, by_ad: dict) -> bool:
         return platform == "google"
     if channel == "outros":
         return platform in ("organic", "direct")
+    if channel == "organico":
+        return platform == "organic"
+    if channel == "direto":
+        return platform == "direct"
     kind = kind_of_campaign(lead_campaign(lead, by_ad))
     if not kind and platform == "meta":  # campanha sem a etiqueta no nome: pelo jeito que chegou
         att = lead.attribution
@@ -71,6 +77,6 @@ def spend_matches(campaign_name: str, platform: str, channel: str) -> bool:
         return True
     if channel in ("meta", "google"):
         return platform == channel
-    if channel == "outros":
+    if channel in ("outros", "organico", "direto"):
         return False  # sem anúncio não tem gasto
     return kind_of_campaign(campaign_name) == channel

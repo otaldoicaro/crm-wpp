@@ -33,6 +33,9 @@ FEATURES = {
     "passar_so_na_ficha": "↪ Passar o lead pra outro vendedor só em “📋 Ver status do lead” (some do “⋯ Mais” e do clique "
                           "direito da conversa no Inbox)",
     "auditoria_no_dashboard": "🔎 Auditoria vira uma aba do Dashboard (no fim das abas), em vez de ficar no menu de cima",
+    "tarefa_pos_visita": "📅➜✅ Depois da visita na loja: ao marcar ✅ Veio, cria a tarefa “Follow-up da visita” pro dia "
+                         "seguinte; ao marcar ❌ Não veio, cria “Chamar o cliente pra remarcar a visita” pro mesmo dia "
+                         "(pro vendedor do agendamento; precisa de 📅 Agendamentos e ✅ Tarefas ligados)",
     "tarefas": "✅ Tarefas: na conversa e na ficha do lead dá pra criar uma tarefa com data (ex: fazer follow-up); a aba ✅ Tarefas "
                "mostra as de hoje, atrasadas e futuras, e no dia aparece o aviso no menu",
     "dash_agencia": "📊 Dashboard de agência: Leads = todos que entraram · Qualificados = faturamento a partir de R$ 100 mil ou "
@@ -50,7 +53,7 @@ FEATURES = {
 }
 # ⚙ Configurações → ⚙️ Recursos: os recursos agrupados por assunto (o que faltar aqui cai em "Outros")
 GROUPS = [
-    ("🧭 Funil e etapas", ["funil_manual", "visita_negociando", "agendamentos", "lead_frio", "sem_prazos", "tentativas_contato"]),
+    ("🧭 Funil e etapas", ["funil_manual", "visita_negociando", "agendamentos", "tarefa_pos_visita", "lead_frio", "sem_prazos", "tentativas_contato"]),
     ("💬 Conversas e Inbox", ["interessados_negociando", "sem_popup_outro_vendedor", "transcrever_audios", "sem_espelhar_time_outro"]),
     ("👥 Vendedores", ["sem_passar_lead", "passar_troca_numero", "passar_so_na_ficha"]),
     ("🤖 Mensagens automáticas pro cliente", ["followup_automatico", "followup_so_24h", "mensagem_fora_horario"]),

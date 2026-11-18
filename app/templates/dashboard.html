@@ -63,7 +63,7 @@
     </select>
   </label>
   {% if not own_traffic or aba == "trafego" %}
-  <label title="Pela etiqueta no nome da campanha (conv-form / conv-wpp) ou pela plataforma">Canal
+  <label title="Filtra tudo da página (inclusive o funil por vendedor) pela origem do lead: Meta, Google, campanha de formulário ou de WhatsApp (etiqueta no nome da campanha), orgânico ou direto">Origem
     <select name="canal" onchange="this.form.submit()" class="{{ 'filter-on' if canal }}">
       {% for key, label in channel_options %}<option value="{{ key }}" {{ "selected" if canal == key }}>{{ label }}</option>{% endfor %}
     </select>
@@ -109,7 +109,7 @@
   </a>
   <a class="stat-card c-success {{ 'accent' if card == 'receita' }}" href="/dashboard?card=receita&seller={{ seller }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}#leads" style="text-decoration:none; color:inherit;" title="Ver de quais leads veio a receita">
     {{ m.stat_icon("dollar") }}
-    <div class="stat-label">Receita fechada</div>
+    <div class="stat-label" title="Vendas dos leads que entraram no período. A receita total do período está em 💰 Vendas fechadas no período, logo abaixo">Receita (leads do período)</div>
     <div class="stat-value">R$ {{ "{:,.0f}".format(revenue).replace(",", ".") }}</div>
     <div class="muted" style="font-size:.72rem; margin-top:4px">ver de quais leads veio →</div>
   </a>
@@ -122,6 +122,32 @@
   {% endif %}
 </div>
 <p class="muted" style="margin-top:-8px">Clique num card acima pra filtrar a lista de leads embaixo. Os filtros de data no topo valem pra tudo nesta página.</p>
+
+{% if sales_box %}
+<div class="section-title"><h3 style="margin:0">💰 Vendas fechadas no período</h3></div>
+<div class="card">
+  <p style="margin:0 0 8px"><b style="font-size:1.25rem">R$ {{ "{:,.0f}".format(sales_box.revenue).replace(",", ".") }}</b>
+    <span class="muted">· {{ sales_box.count }} venda{{ "s" if sales_box.count != 1 }}
+    · 📣 tráfego pago: {{ sales_box.paid_count }} (R$ {{ "{:,.0f}".format(sales_box.paid_revenue).replace(",", ".") }})
+    · sem anúncio: {{ sales_box.count - sales_box.paid_count }} (R$ {{ "{:,.0f}".format(sales_box.revenue - sales_box.paid_revenue).replace(",", ".") }})</span></p>
+  {% if sales_box.rows %}
+  <div style="overflow-x:auto;">
+  <table class="table-simple">
+    <thead><tr><th>Origem</th><th class="num">Vendas</th><th class="num">Receita</th><th class="num">% da receita</th><th class="num">Ticket médio</th></tr></thead>
+    <tbody>
+    {% for r in sales_box.rows %}
+      <tr><td>{{ "📣 " if r.paid }}{{ r.label }}</td><td class="num">{{ r.count }}</td>
+        <td class="num">R$ {{ "{:,.0f}".format(r.revenue).replace(",", ".") }}</td>
+        <td class="num">{{ ("%.1f"|format(r.pct)).replace(".", ",") }}%</td>
+        <td class="num">{{ "R$ " ~ "{:,.0f}".format(r.revenue / r.count).replace(",", ".") if r.count else "—" }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  <p class="muted" style="margin:10px 0 0; font-size:.78rem">Todas as vendas que <b>fecharam</b> no período, pela data da venda (o mesmo total do 🔁 Clientes){% if sales_box.older %}, inclusive {{ sales_box.older }} de leads que entraram antes do período{% endif %}. Os cards acima, o funil e o 📣 Tráfego contam só os leads que <b>entraram</b> no período, por isso a receita deles é menor. Origem: 📣 Meta e Google = clicou num anúncio; Orgânico = veio de link com origem mas sem anúncio (ex: bio, site); Direto = sem nenhuma origem registrada (indicação, cliente que já tinha o número, ou anúncio que o CRM não conseguiu rastrear).</p>
+</div>
+{% endif %}
 
 <div class="section-title"><h3 style="margin:0">Funil comercial{{ "" if seller or not is_admin else " — equipe toda" }}</h3></div>
 <div class="card">
@@ -228,14 +254,14 @@
 {%- for s in r.steps %}<td class="step-rate"><span class="conv-pill">{{ pct(s.rate) }}</span> <span class="muted">{{ s.count }}</span></td>{% endfor -%}
 {%- endmacro %}
 {% macro pct(v) -%}{{ "—" if v is none else (("%.1f"|format(v)).replace(".0", "").replace(".", ",") ~ "%") }}{%- endmacro %}
-<div class="section-title"><h3 style="margin:0">{{ "Funil por vendedor" if is_admin else "Você x equipe" }}</h3></div>
+<div class="section-title"><h3 style="margin:0">{{ "Funil por vendedor" if is_admin else "Você x equipe" }}{% if canal %} · origem: {{ (channel_options|selectattr(0, "equalto", canal)|first)[1] }}{% endif %}</h3></div>
 <div class="card">
   <div style="overflow-x:auto;">
   <table class="table-simple seller-table">
     <thead><tr><th>Vendedor</th><th>Leads</th>{% for st in stages %}<th>{{ st.name }}</th>{% endfor %}<th class="step-rate" title="Leads que chegaram em Qualificado (mesmo que depois avançaram ou foram perdidos) ÷ leads">Lead → Qualif.</th><th class="step-rate" title="Chegaram em Negociando (receberam preço) ÷ qualificados">Qualif. → Negoc.</th><th class="step-rate" title="Vendas ÷ chegaram em Negociando">Negoc. → Venda</th><th title="Vendas ÷ leads">Conversão</th><th>Receita</th><th title="Mediana do tempo até a 1ª resposta">1º atend.</th><th title="Mediana do tempo até a 1ª resposta contando só o horário comercial">1º atend. (comercial)</th><th title="Leads em aberto ainda sem resposta">Aguardando</th><th title="A última mensagem foi nossa e o cliente não responde há mais que o prazo de follow-up">📞 Follow-up</th><th title="Em aberto e passaram do prazo da etapa">⏰ Parados</th></tr></thead>
     <tbody>
     {% for r in seller_rows %}
-      <tr {% if is_admin %}style="cursor:pointer" onclick="window.location='/dashboard?seller={{ r.user.id }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}'"{% endif %}>
+      <tr {% if is_admin %}style="cursor:pointer" onclick="window.location='/dashboard?seller={{ r.user.id }}&date_range={{ date_range }}&date_from={{ date_from }}&date_to={{ date_to }}&canal={{ canal }}'"{% endif %}>
         <td><b>{{ r.user.name }}</b>{% if not r.user.is_active %} <span class="muted">(inativo)</span>{% elif not r.user.accepting_leads %} <span class="muted">(pausado)</span>{% endif %}</td>
         <td><b>{{ r.total }}</b></td>
         {% for st in stages %}<td class="{{ 'muted' if not r.by_stage[st.id] }}">{{ r.by_stage[st.id] }}</td>{% endfor %}
@@ -284,6 +310,7 @@
   {%- endfor %}
 {%- endmacro %}
 <div class="section-title" id="trafego"><h3 style="margin:0">Tráfego pago x comercial</h3></div>
+<p class="muted" style="margin:-6px 0 10px; font-size:.78rem">Vendas e receita aqui = leads que <b>entraram</b> no período por uma campanha. A receita total do período (inclusive de leads mais antigos e sem anúncio) fica em 📊 Comercial → 💰 Vendas fechadas no período.</p>
 {% set period_qs = "date_range=" ~ (date_range|urlencode) ~ "&date_from=" ~ (date_from|urlencode) ~ "&date_to=" ~ (date_to|urlencode) ~ "&seller=" ~ (seller|urlencode) %}
 {% set t = traffic.total %}
 <div class="card">
