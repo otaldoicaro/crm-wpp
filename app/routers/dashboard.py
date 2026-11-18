@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db import get_db
 from app.deps import current_tenant, current_user_required
+from app.services import companies
 from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app import features, segments
@@ -178,12 +179,12 @@ def pipeline_view(
 
     base = db.query(Lead).filter(
         Lead.tenant_id == tenant.id, Lead.archived_at.is_(None), Lead.deleted_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS),
-        Lead.is_group.is_(False),
+        Lead.is_group.is_(False), companies.not_joined(tenant),  # 🏢 contato juntado aparece dentro do card da empresa
     )
     q = q.strip()[:80]
     if q:  # 🔎 procurar um lead: em qualquer período, pra ver em que etapa ele está
         digits = "".join(ch for ch in q if ch.isdigit())
-        base = base.filter(or_(Lead.name.ilike(f"%{q}%"), *([Lead.phone.like(f"%{digits}%")] if len(digits) >= 4 else [])))
+        base = base.filter(companies.search_condition(q))  # nome do contato, telefone ou empresa
     if range_from and not q:
         base = base.filter(Lead.created_at >= range_from)
     if range_to and not q:
@@ -215,6 +216,7 @@ def pipeline_view(
         )
     shown = [lead for col_leads in leads_by_stage.values() for lead in col_leads]
     lead_platforms = {lead.id: resolve_platform(lead.attribution) for lead in shown}
+    company_contacts = companies.contacts_by_main(db, tenant.id, [lead.id for lead in shown]) if companies.enabled(tenant) else {}
     archived_count = (
         db.query(func.count(Lead.id))
         .filter(Lead.tenant_id == tenant.id, Lead.archived_at.isnot(None), Lead.deleted_at.is_(None))
@@ -230,6 +232,7 @@ def pipeline_view(
             "active_nav": "pipeline",
             "stages": stages,
             "leads_by_stage": leads_by_stage,
+            "company_contacts": company_contacts,
             "totals": totals,
             "col_limit": PIPELINE_COL_LIMIT,
             "col": col,
@@ -281,7 +284,7 @@ def archived_view(
     busca = busca.strip()
     if busca:
         digits = "".join(ch for ch in busca if ch.isdigit())
-        conditions = [Lead.name.ilike(f"%{busca}%")]
+        conditions = [Lead.name.ilike(f"%{busca}%"), Lead.company.ilike(f"%{busca}%")]  # 🏢 nome, telefone ou empresa
         if digits:
             conditions.append(Lead.phone.like(f"%{digits}%"))
         query = query.filter(or_(*conditions))
@@ -377,7 +380,7 @@ def trash_view(
     busca = busca.strip()
     if busca:
         digits = "".join(ch for ch in busca if ch.isdigit())
-        conditions = [Lead.name.ilike(f"%{busca}%")]
+        conditions = [Lead.name.ilike(f"%{busca}%"), Lead.company.ilike(f"%{busca}%")]  # 🏢 nome, telefone ou empresa
         if digits:
             conditions.append(Lead.phone.like(f"%{digits}%"))
         query = query.filter(or_(*conditions))
@@ -722,7 +725,8 @@ def campaign_leads(
     stages = db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.id).order_by(PipelineStage.order).all()
     range_from, range_to = _period_bounds(date_range, date_from, date_to)
     query = db.query(Lead).filter(
-        Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS), Lead.is_group.is_(False)
+        Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS), Lead.is_group.is_(False),
+        companies.not_joined(tenant),  # 🏢 contato juntado ao card da empresa não conta de novo
     )
     if range_from:
         query = query.filter(Lead.created_at >= range_from)
@@ -1375,7 +1379,7 @@ def _inbox_query(
     busca = busca.strip()
     if busca:
         digits = "".join(ch for ch in busca if ch.isdigit())
-        conditions = [Lead.name.ilike(f"%{busca}%")]
+        conditions = [Lead.name.ilike(f"%{busca}%"), Lead.company.ilike(f"%{busca}%")]  # 🏢 nome, telefone ou empresa
         if digits:
             conditions.append(Lead.phone.like(f"%{digits}%"))
         if len(busca) >= 3:  # uma busca só: nome, telefone ou o que foi escrito/falado na conversa
@@ -2783,6 +2787,40 @@ def tasks_page(
     })
 
 
+@router.post("/leads/{lead_id}/empresa")
+def lead_company(
+    lead_id: str,
+    acao: str = Form(""),
+    principal: str = Form(""),
+    principal_busca: str = Form(""),
+    voltar: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """🏢 Juntar este contato ao card de outra pessoa da mesma empresa, ou separar (recurso "empresas")."""
+    lead = _visible_lead(db, tenant, user, lead_id)
+    if not lead or user.read_only or not companies.enabled(tenant):
+        raise HTTPException(status_code=404)
+    back = voltar if voltar.startswith(("/inbox/", "/leads/")) else f"/leads/{lead_id}"
+    if acao == "separar":
+        companies.split(lead)
+        db.commit()
+        return RedirectResponse(url=back, status_code=302)
+    main = None
+    if principal:
+        main = db.query(Lead).filter(Lead.id == principal, Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None)).first()
+    if main is None and principal_busca.strip():  # digitou sem escolher da lista: pela empresa, se só uma bater
+        name = principal_busca.split(" — ")[0].strip()
+        found = [c for c in companies.choices(db, tenant.id, lead.id) if c.company.lower() == name.lower()]
+        main = found[0] if len(found) == 1 else None
+    if main is None or not companies.join(db, lead, main):
+        sep = "&" if "?" in back else "?"
+        return RedirectResponse(url=f"{back}{sep}erro=" + quote("Escolha o card da empresa na lista."), status_code=303)
+    db.commit()
+    return RedirectResponse(url=back, status_code=302)
+
+
 @router.post("/leads/{lead_id}/tarefas")
 def create_task(
     lead_id: str,
@@ -3345,7 +3383,8 @@ def dashboard_view(
         range_from = _range_from(now, date_range)
 
     leads_query = db.query(Lead).filter(
-        Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS), Lead.is_group.is_(False)
+        Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS), Lead.is_group.is_(False),
+        companies.not_joined(tenant),  # 🏢 contato juntado ao card da empresa não conta de novo
     )
     if range_from:
         leads_query = leads_query.filter(Lead.created_at >= range_from)
@@ -3387,7 +3426,7 @@ def dashboard_view(
         closed_when = func.coalesce(Lead.closed_at, Lead.updated_at, Lead.created_at)
         sales_q = db.query(Lead).filter(
             Lead.tenant_id == tenant.id, Lead.deleted_at.is_(None), Lead.tag.notin_(NOT_SALES_TAGS),
-            Lead.is_group.is_(False), Lead.stage_id.in_([s.id for s in stages if s.is_won] or [""]),
+            Lead.is_group.is_(False), companies.not_joined(tenant), Lead.stage_id.in_([s.id for s in stages if s.is_won] or [""]),
         ).options(selectinload(Lead.attribution))
         if range_from:
             sales_q = sales_q.filter(closed_when >= range_from)

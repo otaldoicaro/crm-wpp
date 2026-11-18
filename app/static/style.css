@@ -1319,3 +1319,9 @@ th.js-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
 th.js-sortable:hover { color: var(--text); }
 th.js-sortable.sorted-desc::after { content: " ▼"; font-size: .7em; }
 th.js-sortable.sorted-asc::after { content: " ▲"; font-size: .7em; }
+
+/* 🏢 recurso "empresas": outros contatos da mesma empresa dentro do card do Pipeline */
+.lead-card .card-contact { display: block; font-size: .72rem; color: var(--muted); text-decoration: none; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lead-card .card-contact:hover { color: var(--text); text-decoration: underline; }
+.company-box .task-chip a { color: inherit; }

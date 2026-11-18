@@ -69,7 +69,7 @@
 {% endif %}
 <form method="get" action="/" class="pipeline-search">
   <input type="hidden" name="seller" value="{{ seller }}">
-  <input type="search" name="q" value="{{ q }}" placeholder="🔎 Procurar lead por nome ou telefone" aria-label="Procurar lead">
+  <input type="search" name="q" value="{{ q }}" placeholder="🔎 Procurar lead por {{ 'contato, telefone ou empresa' if has_feature(tenant, 'empresas') else 'nome ou telefone' }}" aria-label="Procurar lead">
   <button class="btn small" type="submit">Procurar</button>
   {% if q %}<span class="muted">{{ found }} lead(s) com “{{ q }}”, em qualquer período{% if found %}: veja em que etapa ele está{% endif %}. <a href="/">Limpar busca</a></span>{% endif %}
 </form>
@@ -145,6 +145,7 @@
         {% if lead.conversations %}<a class="card-status" href="/leads/{{ lead.id }}" title="Ver status do lead" aria-label="Ver status do lead">📋</a>{% endif %}
         {% set empresa = empresa_de(lead) %}<span class="name"><a href="{{ '/inbox/' if lead.conversations else '/leads/' }}{{ lead.id }}">{% if empresa %}<span class="card-company">🏢 {{ empresa }}</span><span class="card-person">{{ lead.name or lead.phone or lead.email or "(sem nome)" }}</span>{% else %}{{ lead.name or lead.phone or lead.email or "(sem nome)" }}{% endif %}</a></span>{% if lead.deal_number and lead.deal_number > 1 %}<span class="deal-badge" title="Cliente recorrente: {{ lead.deal_number }}º negócio">🔁 {{ lead.deal_number }}º</span>{% endif %}
         <span class="phone">{{ (lead.phone or lead.email)|contato }}</span>
+        {% for c in (company_contacts or {}).get(lead.id, []) %}<a class="card-contact" href="{{ '/inbox/' if c.conversations else '/leads/' }}{{ c.id }}" title="Outro contato da mesma empresa">👤 {{ c.name or c.phone or "(sem nome)" }}{% if c.phone and c.name %} · {{ c.phone|contato }}{% endif %}</a>{% endfor %}
         <div class="meta-row">
           {{ m.platform_badge(lead_platforms[lead.id], platform_labels[lead_platforms[lead.id]], lead.source) }}
           {% if lead.tag == "cliente" %}<span class="tag-badge cliente">Cliente</span>{% endif %}

@@ -27,6 +27,8 @@
     {% if has_feature(tenant, "tarefas") and not lead.is_group %}
     {{ m.task_box(lead, "/leads/" ~ lead.id, not user.read_only, task_people_for(tenant, user)) }}
     {% endif %}
+    {% if request.query_params.get("erro") %}<div class="stage-warning">{{ request.query_params.get("erro") }}</div>{% endif %}
+    {% if has_feature(tenant, "empresas") and not lead.is_group %}{{ m.company_box(lead, "/leads/" ~ lead.id, not user.read_only) }}{% endif %}
 
     <form method="post" action="/leads/{{ lead.id }}/update" id="leadForm">
       <input type="hidden" name="voltar" value="{{ voltar }}">

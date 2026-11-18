@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -304,6 +305,10 @@ class Lead(Base):
     form_details: Mapped[str] = mapped_column(Text, default="")
     # 📋 ficha do lead do ramo (services/lead_profile.py): empresa, cargo, faturamento, nichos, anotações, serviços (JSON)
     profile: Mapped[str] = mapped_column(Text, default="")
+    # 🏢 nome da empresa da ficha, em coluna pra dar pra procurar (preenchido sozinho ao salvar a ficha)
+    company: Mapped[str] = mapped_column(String(300), default="", index=True)
+    # 🏢 recurso "empresas": este contato faz parte do card de outro lead da mesma empresa (id do lead principal)
+    company_lead_id: Mapped[str] = mapped_column(String(32), default="", index=True)
     # 🤖 follow-up automático: 0 = nada, 1/2 = mensagens enviadas, 3 = foi pra Perdido, -1 = parou (erro)
     autofu_step: Mapped[int] = mapped_column(Integer, default=0)
     autofu_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
@@ -714,3 +719,19 @@ class SellerTeam(Base):
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
     name: Mapped[str] = mapped_column(String(80))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+
+
+def _company_of(profile) -> str:
+    import json
+
+    try:
+        data = json.loads(profile or "{}")
+    except (TypeError, ValueError):
+        return ""
+    return str(data.get("empresa") or "").strip()[:300] if isinstance(data, dict) else ""
+
+
+@event.listens_for(Lead.profile, "set")
+def _sync_company(target, value, oldvalue, initiator):
+    """🏢 a coluna company acompanha a empresa da ficha (pra busca e pro agrupamento por empresa)."""
+    target.company = _company_of(value)

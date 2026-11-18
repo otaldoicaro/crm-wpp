@@ -7,7 +7,7 @@
   {# 🔎 uma busca só: nome, telefone ou o que foi escrito/falado na conversa #}
   {% set path = '/inbox/' ~ selected_lead.id if selected_lead else '/inbox' %}
   <form class="inbox-search inbox-search-1" method="get" data-reset-scroll action="{{ path }}">
-    <input type="search" name="busca" value="{{ busca }}" placeholder="🔎 Buscar nome, telefone ou texto" autocomplete="off"
+    <input type="search" name="busca" value="{{ busca }}" placeholder="🔎 Buscar {{ 'contato, telefone, empresa ou texto' if has_feature(tenant, 'empresas') else 'nome, telefone ou texto' }}" autocomplete="off"
       onsearch="if (!this.value) this.form.submit()">
   </form>
   {# abas: o que o vendedor mais precisa ver #}
@@ -139,6 +139,7 @@
         {% set not_sales = selected_lead.tag in ("time", "outro") and not selected_lead.is_group %}{# Time/Outro: fora do funil #}
         {% if has_feature(tenant, "tentativas_contato") and not selected_lead.is_group and not closed and not not_sales %}{{ m.attempt_box(selected_lead, "/inbox/" ~ selected_lead.id, not user.read_only) }}{% endif %}
         {% if has_feature(tenant, "tarefas") and not selected_lead.is_group %}{{ m.task_box(selected_lead, "/inbox/" ~ selected_lead.id, not user.read_only, task_people_for(tenant, user)) }}{% endif %}
+        {% if has_feature(tenant, "empresas") and not selected_lead.is_group and selected_lead.company_lead_id %}{{ m.company_box(selected_lead, "/inbox/" ~ selected_lead.id, not user.read_only) }}{% endif %}
         {% if selected_lead.is_group %}<div class="muted" style="font-size:.76rem">👥 Grupo de WhatsApp — não conta como lead</div>{% endif %}
         {% if not_sales %}<div class="muted" style="font-size:.76rem">{{ tag_label[selected_lead.tag] }} — fora do funil: não conta como lead, sem etapa e sem valor</div>{% endif %}
         {% if stages and not not_sales %}

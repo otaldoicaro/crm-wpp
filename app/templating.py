@@ -232,3 +232,25 @@ def _task_people(tenant, user) -> list:
     with SessionLocal() as db:
         return [type("P", (), {"id": p.id, "name": p.name}) for p in team_members(db, tenant.id, only_active=True)]
 templates.env.globals["task_people_for"] = _task_people
+
+
+def _company_info(lead) -> dict:
+    """🏢 recurso "empresas": card principal (se este contato foi juntado), contatos juntados a ele e
+    as empresas pra escolher ao juntar."""
+    from app.db import SessionLocal
+    from app.services import companies
+
+    def row(x):
+        return {"id": x.id, "name": x.name or x.phone or x.email or "(sem nome)", "phone": x.phone or "", "company": x.company,
+                "chat": bool(x.conversations)}
+
+    with SessionLocal() as db:
+        main = companies.main_of(db, lead)
+        if main is not None:
+            return {"main": row(main), "contacts": [], "choices": []}
+        contacts = [row(c) for c in companies.contacts_of(db, lead)]
+        choices = [] if contacts else [row(c) for c in companies.choices(db, lead.tenant_id, lead.id)]
+        return {"main": None, "contacts": contacts, "choices": choices}
+
+
+templates.env.globals["company_info"] = _company_info

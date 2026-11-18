@@ -161,3 +161,38 @@
   {% endif %}
 </div>
 {%- endmacro %}
+
+
+{% macro company_box(lead, voltar, can_edit=True) -%}
+{# 🏢 recurso "empresas": juntar este contato ao card de outra pessoa da mesma empresa #}
+{% set ci = company_info(lead) %}
+<div class="task-box company-box">
+  <span class="attempt-title">🏢 Empresa</span>
+  {% if ci.main %}
+    <span class="task-chip">Faz parte do card de <a href="/leads/{{ ci.main.id }}"><b>{{ ci.main.company or ci.main.name }}</b></a> ({{ ci.main.name }})</span>
+    {% if can_edit %}<form method="post" action="/leads/{{ lead.id }}/empresa" class="inline-form"><input type="hidden" name="voltar" value="{{ voltar }}"><button class="btn small ghost" name="acao" value="separar" onclick="return confirm('Separar este contato? Ele volta a ter um card próprio no Pipeline e a contar como lead.')">Separar</button></form>{% endif %}
+  {% elif ci.contacts %}
+    <span class="muted">Contatos no mesmo card:</span>
+    {% for c in ci.contacts %}<span class="task-chip"><a href="{{ '/inbox/' if c.chat else '/leads/' }}{{ c.id }}">{{ c.name }}</a>{% if c.phone %} · {{ c.phone|contato }}{% endif %}
+      {% if can_edit %}<form method="post" action="/leads/{{ c.id }}/empresa" class="inline-form"><input type="hidden" name="voltar" value="{{ voltar }}"><button class="task-done" name="acao" value="separar" title="Separar do card" onclick="return confirm('Separar {{ c.name|e }} deste card?')">✕</button></form>{% endif %}</span>{% endfor %}
+  {% else %}
+    <span class="muted">{{ lead.company or "sem empresa" }} · card só desta pessoa</span>
+  {% endif %}
+  {% if can_edit and not ci.main and ci.choices %}
+  <details class="attempt-add">
+    <summary class="btn small ghost">🔗 Juntar a outra pessoa da empresa</summary>
+    <form method="post" action="/leads/{{ lead.id }}/empresa" class="attempt-pop">
+      <input type="hidden" name="voltar" value="{{ voltar }}"><input type="hidden" name="acao" value="juntar">
+      <label>Card da empresa
+        <input name="principal_busca" list="empresas-{{ lead.id }}" placeholder="Digite a empresa ou o nome" required autocomplete="off"
+               oninput="var o=[].find.call(document.getElementById('empresas-{{ lead.id }}').options,function(x){return x.value===this.value},this);this.form.principal.value=o?o.dataset.id:''">
+      </label>
+      <datalist id="empresas-{{ lead.id }}">{% for c in ci.choices %}<option data-id="{{ c.id }}" value="{{ c.company }} — {{ c.name }}{{ ' · ' ~ (c.phone|contato) if c.phone }}"></option>{% endfor %}</datalist>
+      <input type="hidden" name="principal">
+      <button class="btn small" type="submit">Juntar</button>
+      <span class="muted" style="font-size:.75rem">Este contato entra no card escolhido no Pipeline e passa a contar como o mesmo lead. A conversa continua no Inbox.</span>
+    </form>
+  </details>
+  {% endif %}
+</div>
+{%- endmacro %}

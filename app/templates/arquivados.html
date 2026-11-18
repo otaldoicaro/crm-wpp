@@ -10,7 +10,7 @@
 </div>
 <div class="card">
   <form method="get" action="/arquivados" style="margin-bottom:14px;">
-    <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar nome ou telefone...">
+    <input type="search" name="busca" value="{{ busca }}" placeholder="Buscar {{ 'contato, telefone ou empresa' if has_feature(tenant, 'empresas') else 'nome ou telefone' }}...">
   </form>
   <div style="overflow-x:auto;">
   <table class="table-simple">
