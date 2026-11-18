@@ -578,6 +578,7 @@ class AdCreative(Base):
     image_url: Mapped[str] = mapped_column(Text, default="")
     preview_url: Mapped[str] = mapped_column(Text, default="")  # prévia do anúncio (link do Meta)
     permalink: Mapped[str] = mapped_column(Text, default="")  # post no Instagram, quando tem
+    fb_post_url: Mapped[str] = mapped_column(Text, default="")  # post do anúncio no Facebook (página)
     body: Mapped[str] = mapped_column(Text, default="")  # texto do anúncio
     fetched_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 

@@ -679,8 +679,8 @@
   <div class="card cr-card" data-spend="{{ c.spend or 0 }}" data-leads="{{ c.leads }}" data-won="{{ c.won }}" data-revenue="{{ c.revenue or 0 }}"
        data-roas="{{ c.roas if c.roas is not none else -1 }}" data-cpl="{{ c.cpl if c.cpl is not none else 999999999 }}" data-cpo="{{ c.cpo if c.cpo is not none else 999999999 }}"
        data-ctr="{{ c.ctr if c.ctr is not none else -1 }}" data-impressions="{{ c.impressions }}">
-    {% set cr_link = (cr.preview_url or cr.permalink) if cr else "" %}
-    <a class="cr-img" {% if cr_link or c.manager_url %}href="{{ cr_link or c.manager_url }}" target="_blank" rel="noopener"{% endif %}>
+    {% set cr_link = (cr.preview_url or cr.permalink or cr.fb_post_url) if cr else "" %}
+    <a class="cr-img" {% if cr_link %}href="{{ cr_link }}" target="_blank" rel="noopener" title="Abrir o anúncio"{% endif %}>
       {% if cr and cr.image_url %}<img src="{{ cr.image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'cr-noimg',textContent:'🖼 imagem indisponível'}))">
       {% else %}<span class="cr-noimg">{{ "🔎 " ~ c.platform if c.platform != "Meta" else "🖼 sem imagem ainda" }}</span>{% endif %}
       {% if cr and cr.kind in ("video", "carrossel") %}<span class="cr-kind">{{ "🎬 vídeo" if cr.kind == "video" else "🗂 carrossel" }}</span>{% endif %}
@@ -710,9 +710,10 @@
         <div><span>CAC</span><b>{{ brl(c.cac) }}</b></div>
       </div>
       <div class="cr-links">
-        {% if cr and cr.preview_url %}<a class="pill" href="{{ cr.preview_url }}" target="_blank" rel="noopener">👁 Ver anúncio</a>{% endif %}
+        {% if cr and cr.preview_url %}<a class="pill" href="{{ cr.preview_url }}" target="_blank" rel="noopener" title="Prévia do anúncio como o cliente vê">👁 Prévia do anúncio</a>{% endif %}
+        {% if cr and cr.fb_post_url %}<a class="pill" href="{{ cr.fb_post_url }}" target="_blank" rel="noopener">📘 No Facebook</a>{% endif %}
         {% if cr and cr.permalink %}<a class="pill" href="{{ cr.permalink }}" target="_blank" rel="noopener">📸 No Instagram</a>{% endif %}
-        {% if c.manager_url %}<a class="pill" href="{{ c.manager_url }}" target="_blank" rel="noopener" title="Abre o Gerenciador de Anúncios com este anúncio selecionado (precisa estar logado no Facebook com acesso à conta)">⚙ Abrir no Gerenciador</a>{% endif %}
+        {% if not cr %}<span class="muted" style="font-size:.75rem">os links aparecem quando a busca no Meta trouxer este anúncio</span>{% endif %}
       </div>
     </div>
   </div>

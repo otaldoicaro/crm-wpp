@@ -188,7 +188,8 @@ CREATIVE_DAYS = 90  # anúncios com gasto nesses dias aparecem na aba 🎨 Criat
 CREATIVE_REFRESH = datetime.timedelta(hours=20)  # o endereço da imagem do Meta expira: renova 1x por dia
 CREATIVE_FIELDS = ("name,account_id,preview_shareable_link,"
                    "creative.thumbnail_width(600).thumbnail_height(600)"
-                   "{object_type,image_url,thumbnail_url,video_id,instagram_permalink_url,body,object_story_spec}")
+                   "{object_type,image_url,thumbnail_url,video_id,instagram_permalink_url,effective_object_story_id,body,"
+                   "object_story_spec}")
 
 
 def _creative_image(creative: dict) -> str:
@@ -249,6 +250,8 @@ def sync_creatives(db, tenant: Tenant, force: bool = False) -> int:
         row.image_url = _creative_image(creative)
         row.preview_url = ad.get("preview_shareable_link") or ""
         row.permalink = creative.get("instagram_permalink_url") or ""
+        story_id = creative.get("effective_object_story_id") or ""  # "<página>_<post>"
+        row.fb_post_url = f"https://www.facebook.com/{story_id}" if story_id else ""
         row.body = body[:2000]
         row.fetched_at = datetime.datetime.utcnow()
         db.add(row)
