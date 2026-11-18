@@ -175,9 +175,11 @@ def sync_tenant(db, tenant: Tenant, days: int | None = None) -> int:
         ))
     db.commit()
     try:
-        sync_creatives(db, tenant)
+        n = sync_creatives(db, tenant)
+        creatives_status[tenant.id] = {"at": datetime.datetime.utcnow(), "done": n, "error": ""}
     except (MetaError, requests.RequestException, ValueError) as exc:  # sem imagem não atrapalha o gasto
         db.rollback()
+        creatives_status[tenant.id] = {"at": datetime.datetime.utcnow(), "done": 0, "error": str(exc)[:300]}
         logger.warning("meta_spend: criativos de %s falharam: %s", tenant.name, exc)
     return len(rows)
 
@@ -259,6 +261,7 @@ def sync_creatives(db, tenant: Tenant, force: bool = False) -> int:
 
 
 _creatives_running: set = set()
+creatives_status: dict = {}  # cliente -> {"at", "done", "error"} da última busca (mostrado na aba 🎨 Criativos)
 
 
 def refresh_creatives_now(tenant_id: str, force: bool = True) -> bool:
@@ -274,9 +277,11 @@ def refresh_creatives_now(tenant_id: str, force: bool = True) -> bool:
             tenant = db.get(Tenant, tenant_id)
             if tenant is not None:
                 n = sync_creatives(db, tenant, force=force)
+                creatives_status[tenant_id] = {"at": datetime.datetime.utcnow(), "done": n, "error": ""}
                 logger.info("meta_spend: criativos de %s atualizados: %s", tenant.name, n)
         except Exception as exc:
             db.rollback()
+            creatives_status[tenant_id] = {"at": datetime.datetime.utcnow(), "done": 0, "error": str(exc)[:300]}
             logger.warning("meta_spend: criativos (botão) falharam: %s", exc)
         finally:
             db.close()

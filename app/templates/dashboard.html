@@ -661,7 +661,12 @@
       <option value="cpo">Menor CPO</option><option value="ctr">Maior CTR</option><option value="impressions">Mais impressões</option>
     </select></label>
 </div>
-{% if cr_msg or (creatives and not (creatives|selectattr("creative")|list)) %}
+{% if cr_status and cr_status.error %}
+<div class="error-box" style="margin-bottom:12px">⚠️ A última busca das imagens no Meta ({{ cr_status.at|hora }}) falhou: {{ cr_status.error }}</div>
+{% elif cr_status %}
+<p class="muted" style="margin:0 0 8px; font-size:.78rem">Última busca das imagens: {{ cr_status.done }} anúncio(s) atualizado(s).</p>
+{% endif %}
+{% if not (cr_status and cr_status.error) and (cr_msg or (creatives and not (creatives|selectattr("creative")|list))) %}
 <div class="card" style="margin-bottom:12px">⏳ Buscando as imagens e os links dos anúncios no Meta. Leva cerca de 1 minuto: <a href="/dashboard?aba=criativos&{{ tab_qs }}">recarregar a página</a>.{% if cr_msg == "ja" %} (A busca já estava em andamento.){% endif %}</div>
 {% endif %}
 <p class="muted" style="margin:-4px 0 12px; font-size:.78rem">Cada anúncio com gasto ou lead no período, somando todos os conjuntos em que ele roda (pelo nome, igual ao 🖼 Anúncios do Tráfego). Gasto, impressões e cliques vêm do Meta; leads, vendas e receita, do CRM (leads que entraram no período por esse anúncio). A imagem e o link são atualizados 1x por dia.</p>
@@ -674,7 +679,8 @@
   <div class="card cr-card" data-spend="{{ c.spend or 0 }}" data-leads="{{ c.leads }}" data-won="{{ c.won }}" data-revenue="{{ c.revenue or 0 }}"
        data-roas="{{ c.roas if c.roas is not none else -1 }}" data-cpl="{{ c.cpl if c.cpl is not none else 999999999 }}" data-cpo="{{ c.cpo if c.cpo is not none else 999999999 }}"
        data-ctr="{{ c.ctr if c.ctr is not none else -1 }}" data-impressions="{{ c.impressions }}">
-    <a class="cr-img" {% if cr and (cr.preview_url or cr.permalink) %}href="{{ cr.preview_url or cr.permalink }}" target="_blank" rel="noopener"{% endif %}>
+    {% set cr_link = (cr.preview_url or cr.permalink) if cr else "" %}
+    <a class="cr-img" {% if cr_link or c.manager_url %}href="{{ cr_link or c.manager_url }}" target="_blank" rel="noopener"{% endif %}>
       {% if cr and cr.image_url %}<img src="{{ cr.image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'cr-noimg',textContent:'🖼 imagem indisponível'}))">
       {% else %}<span class="cr-noimg">{{ "🔎 " ~ c.platform if c.platform != "Meta" else "🖼 sem imagem ainda" }}</span>{% endif %}
       {% if cr and cr.kind in ("video", "carrossel") %}<span class="cr-kind">{{ "🎬 vídeo" if cr.kind == "video" else "🗂 carrossel" }}</span>{% endif %}
@@ -706,7 +712,7 @@
       <div class="cr-links">
         {% if cr and cr.preview_url %}<a class="pill" href="{{ cr.preview_url }}" target="_blank" rel="noopener">👁 Ver anúncio</a>{% endif %}
         {% if cr and cr.permalink %}<a class="pill" href="{{ cr.permalink }}" target="_blank" rel="noopener">📸 No Instagram</a>{% endif %}
-        {% if c.manager_url %}<a class="pill" href="{{ c.manager_url }}" target="_blank" rel="noopener">⚙ Gerenciador</a>{% endif %}
+        {% if c.manager_url %}<a class="pill" href="{{ c.manager_url }}" target="_blank" rel="noopener" title="Abre o Gerenciador de Anúncios com este anúncio selecionado (precisa estar logado no Facebook com acesso à conta)">⚙ Abrir no Gerenciador</a>{% endif %}
       </div>
     </div>
   </div>

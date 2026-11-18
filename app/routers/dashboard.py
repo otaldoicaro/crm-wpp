@@ -3357,7 +3357,7 @@ def creatives_refresh(
     return RedirectResponse(url=back + ("&" if "?" in back else "?") + ("cr=buscando" if started else "cr=ja"), status_code=302)
 
 
-def _creative_cards(db, tenant_id: str, traffic_data: Optional[dict]) -> list:
+def _creative_cards(db, tenant_id: str, traffic_data: Optional[dict], accounts: str = "") -> list:
     """🎨 Um card por criativo (anúncios com o mesmo nome somados, como no 📣 Tráfego) com a imagem e o
     link do anúncio do Meta (AdCreative) e os números do período: gasto, cliques, leads, vendas..."""
     from app.models import AdCreative
@@ -3372,8 +3372,12 @@ def _creative_cards(db, tenant_id: str, traffic_data: Optional[dict]) -> list:
         ad_ids = [p["a_key"][3:] for p in group["children"] if (p.get("a_key") or "").startswith("id:")]
         creative = next((by_ad[a] for a in ad_ids if a in by_ad and by_ad[a].image_url), None) or \
             next((by_ad[a] for a in ad_ids if a in by_ad), None)
-        manager = (f"https://adsmanager.facebook.com/adsmanager/manage/ads?act={creative.account_id}"
-                   f"&selected_ad_ids={','.join(ad_ids)}") if creative and creative.account_id else ""
+        # link do Gerenciador já com o anúncio selecionado: a conta vem do anúncio (Meta) ou, enquanto a
+        # busca não trouxe, da conta de anúncios do cliente (⚙ Configurações → Integrações)
+        account = (creative.account_id if creative and creative.account_id else "") or \
+            next(iter(meta_spend._clean_ids(accounts)), "")
+        manager = (f"https://adsmanager.facebook.com/adsmanager/manage/ads?act={account}"
+                   f"&selected_ad_ids={','.join(ad_ids)}") if account and ad_ids else ""
         cards.append({**group, "creative": creative, "manager_url": manager, "places_count": len(group["children"])})
     return cards
 
@@ -3649,7 +3653,7 @@ def dashboard_view(
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
         funnel.is_qualified(stages, tenant), set(won_stage_ids), funnel.is_opportunity(stages), channel=canal,
     ) if aba in ("trafego", "criativos") else None  # cada aba calcula só o que mostra
-    creatives = _creative_cards(db, tenant.id, traffic_data) if aba == "criativos" else []
+    creatives = _creative_cards(db, tenant.id, traffic_data, tenant.meta_ad_accounts or "") if aba == "criativos" else []
     if creatives and not any(c["creative"] for c in creatives):
         meta_spend.refresh_creatives_now(tenant.id, force=False)  # 1ª vez: busca as imagens sozinho
     traffic_daily = traffic.daily(
@@ -3664,6 +3668,7 @@ def dashboard_view(
         {
             "creatives": creatives,
             "cr_msg": request.query_params.get("cr", ""),
+            "cr_status": meta_spend.creatives_status.get(tenant.id) if aba == "criativos" else None,
             "tenant": tenant,
             "user": user,
             "active_nav": "trafego" if aba == "trafego" and segments.segment_for(tenant).get("menu_trafego") else "dashboard",
