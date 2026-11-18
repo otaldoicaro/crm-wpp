@@ -650,6 +650,10 @@
 {% macro pctv(v) -%}{{ "—" if v is none else ("%.2f"|format(v)).replace(".", ",") ~ "%" }}{%- endmacro %}
 {% macro intv(v) -%}{{ "{:,}".format(v or 0).replace(",", ".") }}{%- endmacro %}
 <div class="section-title" id="criativos"><h3 style="margin:0">🎨 Criativos ({{ creatives|length }})</h3>
+  <form method="post" action="/dashboard/criativos/atualizar" style="margin-left:auto; margin-right:10px">
+    <input type="hidden" name="voltar" value="/dashboard?aba=criativos&{{ tab_qs }}">
+    <button class="btn ghost small" type="submit" title="Busca agora no Meta a imagem e o link de cada anúncio">🔄 Atualizar imagens</button>
+  </form>
   <label class="muted" style="font-size:.85rem">Ordenar por
     <select id="crSort">
       <option value="spend">Maior gasto</option><option value="leads">Mais leads</option><option value="won">Mais vendas</option>
@@ -657,6 +661,9 @@
       <option value="cpo">Menor CPO</option><option value="ctr">Maior CTR</option><option value="impressions">Mais impressões</option>
     </select></label>
 </div>
+{% if cr_msg or (creatives and not (creatives|selectattr("creative")|list)) %}
+<div class="card" style="margin-bottom:12px">⏳ Buscando as imagens e os links dos anúncios no Meta. Leva cerca de 1 minuto: <a href="/dashboard?aba=criativos&{{ tab_qs }}">recarregar a página</a>.{% if cr_msg == "ja" %} (A busca já estava em andamento.){% endif %}</div>
+{% endif %}
 <p class="muted" style="margin:-4px 0 12px; font-size:.78rem">Cada anúncio com gasto ou lead no período, somando todos os conjuntos em que ele roda (pelo nome, igual ao 🖼 Anúncios do Tráfego). Gasto, impressões e cliques vêm do Meta; leads, vendas e receita, do CRM (leads que entraram no período por esse anúncio). A imagem e o link são atualizados 1x por dia.</p>
 {% if not creatives %}
 <div class="card muted">Nenhum anúncio com gasto ou lead neste período. {% if not tenant.meta_ad_accounts %}A conta de anúncios do Meta ainda não está ligada a este cliente.{% endif %}</div>

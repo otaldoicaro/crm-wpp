@@ -3342,6 +3342,21 @@ def _parse_date(value: str) -> Optional[datetime.date]:
         return None
 
 
+@router.post("/dashboard/criativos/atualizar")
+def creatives_refresh(
+    voltar: str = Form(""),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """🔄 Busca agora as imagens e links dos anúncios no Meta (em segundo plano, leva ~1 minuto)."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403)
+    started = meta_spend.refresh_creatives_now(tenant.id)
+    back = voltar if voltar.startswith("/dashboard") else "/dashboard?aba=criativos"
+    return RedirectResponse(url=back + ("&" if "?" in back else "?") + ("cr=buscando" if started else "cr=ja"), status_code=302)
+
+
 def _creative_cards(db, tenant_id: str, traffic_data: Optional[dict]) -> list:
     """🎨 Um card por criativo (anúncios com o mesmo nome somados, como no 📣 Tráfego) com a imagem e o
     link do anúncio do Meta (AdCreative) e os números do período: gasto, cliques, leads, vendas..."""
@@ -3635,6 +3650,8 @@ def dashboard_view(
         funnel.is_qualified(stages, tenant), set(won_stage_ids), funnel.is_opportunity(stages), channel=canal,
     ) if aba in ("trafego", "criativos") else None  # cada aba calcula só o que mostra
     creatives = _creative_cards(db, tenant.id, traffic_data) if aba == "criativos" else []
+    if creatives and not any(c["creative"] for c in creatives):
+        meta_spend.refresh_creatives_now(tenant.id, force=False)  # 1ª vez: busca as imagens sozinho
     traffic_daily = traffic.daily(
         db, tenant.id, traffic_data, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
@@ -3646,6 +3663,7 @@ def dashboard_view(
         "dashboard.html",
         {
             "creatives": creatives,
+            "cr_msg": request.query_params.get("cr", ""),
             "tenant": tenant,
             "user": user,
             "active_nav": "trafego" if aba == "trafego" and segments.segment_for(tenant).get("menu_trafego") else "dashboard",

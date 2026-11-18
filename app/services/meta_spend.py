@@ -205,7 +205,7 @@ def _creative_image(creative: dict) -> str:
     return creative.get("thumbnail_url") or ""
 
 
-def sync_creatives(db, tenant: Tenant) -> int:
+def sync_creatives(db, tenant: Tenant, force: bool = False) -> int:
     """🎨 Imagem, texto e link de cada anúncio com gasto nos últimos CREATIVE_DAYS dias (só os que
     ainda não tem ou que buscou há mais de CREATIVE_REFRESH). Devolve quantos atualizou."""
     since = datetime.date.today() - datetime.timedelta(days=CREATIVE_DAYS)
@@ -214,38 +214,76 @@ def sync_creatives(db, tenant: Tenant) -> int:
         CampaignSpend.date >= since, CampaignSpend.spend > 0).distinct()}
     have = {c.ad_id: c for c in db.query(AdCreative).filter(AdCreative.tenant_id == tenant.id)}
     stale = datetime.datetime.utcnow() - CREATIVE_REFRESH
-    todo = sorted(a for a in ad_ids if a not in have or have[a].fetched_at < stale)
+    todo = sorted(a for a in ad_ids if force or a not in have or have[a].fetched_at < stale)
     done = 0
-    for i in range(0, len(todo), 50):
-        chunk = todo[i:i + 50]
+    plain = CREATIVE_FIELDS.replace(".thumbnail_width(600).thumbnail_height(600)", "")
+    fields = CREATIVE_FIELDS
+    for ad_id in todo:
+        # um anúncio por vez: o Meta não aceita mais "?ids=a,b,c" (Graph v26+)
         try:
-            data = _get(f"{GRAPH}/", {"ids": ",".join(chunk), "fields": CREATIVE_FIELDS})
-        except MetaError:  # sem o tamanho da miniatura (se o Meta recusar o parâmetro): imagem menor, mas vem
-            data = _get(f"{GRAPH}/", {"ids": ",".join(chunk), "fields": CREATIVE_FIELDS.replace(
-                ".thumbnail_width(600).thumbnail_height(600)", "")})
-        for ad_id in chunk:
-            ad = data.get(ad_id) or {}
-            if not ad:
-                continue
-            creative = ad.get("creative") or {}
-            story = creative.get("object_story_spec") or {}
-            kind = "video" if creative.get("video_id") or story.get("video_data") else (
-                "carrossel" if (story.get("link_data") or {}).get("child_attachments") else "imagem")
-            body = creative.get("body") or (story.get("link_data") or {}).get("message") or \
-                (story.get("video_data") or {}).get("message") or ""
-            row = have.get(ad_id) or AdCreative(tenant_id=tenant.id, ad_id=ad_id)
-            row.account_id = str(ad.get("account_id") or "")
-            row.name = (ad.get("name") or "")[:255]
-            row.kind = kind
-            row.image_url = _creative_image(creative)
-            row.preview_url = ad.get("preview_shareable_link") or ""
-            row.permalink = creative.get("instagram_permalink_url") or ""
-            row.body = body[:2000]
-            row.fetched_at = datetime.datetime.utcnow()
-            db.add(row)
-            done += 1
-        db.commit()
+            try:
+                ad = _get(f"{GRAPH}/{ad_id}", {"fields": fields})
+            except MetaError:
+                if fields == plain:
+                    raise
+                fields = plain  # o Meta recusou o tamanho da miniatura: segue com a padrão (pros outros também)
+                ad = _get(f"{GRAPH}/{ad_id}", {"fields": fields})
+        except MetaError as exc:
+            if "does not exist" in str(exc) or "Unsupported get request" in str(exc) or "permission" in str(exc).lower():
+                continue  # anúncio apagado ou de uma conta a que o token não tem acesso
+            raise
+        if not ad:
+            continue
+        creative = ad.get("creative") or {}
+        story = creative.get("object_story_spec") or {}
+        kind = "video" if creative.get("video_id") or story.get("video_data") else (
+            "carrossel" if (story.get("link_data") or {}).get("child_attachments") else "imagem")
+        body = creative.get("body") or (story.get("link_data") or {}).get("message") or \
+            (story.get("video_data") or {}).get("message") or ""
+        row = have.get(ad_id) or AdCreative(tenant_id=tenant.id, ad_id=ad_id)
+        row.account_id = str(ad.get("account_id") or "")
+        row.name = (ad.get("name") or "")[:255]
+        row.kind = kind
+        row.image_url = _creative_image(creative)
+        row.preview_url = ad.get("preview_shareable_link") or ""
+        row.permalink = creative.get("instagram_permalink_url") or ""
+        row.body = body[:2000]
+        row.fetched_at = datetime.datetime.utcnow()
+        db.add(row)
+        have[ad_id] = row
+        done += 1
+        if done % 20 == 0:
+            db.commit()  # vai aparecendo na tela enquanto busca o resto
+    db.commit()
     return done
+
+
+_creatives_running: set = set()
+
+
+def refresh_creatives_now(tenant_id: str, force: bool = True) -> bool:
+    """🔄 Busca as imagens e links dos anúncios do cliente agora, em segundo plano (botão da aba
+    🎨 Criativos). False = já está buscando (ou sem token do Meta)."""
+    if not META_ADS_ACCESS_TOKEN or tenant_id in _creatives_running:
+        return False
+    _creatives_running.add(tenant_id)
+
+    def run():
+        db = SessionLocal()
+        try:
+            tenant = db.get(Tenant, tenant_id)
+            if tenant is not None:
+                n = sync_creatives(db, tenant, force=force)
+                logger.info("meta_spend: criativos de %s atualizados: %s", tenant.name, n)
+        except Exception as exc:
+            db.rollback()
+            logger.warning("meta_spend: criativos (botão) falharam: %s", exc)
+        finally:
+            db.close()
+            _creatives_running.discard(tenant_id)
+
+    threading.Thread(target=run, daemon=True).start()
+    return True
 
 
 def sync_all(days: int | None = None) -> dict:
