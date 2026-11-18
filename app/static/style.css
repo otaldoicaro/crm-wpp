@@ -1325,3 +1325,18 @@ th.js-sortable.sorted-asc::after { content: " ▲"; font-size: .7em; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lead-card .card-contact:hover { color: var(--text); text-decoration: underline; }
 .company-box .task-chip a { color: inherit; }
+
+/* 🎨 Dashboard → Criativos */
+.cr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.cr-card { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.cr-img { position: relative; display: flex; align-items: center; justify-content: center; aspect-ratio: 1 / 1; background: var(--panel-2); overflow: hidden; }
+.cr-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cr-noimg { color: var(--muted); font-size: .85rem; }
+.cr-kind { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.65); color: #fff; font-size: .72rem; padding: 2px 8px; border-radius: 999px; }
+.cr-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+.cr-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-text { font-size: .78rem; color: var(--muted); }
+.cr-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 10px; font-size: .8rem; margin-top: 4px; }
+.cr-metrics div { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px dashed var(--line); padding: 2px 0; }
+.cr-metrics span { color: var(--muted); }
+.cr-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

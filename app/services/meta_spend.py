@@ -20,7 +20,7 @@ import requests
 
 from app.config import META_ADS_ACCESS_TOKEN, META_GRAPH_VERSION
 from app.db import SessionLocal
-from app.models import CampaignSpend, Lead, Tenant, UtmAttribution
+from app.models import AdCreative, CampaignSpend, Lead, Tenant, UtmAttribution
 
 logger = logging.getLogger("meta_spend")
 
@@ -174,7 +174,78 @@ def sync_tenant(db, tenant: Tenant, days: int | None = None) -> int:
             meta_results=_results(r),
         ))
     db.commit()
+    try:
+        sync_creatives(db, tenant)
+    except (MetaError, requests.RequestException, ValueError) as exc:  # sem imagem não atrapalha o gasto
+        db.rollback()
+        logger.warning("meta_spend: criativos de %s falharam: %s", tenant.name, exc)
     return len(rows)
+
+
+CREATIVE_DAYS = 90  # anúncios com gasto nesses dias aparecem na aba 🎨 Criativos
+CREATIVE_REFRESH = datetime.timedelta(hours=20)  # o endereço da imagem do Meta expira: renova 1x por dia
+CREATIVE_FIELDS = ("name,account_id,preview_shareable_link,"
+                   "creative.thumbnail_width(600).thumbnail_height(600)"
+                   "{object_type,image_url,thumbnail_url,video_id,instagram_permalink_url,body,object_story_spec}")
+
+
+def _creative_image(creative: dict) -> str:
+    """Melhor imagem do criativo: a da imagem; senão a do vídeo/carrossel; senão a miniatura."""
+    if creative.get("image_url"):
+        return creative["image_url"]
+    story = creative.get("object_story_spec") or {}
+    video = story.get("video_data") or {}
+    if video.get("image_url"):
+        return video["image_url"]
+    for child in (story.get("link_data") or {}).get("child_attachments") or []:
+        if child.get("picture"):
+            return child["picture"]
+    if (story.get("link_data") or {}).get("picture"):
+        return story["link_data"]["picture"]
+    return creative.get("thumbnail_url") or ""
+
+
+def sync_creatives(db, tenant: Tenant) -> int:
+    """🎨 Imagem, texto e link de cada anúncio com gasto nos últimos CREATIVE_DAYS dias (só os que
+    ainda não tem ou que buscou há mais de CREATIVE_REFRESH). Devolve quantos atualizou."""
+    since = datetime.date.today() - datetime.timedelta(days=CREATIVE_DAYS)
+    ad_ids = {a for (a,) in db.query(CampaignSpend.ad_id).filter(
+        CampaignSpend.tenant_id == tenant.id, CampaignSpend.platform == "meta", CampaignSpend.ad_id != "",
+        CampaignSpend.date >= since, CampaignSpend.spend > 0).distinct()}
+    have = {c.ad_id: c for c in db.query(AdCreative).filter(AdCreative.tenant_id == tenant.id)}
+    stale = datetime.datetime.utcnow() - CREATIVE_REFRESH
+    todo = sorted(a for a in ad_ids if a not in have or have[a].fetched_at < stale)
+    done = 0
+    for i in range(0, len(todo), 50):
+        chunk = todo[i:i + 50]
+        try:
+            data = _get(f"{GRAPH}/", {"ids": ",".join(chunk), "fields": CREATIVE_FIELDS})
+        except MetaError:  # sem o tamanho da miniatura (se o Meta recusar o parâmetro): imagem menor, mas vem
+            data = _get(f"{GRAPH}/", {"ids": ",".join(chunk), "fields": CREATIVE_FIELDS.replace(
+                ".thumbnail_width(600).thumbnail_height(600)", "")})
+        for ad_id in chunk:
+            ad = data.get(ad_id) or {}
+            if not ad:
+                continue
+            creative = ad.get("creative") or {}
+            story = creative.get("object_story_spec") or {}
+            kind = "video" if creative.get("video_id") or story.get("video_data") else (
+                "carrossel" if (story.get("link_data") or {}).get("child_attachments") else "imagem")
+            body = creative.get("body") or (story.get("link_data") or {}).get("message") or \
+                (story.get("video_data") or {}).get("message") or ""
+            row = have.get(ad_id) or AdCreative(tenant_id=tenant.id, ad_id=ad_id)
+            row.account_id = str(ad.get("account_id") or "")
+            row.name = (ad.get("name") or "")[:255]
+            row.kind = kind
+            row.image_url = _creative_image(creative)
+            row.preview_url = ad.get("preview_shareable_link") or ""
+            row.permalink = creative.get("instagram_permalink_url") or ""
+            row.body = body[:2000]
+            row.fetched_at = datetime.datetime.utcnow()
+            db.add(row)
+            done += 1
+        db.commit()
+    return done
 
 
 def sync_all(days: int | None = None) -> dict:

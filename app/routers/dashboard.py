@@ -3342,6 +3342,27 @@ def _parse_date(value: str) -> Optional[datetime.date]:
         return None
 
 
+def _creative_cards(db, tenant_id: str, traffic_data: Optional[dict]) -> list:
+    """🎨 Um card por criativo (anúncios com o mesmo nome somados, como no 📣 Tráfego) com a imagem e o
+    link do anúncio do Meta (AdCreative) e os números do período: gasto, cliques, leads, vendas..."""
+    from app.models import AdCreative
+
+    if not traffic_data:
+        return []
+    by_ad = {c.ad_id: c for c in db.query(AdCreative).filter(AdCreative.tenant_id == tenant_id)}
+    cards = []
+    for group in traffic_data.get("ads") or []:
+        if not group["spend"] and not group["leads"]:
+            continue
+        ad_ids = [p["a_key"][3:] for p in group["children"] if (p.get("a_key") or "").startswith("id:")]
+        creative = next((by_ad[a] for a in ad_ids if a in by_ad and by_ad[a].image_url), None) or \
+            next((by_ad[a] for a in ad_ids if a in by_ad), None)
+        manager = (f"https://adsmanager.facebook.com/adsmanager/manage/ads?act={creative.account_id}"
+                   f"&selected_ad_ids={','.join(ad_ids)}") if creative and creative.account_id else ""
+        cards.append({**group, "creative": creative, "manager_url": manager, "places_count": len(group["children"])})
+    return cards
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard_view(
     request: Request,
@@ -3369,7 +3390,7 @@ def dashboard_view(
     if not is_admin:
         seller = ""  # vendedor vê os números gerais da equipe + os dele (nunca os de outro vendedor)
     # abas: Comercial (padrão) · Tráfego · Clientes. Vendedor só vê a Comercial.
-    if aba not in ("comercial", "trafego", "clientes", "integracoes") or not is_admin:
+    if aba not in ("comercial", "trafego", "criativos", "clientes", "integracoes") or not is_admin:
         aba = "comercial"
 
     now = datetime.datetime.utcnow()
@@ -3393,7 +3414,7 @@ def dashboard_view(
     # só Comercial e Tráfego mostram números dos leads: Clientes e Integrações não carregam os
     # milhares de leads do período. E as conversas não vêm junto (era metade do tempo da tela):
     # pra saber "tem conversa?" basta a lista de ids, numa consulta só
-    needs_leads = aba in ("comercial", "trafego")
+    needs_leads = aba in ("comercial", "trafego", "criativos")
     all_period_leads = leads_query.options(
         selectinload(Lead.attribution), joinedload(Lead.assigned_user), joinedload(Lead.stage)).all() if needs_leads else []
     canal = canal if canal in channels.CHANNEL_KEYS else ""
@@ -3612,17 +3633,19 @@ def dashboard_view(
         db, tenant.id, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
         funnel.is_qualified(stages, tenant), set(won_stage_ids), funnel.is_opportunity(stages), channel=canal,
-    ) if aba == "trafego" else None  # cada aba calcula só o que mostra
+    ) if aba in ("trafego", "criativos") else None  # cada aba calcula só o que mostra
+    creatives = _creative_cards(db, tenant.id, traffic_data) if aba == "criativos" else []
     traffic_daily = traffic.daily(
         db, tenant.id, traffic_data, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
         funnel.is_qualified(stages, tenant), funnel.is_opportunity(stages), channel=canal,
-    ) if traffic_data else {}
+    ) if traffic_data and aba == "trafego" else {}
 
     return templates.TemplateResponse(
         request,
         "dashboard.html",
         {
+            "creatives": creatives,
             "tenant": tenant,
             "user": user,
             "active_nav": "trafego" if aba == "trafego" and segments.segment_for(tenant).get("menu_trafego") else "dashboard",

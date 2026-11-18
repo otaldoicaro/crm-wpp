@@ -559,6 +559,25 @@ class GoogleClick(Base):
     date: Mapped[datetime.date] = mapped_column(Date)
 
 
+class AdCreative(Base):
+    """🎨 Imagem e link de cada anúncio do Meta (pra aba Criativos do Dashboard). Buscado junto com o
+    gasto (services/meta_spend.py) e renovado 1x por dia: o endereço da imagem do Meta expira."""
+
+    __tablename__ = "ad_creatives"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    ad_id: Mapped[str] = mapped_column(String(40), index=True)
+    account_id: Mapped[str] = mapped_column(String(40), default="")
+    name: Mapped[str] = mapped_column(String(255), default="")
+    kind: Mapped[str] = mapped_column(String(20), default="")  # imagem | video | carrossel
+    image_url: Mapped[str] = mapped_column(Text, default="")
+    preview_url: Mapped[str] = mapped_column(Text, default="")  # prévia do anúncio (link do Meta)
+    permalink: Mapped[str] = mapped_column(Text, default="")  # post no Instagram, quando tem
+    body: Mapped[str] = mapped_column(Text, default="")  # texto do anúncio
+    fetched_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+
+
 class CampaignSpend(Base):
     """Gasto de anúncio por dia, importado de uma fonte externa (Meta Ads,
     Google Ads, Windsor.ai, planilha manual, etc). Casamos com os leads pelo

@@ -62,7 +62,7 @@
       {{ m.seller_options(sellers, seller) }}
     </select>
   </label>
-  {% if not own_traffic or aba == "trafego" %}
+  {% if not own_traffic or aba in ("trafego", "criativos") %}
   <label title="Filtra tudo da página (inclusive o funil por vendedor) pela origem do lead: Meta, Google, campanha de formulário ou de WhatsApp (etiqueta no nome da campanha), orgânico ou direto">Origem
     <select name="canal" onchange="this.form.submit()" class="{{ 'filter-on' if canal }}">
       {% for key, label in channel_options %}<option value="{{ key }}" {{ "selected" if canal == key }}>{{ label }}</option>{% endfor %}
@@ -78,7 +78,7 @@
 {% set tab_qs = "date_range=" ~ (date_range|urlencode) ~ "&date_from=" ~ (date_from|urlencode) ~ "&date_to=" ~ (date_to|urlencode) ~ "&seller=" ~ (seller|urlencode) ~ "&canal=" ~ (canal|urlencode) %}
 {% if is_admin and not (own_traffic and aba == "trafego") %}
 <nav class="dash-tabs">
-  {% for key, label in ((("comercial", "📊 Comercial"), ("clientes", "🔁 Clientes")) if own_traffic else (("comercial", "📊 Comercial"), ("trafego", "📣 Tráfego"), ("clientes", "🔁 Clientes"))) %}
+  {% for key, label in ((("comercial", "📊 Comercial"), ("criativos", "🎨 Criativos"), ("clientes", "🔁 Clientes")) if own_traffic else (("comercial", "📊 Comercial"), ("trafego", "📣 Tráfego"), ("criativos", "🎨 Criativos"), ("clientes", "🔁 Clientes"))) %}
   <a class="dash-tab {{ 'on' if aba == key }}" href="/dashboard?aba={{ key }}&{{ tab_qs }}">{{ label }}</a>
   {% endfor %}
   {% if has_feature(tenant, "auditoria_no_dashboard") and not user.read_only %}<a class="dash-tab" href="/auditoria" title="Quando cada lead entrou e cada contato que ele recebeu">🔎 Auditoria</a>{% endif %}
@@ -310,6 +310,7 @@
   {%- endfor %}
 {%- endmacro %}
 <div class="section-title" id="trafego"><h3 style="margin:0">Tráfego pago x comercial</h3></div>
+<p style="margin:-6px 0 8px"><a class="pill" href="/dashboard?aba=criativos&{{ tab_qs }}">🎨 Ver os criativos com imagem</a></p>
 <p class="muted" style="margin:-6px 0 10px; font-size:.78rem">Vendas e receita aqui = leads que <b>entraram</b> no período por uma campanha. A receita total do período (inclusive de leads mais antigos e sem anúncio) fica em 📊 Comercial → 💰 Vendas fechadas no período.</p>
 {% set period_qs = "date_range=" ~ (date_range|urlencode) ~ "&date_from=" ~ (date_from|urlencode) ~ "&date_to=" ~ (date_to|urlencode) ~ "&seller=" ~ (seller|urlencode) %}
 {% set t = traffic.total %}
@@ -641,6 +642,82 @@
   </table>
 </div>
 
+{% endif %}
+
+{% if aba == "criativos" %}
+{% macro brl(v) -%}{{ "—" if v is none else "R$ " ~ "{:,.0f}".format(v).replace(",", ".") }}{%- endmacro %}
+{% macro brl2(v) -%}{{ "—" if v is none else "R$ " ~ "{:,.2f}".format(v).replace(",", "X").replace(".", ",").replace("X", ".") }}{%- endmacro %}
+{% macro pctv(v) -%}{{ "—" if v is none else ("%.2f"|format(v)).replace(".", ",") ~ "%" }}{%- endmacro %}
+{% macro intv(v) -%}{{ "{:,}".format(v or 0).replace(",", ".") }}{%- endmacro %}
+<div class="section-title" id="criativos"><h3 style="margin:0">🎨 Criativos ({{ creatives|length }})</h3>
+  <label class="muted" style="font-size:.85rem">Ordenar por
+    <select id="crSort">
+      <option value="spend">Maior gasto</option><option value="leads">Mais leads</option><option value="won">Mais vendas</option>
+      <option value="revenue">Maior receita</option><option value="roas">Maior ROAS</option><option value="cpl">Menor custo por lead</option>
+      <option value="ctr">Maior CTR</option><option value="impressions">Mais impressões</option>
+    </select></label>
+</div>
+<p class="muted" style="margin:-4px 0 12px; font-size:.78rem">Cada anúncio com gasto ou lead no período, somando todos os conjuntos em que ele roda (pelo nome, igual ao 🖼 Anúncios do Tráfego). Gasto, impressões e cliques vêm do Meta; leads, vendas e receita, do CRM (leads que entraram no período por esse anúncio). A imagem e o link são atualizados 1x por dia.</p>
+{% if not creatives %}
+<div class="card muted">Nenhum anúncio com gasto ou lead neste período. {% if not tenant.meta_ad_accounts %}A conta de anúncios do Meta ainda não está ligada a este cliente.{% endif %}</div>
+{% else %}
+<div class="cr-grid" id="crGrid">
+{% for c in creatives %}
+  {% set cr = c.creative %}
+  <div class="card cr-card" data-spend="{{ c.spend or 0 }}" data-leads="{{ c.leads }}" data-won="{{ c.won }}" data-revenue="{{ c.revenue or 0 }}"
+       data-roas="{{ c.roas if c.roas is not none else -1 }}" data-cpl="{{ c.cpl if c.cpl is not none else 999999999 }}"
+       data-ctr="{{ c.ctr if c.ctr is not none else -1 }}" data-impressions="{{ c.impressions }}">
+    <a class="cr-img" {% if cr and (cr.preview_url or cr.permalink) %}href="{{ cr.preview_url or cr.permalink }}" target="_blank" rel="noopener"{% endif %}>
+      {% if cr and cr.image_url %}<img src="{{ cr.image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'cr-noimg',textContent:'🖼 imagem indisponível'}))">
+      {% else %}<span class="cr-noimg">{{ "🔎 " ~ c.platform if c.platform != "Meta" else "🖼 sem imagem ainda" }}</span>{% endif %}
+      {% if cr and cr.kind in ("video", "carrossel") %}<span class="cr-kind">{{ "🎬 vídeo" if cr.kind == "video" else "🗂 carrossel" }}</span>{% endif %}
+    </a>
+    <div class="cr-body">
+      <div class="cr-name" title="{{ c.name }}">{{ c.name }}</div>
+      <div class="muted" style="font-size:.75rem">{{ c.platform }}{% if c.places_count > 1 %} · roda em {{ c.places_count }} conjuntos{% endif %}</div>
+      {% if cr and cr.body %}<div class="cr-text" title="{{ cr.body }}">{{ cr.body[:140] }}{{ "…" if cr.body|length > 140 }}</div>{% endif %}
+      <div class="cr-metrics">
+        <div><span>Gasto</span><b>{{ brl2(c.spend) if c.spend else "—" }}</b></div>
+        <div><span>Impressões</span><b>{{ intv(c.impressions) }}</b></div>
+        <div><span>CTR</span><b>{{ pctv(c.ctr) }}</b></div>
+        <div><span>CPM</span><b>{{ brl2(c.cpm) }}</b></div>
+        <div><span>Cliques no link</span><b>{{ intv(c.link_clicks) }}</b></div>
+        <div><span>CPC</span><b>{{ brl2(c.cpc) }}</b></div>
+        <div><span>Leads</span><b>{{ c.leads }}</b></div>
+        <div><span>Custo por lead</span><b>{{ brl2(c.cpl) }}</b></div>
+        <div><span>Qualificados</span><b>{{ c.qualified }}</b></div>
+        <div><span>Vendas</span><b>{{ c.won }}</b></div>
+        <div><span>Receita</span><b>{{ brl(c.revenue) if c.revenue else "—" }}</b></div>
+        <div><span>ROAS</span><b>{{ ("%.1f"|format(c.roas)).replace(".", ",") ~ "x" if c.roas is not none else "—" }}</b></div>
+        <div><span>CAC</span><b>{{ brl(c.cac) }}</b></div>
+      </div>
+      <div class="cr-links">
+        {% if cr and cr.preview_url %}<a class="pill" href="{{ cr.preview_url }}" target="_blank" rel="noopener">👁 Ver anúncio</a>{% endif %}
+        {% if cr and cr.permalink %}<a class="pill" href="{{ cr.permalink }}" target="_blank" rel="noopener">📸 No Instagram</a>{% endif %}
+        {% if c.manager_url %}<a class="pill" href="{{ c.manager_url }}" target="_blank" rel="noopener">⚙ Gerenciador</a>{% endif %}
+      </div>
+    </div>
+  </div>
+{% endfor %}
+</div>
+<script>
+(function () {
+  var sel = document.getElementById("crSort"), grid = document.getElementById("crGrid");
+  if (!sel || !grid) return;
+  function apply() {
+    var key = sel.value, asc = key === "cpl";
+    Array.prototype.slice.call(grid.children).sort(function (a, b) {
+      var x = parseFloat(a.dataset[key]) || 0, y = parseFloat(b.dataset[key]) || 0;
+      return asc ? x - y : y - x;
+    }).forEach(function (el) { grid.appendChild(el); });
+    try { localStorage.setItem("crSort", key); } catch (e) {}
+  }
+  try { var saved = localStorage.getItem("crSort"); if (saved) sel.value = saved; } catch (e) {}
+  sel.addEventListener("change", apply);
+  apply();
+})();
+</script>
+{% endif %}
 {% endif %}
 
 {% if aba == "clientes" %}
