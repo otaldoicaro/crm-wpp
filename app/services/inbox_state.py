@@ -95,7 +95,7 @@ def unread_map(db: Session, user: User, lead_ids: list) -> dict:
             Message.direction == "in",
             Message.created_at > baseline,
             or_(read.c.last_read_at.is_(None), Message.created_at > read.c.last_read_at),
-            or_(Lead.last_outbound_at.is_(None), Message.created_at > Lead.last_outbound_at),
+            or_(Lead.last_reply_at.is_(None), Message.created_at > Lead.last_reply_at),  # automática não conta
             or_(Lead.settled_at.is_(None), Message.created_at > Lead.settled_at),
         )
         .group_by(Conversation.lead_id)
@@ -159,7 +159,7 @@ def unread_filter(query, user: User):
             and_(
                 Lead.last_inbound_at > baseline,
                 or_(read.c.last_read_at.is_(None), Lead.last_inbound_at > read.c.last_read_at),
-                or_(Lead.last_outbound_at.is_(None), Lead.last_inbound_at > Lead.last_outbound_at),
+                or_(Lead.last_reply_at.is_(None), Lead.last_inbound_at > Lead.last_reply_at),  # automática não conta
                 or_(Lead.settled_at.is_(None), Lead.last_inbound_at > Lead.settled_at),
             ),
         )

@@ -152,7 +152,7 @@ def send(db, tenant: Tenant, lead: Lead, appt: Appointment, text: str, what: str
         return False
     if used != lead.phone:
         lead.phone = used
-    response_times.mark_outbound(lead)
+    response_times.mark_outbound(lead, auto=True)
     _record_outbound(db, conversation, sender, wa_id, text, secret=secret, pending=ok is None)
     db.add(Message(conversation_id=conversation.id, direction="note", body=f"📅 {what} enviado pro cliente (automático)"))
     return True

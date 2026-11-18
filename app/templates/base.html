@@ -25,7 +25,7 @@
       <a href="/dashboard" class="{{ 'active' if active_nav == 'dashboard' else '' }}">Dashboard</a>
       {% set seg = segment_for(tenant) %}
       {% if seg.menu_trafego and user.role == "admin" %}<a href="/dashboard?aba=trafego" class="{{ 'active' if active_nav == 'trafego' else '' }}">Tráfego</a>{% endif %}
-      {% set team_wa = seg.menu_equipe_whatsapp and user.role == "admin" %}{# Equipe e WhatsApp numa aba só (sub-abas nas duas telas) #}
+      {% set team_wa = seg.get("menu_equipe_whatsapp", True) and user.role == "admin" %}{# Equipe e WhatsApp numa aba só (sub-abas nas duas telas) #}
       {% if user.role == "admin" and not user.read_only %}
       {% set pending_access = tenant.users|selectattr("pending_approval")|list %}
       <a href="/equipe" class="{{ 'active' if active_nav == 'equipe' or (team_wa and active_nav == 'whatsapp') else '' }}" {% if pending_access %}title="Pedidos de acesso esperando aprovação"{% elif team_wa and wa_down %}title="WhatsApp desconectado"{% endif %}>Equipe{% if pending_access or (team_wa and wa_down) %}<span class="nav-dot"></span>{% endif %}</a>

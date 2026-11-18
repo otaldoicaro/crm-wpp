@@ -342,7 +342,7 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
     if ok:
         from app.services import response_times
 
-        response_times.mark_outbound(lead)
+        response_times.mark_outbound(lead, auto=True)
     _record_outbound(db, conversation, sender, wa_id, text, secret=secret, pending=ok is None)
     # disse a peça/carro: já está qualificado; mensagem genérica: só Em atendimento (vem do _record_outbound)
     target = funnel.stage_named(funnel._stages(db, tenant.id), target_stage_name(tenant)) \
@@ -397,7 +397,7 @@ def retry_failed(db, tenant: Tenant, lead: Lead) -> str:
     message.body, message.wa_message_id, message.secret = text, wa_id, secret
     message.ack = messaging.UNCONFIRMED if ok is None else 1
     message.created_at = datetime.datetime.utcnow()
-    response_times.mark_outbound(lead)
+    response_times.mark_outbound(lead, auto=True)
     funnel.on_message(db, lead, outbound=True)
     target = funnel.stage_named(funnel._stages(db, tenant.id), target_stage_name(tenant)) \
         if has_specific(form_fields(lead.form_details)) else None

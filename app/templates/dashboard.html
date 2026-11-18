@@ -654,7 +654,7 @@
     <select id="crSort">
       <option value="spend">Maior gasto</option><option value="leads">Mais leads</option><option value="won">Mais vendas</option>
       <option value="revenue">Maior receita</option><option value="roas">Maior ROAS</option><option value="cpl">Menor custo por lead</option>
-      <option value="ctr">Maior CTR</option><option value="impressions">Mais impressões</option>
+      <option value="cpo">Menor CPO</option><option value="ctr">Maior CTR</option><option value="impressions">Mais impressões</option>
     </select></label>
 </div>
 <p class="muted" style="margin:-4px 0 12px; font-size:.78rem">Cada anúncio com gasto ou lead no período, somando todos os conjuntos em que ele roda (pelo nome, igual ao 🖼 Anúncios do Tráfego). Gasto, impressões e cliques vêm do Meta; leads, vendas e receita, do CRM (leads que entraram no período por esse anúncio). A imagem e o link são atualizados 1x por dia.</p>
@@ -665,7 +665,7 @@
 {% for c in creatives %}
   {% set cr = c.creative %}
   <div class="card cr-card" data-spend="{{ c.spend or 0 }}" data-leads="{{ c.leads }}" data-won="{{ c.won }}" data-revenue="{{ c.revenue or 0 }}"
-       data-roas="{{ c.roas if c.roas is not none else -1 }}" data-cpl="{{ c.cpl if c.cpl is not none else 999999999 }}"
+       data-roas="{{ c.roas if c.roas is not none else -1 }}" data-cpl="{{ c.cpl if c.cpl is not none else 999999999 }}" data-cpo="{{ c.cpo if c.cpo is not none else 999999999 }}"
        data-ctr="{{ c.ctr if c.ctr is not none else -1 }}" data-impressions="{{ c.impressions }}">
     <a class="cr-img" {% if cr and (cr.preview_url or cr.permalink) %}href="{{ cr.preview_url or cr.permalink }}" target="_blank" rel="noopener"{% endif %}>
       {% if cr and cr.image_url %}<img src="{{ cr.image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'cr-noimg',textContent:'🖼 imagem indisponível'}))">
@@ -686,7 +686,12 @@
         <div><span>Leads</span><b>{{ c.leads }}</b></div>
         <div><span>Custo por lead</span><b>{{ brl2(c.cpl) }}</b></div>
         <div><span>Qualificados</span><b>{{ c.qualified }}</b></div>
+        <div><span title="Custo por lead qualificado">Custo por qualif.</span><b>{{ brl2(c.cost_per_qualified) }}</b></div>
+        <div><span title="Leads que chegaram em oportunidade (proposta/negociação)">Oportunidades</span><b>{{ c.opportunities }}</b></div>
+        <div><span title="Custo por oportunidade">CPO</span><b>{{ brl2(c.cpo) }}</b></div>
         <div><span>Vendas</span><b>{{ c.won }}</b></div>
+        <div><span title="Vendas ÷ leads">Conversão</span><b>{{ pctv(c.conversion) }}</b></div>
+        <div><span>Ticket médio</span><b>{{ brl(c.ticket) }}</b></div>
         <div><span>Receita</span><b>{{ brl(c.revenue) if c.revenue else "—" }}</b></div>
         <div><span>ROAS</span><b>{{ ("%.1f"|format(c.roas)).replace(".", ",") ~ "x" if c.roas is not none else "—" }}</b></div>
         <div><span>CAC</span><b>{{ brl(c.cac) }}</b></div>
@@ -705,7 +710,7 @@
   var sel = document.getElementById("crSort"), grid = document.getElementById("crGrid");
   if (!sel || !grid) return;
   function apply() {
-    var key = sel.value, asc = key === "cpl";
+    var key = sel.value, asc = key === "cpl" || key === "cpo";
     Array.prototype.slice.call(grid.children).sort(function (a, b) {
       var x = parseFloat(a.dataset[key]) || 0, y = parseFloat(b.dataset[key]) || 0;
       return asc ? x - y : y - x;

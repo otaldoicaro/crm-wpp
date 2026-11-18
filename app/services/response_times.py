@@ -27,8 +27,11 @@ def mark_inbound(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
     lead.contact_attempts, lead.contact_attempt_at, lead.contact_log = 0, None, ""  # 📞 contato feito: zera as tentativas
 
 
-def mark_outbound(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
+def mark_outbound(lead: Lead, when: Optional[datetime.datetime] = None, auto: bool = False) -> None:
+    """auto=True: mensagem automática do CRM (não é resposta de uma pessoa: a conversa segue não lida)."""
     when = when or datetime.datetime.utcnow()
+    if not auto and (lead.last_reply_at is None or when > lead.last_reply_at):
+        lead.last_reply_at = when
     previous = lead.last_outbound_at
     if previous is None or (lead.last_inbound_at and lead.last_inbound_at > previous) or when - previous > FOLLOWUP_BURST:
         lead.unanswered_outs = (lead.unanswered_outs or 0) + 1  # mais uma tentativa nossa sem resposta
@@ -113,7 +116,7 @@ def awaiting_reply_sql():
     encerrou depois. Usada no "Não respondidas", "aguardando resposta" e afins."""
     return and_(
         Lead.last_inbound_at.isnot(None),
-        or_(Lead.last_outbound_at.is_(None), Lead.last_inbound_at > Lead.last_outbound_at),
+        or_(Lead.last_reply_at.is_(None), Lead.last_inbound_at > Lead.last_reply_at),
         or_(Lead.settled_at.is_(None), Lead.last_inbound_at > Lead.settled_at),
     )
 

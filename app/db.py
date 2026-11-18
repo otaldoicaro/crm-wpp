@@ -30,6 +30,13 @@ def get_db():
         db.close()
 
 
+# coluna nova -> como preencher as linhas que já existem (roda uma vez só, quando a coluna é criada)
+BACKFILL = {
+    # "respondeu por último" já existia contando as automáticas: no começo vale o que já era
+    ("leads", "last_reply_at"): "UPDATE leads SET last_reply_at = last_outbound_at",
+}
+
+
 def sync_schema() -> None:
     """Migração "pobre" que roda a cada start: além de `create_all` (que só
     cria tabelas que não existem), adiciona colunas novas em tabelas que já
@@ -60,6 +67,8 @@ def sync_schema() -> None:
                         default_clause = " NOT NULL DEFAULT ''"
                 logger.warning("sync_schema: adicionando coluna %s.%s (%s)", table.name, column.name, ddl_type)
                 conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl_type}{default_clause}'))
+                if (table.name, column.name) in BACKFILL:  # coluna nova que precisa nascer preenchida
+                    conn.execute(text(BACKFILL[(table.name, column.name)]))
 
 
 def sync_indexes() -> None:

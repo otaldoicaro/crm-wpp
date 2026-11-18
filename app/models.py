@@ -246,6 +246,10 @@ class Lead(Base):
     first_response_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     last_inbound_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     last_outbound_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    # última mensagem nossa escrita por uma PESSOA (CRM ou celular). A automática (fora do horário, follow-up
+    # automático, lembrete da visita, 1ª mensagem do formulário) não conta: a conversa continua não lida
+    # e "aguardando resposta" até alguém do time responder
+    last_reply_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True, index=True)
     # negócios (recompra): cada card é um negócio. contact_id = id do 1º negócio da pessoa (vazio
     # no 1º); deal_number = 1ª, 2ª, 3ª... oportunidade. A conversa do WhatsApp fica sempre no
     # negócio mais recente; os anteriores guardam etapa, valor e quando fecharam.

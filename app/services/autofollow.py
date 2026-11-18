@@ -122,7 +122,7 @@ def _send(db, tenant: Tenant, lead: Lead, step: int) -> bool:
         return False
     if used != lead.phone:
         lead.phone = used
-    response_times.mark_outbound(lead)
+    response_times.mark_outbound(lead, auto=True)
     _record_outbound(db, conversation, sender, wa_id, text, secret=secret, pending=ok is None)
     db.add(Message(conversation_id=conversation.id, direction="note",
                    body=f"🤖 Follow-up automático {_step_label(tenant, step)} (o cliente estava sem responder)"
