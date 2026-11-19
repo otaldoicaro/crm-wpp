@@ -120,8 +120,13 @@ def _apply_connection(db: Session, number: WhatsAppNumber, payload: dict) -> Non
     if not state or state == number.connection_state:
         return
     logger.warning("uazapi: %s agora %s (%s)", number.label, state, inst.get("lastDisconnectReason") or "")
+    was_open = number.connection_state == "open"
     number.connection_state = state
     db.add(number)
+    if was_open and state == "close":
+        from app.services import wa_health
+
+        wa_health.on_dropped(db, number)  # caiu de verdade (o Desconectar da tela já grava "close" antes)
     db.commit()
 
 

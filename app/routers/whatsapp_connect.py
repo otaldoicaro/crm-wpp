@@ -56,6 +56,13 @@ def _instance_name(db: Session, tenant: Tenant) -> str:
     return name
 
 
+def _uazapi_on(tenant: Tenant) -> bool:
+    """UAZAPI é paga (por número): só aparece com a conta configurada no servidor E o recurso ligado no cliente."""
+    from app import features
+
+    return uazapi_client.is_configured() and features.has(tenant, "uazapi")
+
+
 @router.get("/whatsapp", response_class=HTMLResponse)
 def whatsapp_page(
     request: Request,
@@ -87,7 +94,7 @@ def whatsapp_page(
                 if person.role == "agent" or person.id == user.id
             ],
             "configured": evolution_client.is_configured() or uazapi_client.is_configured(),
-            "uazapi_ready": uazapi_client.is_configured(),
+            "uazapi_ready": _uazapi_on(tenant),
             "error": request.query_params.get("error", ""),
             "auto_connect": request.query_params.get("connect", ""),
         },
@@ -104,7 +111,7 @@ def add_number(
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
 ):
-    use_uazapi = via == uazapi_client.PROVIDER and user.role == "admin" and uazapi_client.is_configured()
+    use_uazapi = via == uazapi_client.PROVIDER and user.role == "admin" and _uazapi_on(tenant)
     if user.role != "admin":
         # vendedor só conecta o próprio WhatsApp, e um só
         existing = (
@@ -342,8 +349,10 @@ def switch_provider(
     _require_admin(user)
     number = _get_number(db, tenant, user, number_id)
     if para == uazapi_client.PROVIDER and number.provider == "evolution":
-        if not uazapi_client.is_configured():
-            return RedirectResponse(url="/whatsapp?error=" + quote("O UAZapi ainda não foi configurado no servidor."), status_code=302)
+        if not _uazapi_on(tenant):
+            return RedirectResponse(url="/whatsapp?error=" + quote(
+                "A UAZAPI não está ligada pra este cliente (⚙ Configurações → Recursos → 📱 WhatsApp pela UAZAPI) "
+                "ou ainda não foi configurada no servidor."), status_code=302)
         try:
             token = uazapi_client.create_instance(number.evolution_instance)
             uazapi_client.set_webhook(token)

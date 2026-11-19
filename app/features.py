@@ -52,10 +52,14 @@ FEATURES = {
                           "conta ligação ou e-mail). Zera quando o cliente responde",
     "transcrever_audios": "🎙️ Transcrever os áudios do WhatsApp (o texto aparece embaixo do áudio e entra nas regras "
                           "automáticas e na busca). Custo no Groq: ~US$ 0,04 por hora de áudio",
+    "uazapi": "📱 WhatsApp pela UAZAPI (pago, cobrado por número conectado): na tela WhatsApp o admin pode passar cada "
+              "número do Evolution pra UAZAPI (🔁 Passar pro UAZapi) e ler o QR code de novo; as conversas continuam as "
+              "mesmas. Precisa da conta da UAZAPI configurada no servidor",
 }
 # ⚙ Configurações → ⚙️ Recursos: os recursos agrupados por assunto (o que faltar aqui cai em "Outros")
 GROUPS = [
     ("🧭 Funil e etapas", ["funil_manual", "visita_negociando", "agendamentos", "tarefa_pos_visita", "lead_frio", "sem_prazos", "tentativas_contato"]),
+    ("📱 WhatsApp", ["uazapi"]),
     ("💬 Conversas e Inbox", ["interessados_negociando", "sem_popup_outro_vendedor", "transcrever_audios", "sem_espelhar_time_outro"]),
     ("👥 Vendedores", ["sem_passar_lead", "passar_troca_numero", "passar_so_na_ficha"]),
     ("🤖 Mensagens automáticas pro cliente", ["followup_automatico", "followup_so_24h", "mensagem_fora_horario"]),
