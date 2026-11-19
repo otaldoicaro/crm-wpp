@@ -1031,6 +1031,7 @@ body:has(.traffic-manager) { overflow-x: hidden; }
 .toast-card.out { opacity: 0; transform: translateX(20px); }
 .toast-comprovante { border-left-color: #1e7b3a; }
 .toast-duplicado { border-left-color: #d9a400; }
+.toast-tarefa_dia { border-left-color: #c0392b; }
 /* 💬 tela de Recados */
 .recados-layout { display: grid; grid-template-columns: minmax(260px, 360px) 1fr; gap: 12px; align-items: start; }
 .recados-list { padding: 8px; }

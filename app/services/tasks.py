@@ -1,5 +1,5 @@
 """✅ Tarefas dos leads (recurso "tarefas"): criar na conversa/ficha, ver em ✅ Tarefas (atrasadas, hoje,
-próximas) e receber o aviso no dia (notificação no canto da tela + número no menu)."""
+próximas) e receber o aviso no dia (notificação no canto da tela + número no menu). Todo dia, a partir\ndas 7h, também chega um resumo com as atrasadas e as do dia."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import threading
 from sqlalchemy import or_
 
 from app.models import Lead, LeadTask
-from app.timeutil import to_local
+from app.timeutil import local_to_utc, to_local
 
 logger = logging.getLogger("tasks")
 
@@ -97,6 +97,46 @@ def notify_due(db) -> int:
         notify.push(db, task.tenant_id, task.user_id, "tarefa", f"✅ Tarefa {when_label(task)}: {task.title}",
                     body=lead.name or lead.phone or "", url=f"/inbox/{lead.id}" if lead.conversations else f"/leads/{lead.id}")
         task.notified_at = datetime.datetime.utcnow()
+        sent += 1
+    db.commit()
+    return sent + notify_daily(db, now_local)
+
+
+def notify_daily(db, now_local=None) -> int:
+    """Resumo do dia (uma vez por dia, a partir das 7h, pra cada pessoa que tem tarefa pendente):
+    "⏰ 2 tarefas atrasadas · 3 pra hoje". Repete todo dia enquanto houver atrasada, porque o aviso de
+    cada tarefa sai uma vez só."""
+    from sqlalchemy import func
+
+    from app.models import Notification
+    from app.services import notify
+
+    now_local = now_local or to_local(datetime.datetime.utcnow())
+    if now_local.hour < NOTIFY_FROM_HOUR:
+        return 0
+    day = now_local.date()
+    day_start_utc = local_to_utc(datetime.datetime.combine(day, datetime.time()))
+    rows = (db.query(LeadTask.tenant_id, LeadTask.user_id, LeadTask.due_date < day, func.count(LeadTask.id))
+            .join(Lead, Lead.id == LeadTask.lead_id)
+            .filter(LeadTask.done_at.is_(None), LeadTask.due_date <= day, LeadTask.user_id.isnot(None), Lead.deleted_at.is_(None))
+            .group_by(LeadTask.tenant_id, LeadTask.user_id, LeadTask.due_date < day).all())
+    people: dict = {}
+    for tenant_id, user_id, is_late, count in rows:
+        late_today = people.setdefault((tenant_id, user_id), [0, 0])
+        late_today[0 if is_late else 1] += count
+    sent = 0
+    for (tenant_id, user_id), (late, due_today) in people.items():
+        already = db.query(Notification.id).filter(Notification.user_id == user_id, Notification.kind == "tarefa_dia",
+                                                   Notification.created_at >= day_start_utc).first()
+        if already:
+            continue
+        parts = []
+        if late:
+            parts.append(f"{late} atrasada" + ("s" if late > 1 else ""))
+        if due_today:
+            parts.append(f"{due_today} pra hoje")
+        title = ("⚠️ " if late else "⏰ ") + "Tarefas: " + " · ".join(parts)
+        notify.push(db, tenant_id, user_id, "tarefa_dia", title, body="Clique pra ver suas tarefas", url="/tarefas")
         sent += 1
     db.commit()
     return sent
