@@ -19,6 +19,25 @@ def _key(parts: tuple) -> str:
     return ":".join(str(p) for p in parts)
 
 
+def _words(text: str) -> set:
+    """Palavras do nome sem acento/maiúscula/pontuação: "search | max conv | BR | agência" → {search, max, conv, br, agencia}."""
+    import re
+    import unicodedata
+
+    plain = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode().lower()
+    return {w for w in re.split(r"[^a-z0-9]+", plain) if w}
+
+
+def _closest(name: str, options) -> str:
+    """O nome real (do gasto) que tem todas as palavras da UTM escrita à mão. Só devolve se for um só;
+    se nenhum ou mais de um servir, "" e o lead fica com o nome da UTM."""
+    want = _words(name)
+    if len(want) < 2:
+        return ""
+    fits = [o for o in options if o and want <= _words(o)]
+    return fits[0] if len(fits) == 1 else ""
+
+
 def _node(name: str, platform: str, key: str = "") -> dict:
     return {
         "key": key, "lead_ids": [],
@@ -102,6 +121,11 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
     from app.services.google_ads_spend import clicks_by_gclid
 
     by_gclid = clicks_by_gclid(db, tenant_id)  # 📊 clique do Google → campanha (script do Google Ads)
+    google_adsets: dict = {}  # campanha do Google (nome no gasto) → nomes dos grupos de anúncios
+    for gc, gs in (db.query(CampaignSpend.campaign, CampaignSpend.adset)
+                   .filter(CampaignSpend.tenant_id == tenant_id, CampaignSpend.platform == "google").distinct()):
+        google_adsets.setdefault(gc, set()).update({gs} if gs else set())
+    google_names = set(google_adsets)
 
     for lead in leads:
         att = lead.attribution
@@ -119,6 +143,15 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
             ad_id = ad_by_unique_name[att.utm_content]
             cid, sid, cname, sname, aname = by_ad[ad_id]
             nodes = path("meta", cid, cname, sid, sname, ad_id, aname)
+        elif att.utm_campaign and resolve_platform(att) == "google" and att.utm_campaign not in google_names \
+                and _closest(att.utm_campaign, google_names):
+            # UTM do Google escrita à mão ("search | max conv | BR | agência") e o script ainda não mandou o
+            # clique: casa com a campanha real que tem essas palavras ("search | BR | agência de tráfego - Max Conv")
+            cname = _closest(att.utm_campaign, google_names)
+            known_sets = google_adsets.get(cname, set())
+            sname = next((n for n in (att.utm_term, att.utm_content) if n and n in known_sets), "") \
+                or _closest(att.utm_term or "", known_sets) or _closest(att.utm_content or "", known_sets)
+            nodes = path("google", "", cname, "", sname, "", "")
         elif att.utm_campaign:
             platform = "meta" if att.ad_id else resolve_platform(att)
             cname, sname, aname = att.utm_campaign, att.utm_term, att.utm_content
