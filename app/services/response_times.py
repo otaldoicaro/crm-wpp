@@ -27,6 +27,29 @@ def mark_inbound(lead: Lead, when: Optional[datetime.datetime] = None) -> None:
     lead.contact_attempts, lead.contact_attempt_at, lead.contact_log = 0, None, ""  # 📞 contato feito: zera as tentativas
 
 
+_AUTO_SENDS: dict = {}  # lead -> (quando, texto) da mensagem automática que acabou de sair
+AUTO_ECHO_WINDOW = datetime.timedelta(minutes=5)
+
+
+def _plain(text: str) -> str:
+    return " ".join((text or "").split()).lower()[:200]
+
+
+def expect_auto(lead: Lead, text: str) -> None:
+    """Chamar ANTES de mandar uma mensagem automática: o WhatsApp avisa do envio (eco do celular) às
+    vezes antes do CRM gravar a mensagem, e sem isso o eco contava como resposta do vendedor."""
+    now = datetime.datetime.utcnow()
+    for key in [k for k, (when, _) in _AUTO_SENDS.items() if now - when > AUTO_ECHO_WINDOW]:
+        _AUTO_SENDS.pop(key, None)
+    _AUTO_SENDS[lead.id] = (now, _plain(text))
+
+
+def is_auto_echo(lead: Lead, body: str) -> bool:
+    """A mensagem "do celular" é o eco de uma automática que o CRM acabou de mandar?"""
+    entry = _AUTO_SENDS.get(lead.id)
+    return bool(entry) and datetime.datetime.utcnow() - entry[0] <= AUTO_ECHO_WINDOW and entry[1] == _plain(body)
+
+
 def mark_outbound(lead: Lead, when: Optional[datetime.datetime] = None, auto: bool = False) -> None:
     """auto=True: mensagem automática do CRM (não é resposta de uma pessoa: a conversa segue não lida)."""
     when = when or datetime.datetime.utcnow()

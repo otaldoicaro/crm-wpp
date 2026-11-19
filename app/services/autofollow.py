@@ -113,6 +113,7 @@ def _send(db, tenant: Tenant, lead: Lead, step: int) -> bool:
     number = conversation.whatsapp_number
     text = text_for(tenant, lead, step)
     sender = lead.assigned_user or SimpleNamespace(id=None)
+    response_times.expect_auto(lead, text)
     ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, text)
     if ok is False:
         _record_outbound(db, conversation, sender, "", f"⚠️ Não enviada ({messaging.last_error()}): {text}")

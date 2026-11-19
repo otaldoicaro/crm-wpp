@@ -231,7 +231,8 @@ def record_outbound_from_phone(
     conversation = _get_or_create_conversation(db, number, lead)
     pending = _unconfirmed_match(db, lead, body, media_type, when)
     if when is None or lead.last_outbound_at is None or when > lead.last_outbound_at:
-        response_times.mark_outbound(lead, when)  # vendedor respondeu pelo celular
+        # vendedor respondeu pelo celular (ou é o eco de uma automática do CRM: essa não conta como resposta)
+        response_times.mark_outbound(lead, when, auto=response_times.is_auto_echo(lead, body))
     funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
     followup.on_outbound_text(db, lead, body)  # mandou preço pelo celular: vai pra "Negociando"
     suggestions.on_message(lead, body, outbound=True)  # 💡 "temos sim", "não temos", "pedido confirmado"...

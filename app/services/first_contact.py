@@ -316,6 +316,8 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
     if number.dispatch:
         number.last_routed_at = lead.auto_hello_at
     db.commit()
+    from app.services import response_times
+    response_times.expect_auto(lead, text)
     ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, text)
     if ok is not False and used != lead.phone:
         lead.phone = used  # o número certo era com (ou sem) o 9º dígito
@@ -383,6 +385,7 @@ def retry_failed(db, tenant: Tenant, lead: Lead) -> str:
         return "pulado"
     seller = db.get(User, number.owner_user_id) if number.owner_user_id else lead.assigned_user
     text = message_for(tenant, lead, seller)  # texto de agora (ex: genérica, código da peça já sem)
+    response_times.expect_auto(lead, text)
     ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, text)
     if ok is False:
         message.body = f"⚠️ Não enviada ({messaging.last_error()}): {text}"

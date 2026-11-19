@@ -165,7 +165,7 @@ def _last_inbound_conversation(db, lead: Lead):
 
 
 def _send(db, tenant: Tenant, lead: Lead, now: datetime.datetime) -> bool:
-    from app.services import handover, messaging
+    from app.services import response_times, handover, messaging
 
     conversation = _last_inbound_conversation(db, lead) or lead.active_conversation
     number = conversation.whatsapp_number if conversation is not None else None
@@ -176,7 +176,9 @@ def _send(db, tenant: Tenant, lead: Lead, now: datetime.datetime) -> bool:
              .filter(Conversation.lead_id == lead.id, Message.direction == "in", Message.created_at >= closed_since(tenant, now))]
     text = text_for(tenant, lead, seller.name if seller else "", now, detailed=says_what_they_want(texts))
     # o envio não é resposta do vendedor: se o eco do celular marcar como resposta, volta como estava
-    before = (lead.last_outbound_at, lead.first_response_at, lead.unanswered_outs, lead.contact_attempts, lead.contact_attempt_at)
+    before = (lead.last_outbound_at, lead.first_response_at, lead.unanswered_outs, lead.contact_attempts, lead.contact_attempt_at,
+              lead.last_reply_at)
+    response_times.expect_auto(lead, text)
     ok, wa_id, secret, _used = messaging.send_text_any(number, lead.phone, text)
     if ok is False:
         db.add(Message(conversation_id=conversation.id, direction="note",
@@ -193,9 +195,11 @@ def _send(db, tenant: Tenant, lead: Lead, now: datetime.datetime) -> bool:
                    body="🌙 Mensagem automática fora do horário enviada. O cliente continua aguardando a sua resposta."))
     db.commit()
     db.refresh(lead)
-    if (lead.last_outbound_at, lead.first_response_at, lead.unanswered_outs, lead.contact_attempts, lead.contact_attempt_at) != before:
+    if (lead.last_outbound_at, lead.first_response_at, lead.unanswered_outs, lead.contact_attempts, lead.contact_attempt_at,
+            lead.last_reply_at) != before:
         (lead.last_outbound_at, lead.first_response_at, lead.unanswered_outs, lead.contact_attempts,
-         lead.contact_attempt_at) = before  # mensagem automática não conta como tentativa de contato
+         lead.contact_attempt_at, lead.last_reply_at) = before  # automática: não é tentativa de contato nem resposta (segue não lida)
+        db.commit()
     return True
 
 

@@ -146,6 +146,7 @@ def send(db, tenant: Tenant, lead: Lead, appt: Appointment, text: str, what: str
     if conversation is None:
         return False
     sender = appt.user or lead.assigned_user or SimpleNamespace(id=None)
+    response_times.expect_auto(lead, text)
     ok, wa_id, secret, used = messaging.send_text_any(conversation.whatsapp_number, lead.phone, text)
     if ok is False:
         _record_outbound(db, conversation, sender, "", f"⚠️ Não enviada ({messaging.last_error()}): {text}")
