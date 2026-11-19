@@ -40,6 +40,10 @@
 // a conversa abre aqui mesmo, com o Inbox completo (responder, etapa, comentários...), sem sair da tela
 (function () {
   var list = document.getElementById("campList"), frame = document.getElementById("campFrame");
+  var layout = document.querySelector(".camp-layout"), bar = document.querySelector(".topbar");
+  // 📐 altura do menu fixo: a lista e a conversa preenchem o resto da tela
+  function fit() { if (bar) document.documentElement.style.setProperty("--topbar-h", bar.offsetHeight + "px"); }
+  fit(); window.addEventListener("resize", fit);
   list.addEventListener("click", function (e) {
     var more = e.target.closest(".camp-more");
     if (more) {
@@ -59,6 +63,7 @@
     frame.hidden = false;
     frame.src = "/inbox/" + item.dataset.open;
     if (window.innerWidth < 900) document.getElementById("campThread").scrollIntoView({ behavior: "smooth" });
+    else if (layout.getBoundingClientRect().top > (bar ? bar.offsetHeight : 0) + 12) layout.scrollIntoView({ behavior: "smooth" });  // conversa na tela toda
   });
 })();
 </script>

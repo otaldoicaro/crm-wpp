@@ -555,7 +555,9 @@ main:has(.team-grid) { max-width: none; padding-left: 16px; padding-right: 16px;
 .camp-trail { font-size: .8rem; }
 .camp-stage-chips { margin: 10px 0; }
 .camp-stage-chips .pill { cursor: pointer; font: inherit; font-size: .8rem; }
-.camp-layout { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 12px; height: calc(100vh - 250px); min-height: 420px; }
+.camp-layout { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 12px;
+  /* lista + conversa ocupam a tela toda (menos o menu fixo): rolando a página, o resumo da campanha fica em cima */
+  height: calc(100vh - var(--topbar-h, 72px) - 16px); min-height: 480px; scroll-margin-top: calc(var(--topbar-h, 72px) + 8px); }
 .camp-list { overflow-y: auto; padding: 0; }
 .camp-list .inbox-list-item[hidden] { display: none; }
 .camp-thread { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
