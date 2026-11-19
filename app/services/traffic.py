@@ -28,13 +28,33 @@ def _words(text: str) -> set:
     return {w for w in re.split(r"[^a-z0-9]+", plain) if w}
 
 
-def _closest(name: str, options) -> str:
-    """O nome real (do gasto) que tem todas as palavras da UTM escrita à mão. Só devolve se for um só;
-    se nenhum ou mais de um servir, "" e o lead fica com o nome da UTM."""
+def _has_word(short: str, words: set) -> bool:
+    """A palavra da UTM está no nome real, inteira ou abreviada ("mkt" → "marketing", "perf" → "performance"):
+    mesma primeira letra e as letras na mesma ordem."""
+    if short in words:
+        return True
+    if len(short) < 3 or short.isdigit():
+        return False
+    for w in words:
+        if w[0] == short[0] and len(w) > len(short):
+            it = iter(w)
+            if all(ch in it for ch in short):
+                return True
+    return False
+
+
+def _closest(name: str, options, hints: tuple = ()) -> str:
+    """O nome real (do gasto) que tem todas as palavras da UTM escrita à mão. Se mais de um servir,
+    desempata pelas outras UTMs (termo/conteúdo: "Agência de Tráfego Pago" escolhe a campanha "de tráfego").
+    Só devolve se sobrar um só; senão "" e o lead fica com o nome da UTM."""
     want = _words(name)
     if len(want) < 2:
         return ""
-    fits = [o for o in options if o and want <= _words(o)]
+    fits = [o for o in options if o and all(_has_word(w, _words(o)) for w in want)]
+    if len(fits) > 1:
+        extra = set().union(*(_words(h) for h in hints)) - want
+        scored = sorted(((len((_words(o) - want) & extra), o) for o in fits), reverse=True)
+        fits = [scored[0][1]] if scored[0][0] and scored[0][0] > scored[1][0] else fits
     return fits[0] if len(fits) == 1 else ""
 
 
@@ -144,10 +164,10 @@ def build(db, tenant_id: str, leads: list, date_from, date_to, is_qualified, won
             cid, sid, cname, sname, aname = by_ad[ad_id]
             nodes = path("meta", cid, cname, sid, sname, ad_id, aname)
         elif att.utm_campaign and resolve_platform(att) == "google" and att.utm_campaign not in google_names \
-                and _closest(att.utm_campaign, google_names):
+                and _closest(att.utm_campaign, google_names, (att.utm_term, att.utm_content)):
             # UTM do Google escrita à mão ("search | max conv | BR | agência") e o script ainda não mandou o
             # clique: casa com a campanha real que tem essas palavras ("search | BR | agência de tráfego - Max Conv")
-            cname = _closest(att.utm_campaign, google_names)
+            cname = _closest(att.utm_campaign, google_names, (att.utm_term, att.utm_content))
             known_sets = google_adsets.get(cname, set())
             sname = next((n for n in (att.utm_term, att.utm_content) if n and n in known_sets), "") \
                 or _closest(att.utm_term or "", known_sets) or _closest(att.utm_content or "", known_sets)
