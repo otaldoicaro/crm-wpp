@@ -193,6 +193,8 @@ class WhatsAppNumber(Base):
     # 📱 passando pra UAZapi: a instância nova já existe, mas o vendedor ainda não leu o QR. Até ler, o
     # Evolution continua recebendo e enviando por este número (nada fica sem atendimento no meio)
     migrating: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 🛡️ automáticas (1ª do formulário, follow-up, fora do horário) paradas até esta hora (services/antiban.py)
+    auto_paused_until: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     # 📤 número de disparo: só manda a 1ª mensagem pros leads do formulário (rodízio entre eles); fica fora
     # do link /go e do rodízio de vendedor. Com algum marcado, o WhatsApp do vendedor/loja nunca faz 1º contato
     dispatch: Mapped[bool] = mapped_column(Boolean, default=False)

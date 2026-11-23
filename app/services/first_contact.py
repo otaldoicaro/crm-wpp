@@ -145,8 +145,11 @@ def message_for(tenant: Tenant, lead: Lead, seller: User | None) -> str:
 
 
 def _connected(number: WhatsAppNumber | None) -> bool:
+    from app.services import antiban
+
     return (number is not None and number.is_active and bool(number.phone_number)
-            and (not number.qr_based or number.connection_state == "open"))
+            and (not number.qr_based or number.connection_state == "open")
+            and not antiban.paused(number))  # ⏸️ automáticas pausadas: a 1ª mensagem sai por outro vendedor
 
 
 def is_seller(user: User | None) -> bool:
@@ -296,10 +299,15 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
     from app.routers.dashboard import _record_outbound
     from app.services import funnel, messaging
 
+    from app.services import antiban
+
     number = number or number_for(db, lead)
     if number is None:
         db.commit()  # pode ter passado o lead pro próximo do rodízio
         return "sem número"
+    if not antiban.allow(number, antiban.COLD):
+        db.rollback()  # 🛡️ esse WhatsApp mandou automática há pouco: espera a próxima passada (sem trocar nada)
+        return "aguardando"
     if number.owner_user_id and number.owner_user_id != lead.assigned_user_id and not number.dispatch:
         # regra: quem manda é sempre o responsável pelo lead (nunca sai do número de outra pessoa)
         from app.services import ownership
@@ -310,7 +318,7 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
     # 📤 número de disparo: assina o vendedor do lead (é ele quem responde pelo CRM)
     seller = db.get(User, number.owner_user_id if number.owner_user_id and not number.dispatch else lead.assigned_user_id) \
         if (number.owner_user_id or lead.assigned_user_id) else None
-    text = message_for(tenant, lead, seller)
+    text = antiban.vary(message_for(tenant, lead, seller))
     sender = seller or SimpleNamespace(id=None)  # número compartilhado sem dono
     lead.auto_hello_at = datetime.datetime.utcnow()  # antes de mandar: nunca manda duas vezes
     if number.dispatch:
@@ -319,6 +327,7 @@ def send_one(db, tenant: Tenant, lead: Lead, number: WhatsAppNumber | None = Non
     from app.services import response_times
     response_times.expect_auto(lead, text)
     ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, text)
+    antiban.sent(db, number, antiban.COLD, ok)
     if ok is not False and used != lead.phone:
         lead.phone = used  # o número certo era com (ou sem) o 9º dígito
     conversation = db.query(Conversation).filter(

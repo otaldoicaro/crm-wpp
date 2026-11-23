@@ -34,6 +34,9 @@ templates.env.globals["asset_version"] = _asset_version()
 templates.env.globals["theme_for"] = theme_for
 templates.env.globals["theme_css"] = theme_css
 templates.env.filters["hora"] = fmt_local
+from app.services import antiban as _antiban  # noqa: E402
+
+templates.env.globals["auto_paused"] = _antiban.paused
 templates.env.filters["duracao"] = response_times.human
 templates.env.filters["ha"] = response_times.ago
 templates.env.globals["rt"] = response_times

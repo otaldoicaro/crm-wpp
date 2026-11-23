@@ -171,15 +171,22 @@ def _send(db, tenant: Tenant, lead: Lead, now: datetime.datetime) -> bool:
     number = conversation.whatsapp_number if conversation is not None else None
     if not handover.usable(number):
         return False  # WhatsApp desconectado: não tenta outro número de madrugada
+    from app.services import antiban
+
+    if antiban.paused(number):
+        return False  # ⏸️ automáticas pausadas neste WhatsApp
+    if not antiban.allow(number, antiban.REPLY):
+        return None  # 🛡️ acabou de mandar outra: espera uns segundos (próxima passada)
     seller = number.owner or lead.assigned_user
     texts = [t or b for b, t in db.query(Message.body, Message.transcript).join(Conversation, Conversation.id == Message.conversation_id)
              .filter(Conversation.lead_id == lead.id, Message.direction == "in", Message.created_at >= closed_since(tenant, now))]
-    text = text_for(tenant, lead, seller.name if seller else "", now, detailed=says_what_they_want(texts))
+    text = antiban.vary(text_for(tenant, lead, seller.name if seller else "", now, detailed=says_what_they_want(texts)))
     # o envio não é resposta do vendedor: se o eco do celular marcar como resposta, volta como estava
     before = (lead.last_outbound_at, lead.first_response_at, lead.unanswered_outs, lead.contact_attempts, lead.contact_attempt_at,
               lead.last_reply_at)
     response_times.expect_auto(lead, text)
     ok, wa_id, secret, _used = messaging.send_text_any(number, lead.phone, text)
+    antiban.sent(db, number, antiban.REPLY, ok)
     if ok is False:
         db.add(Message(conversation_id=conversation.id, direction="note",
                        body=f"🌙 A mensagem fora do horário não saiu ({messaging.last_error()})."))
@@ -225,9 +232,13 @@ def run() -> int:
             ).limit(100).all()
             for lead in leads:
                 try:
+                    previous = lead.after_hours_at
                     lead.after_hours_at = now  # antes de mandar: nunca manda duas vezes
                     db.commit()
-                    if _send(db, tenant, lead, now):
+                    result = _send(db, tenant, lead, now)
+                    if result is None:
+                        lead.after_hours_at = previous  # 🛡️ anti-bloqueio: sai na próxima passada
+                    elif result:
                         sent += 1
                     db.commit()
                 except Exception:

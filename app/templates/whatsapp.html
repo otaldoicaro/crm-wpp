@@ -77,6 +77,9 @@
         {{ "Conectado" if n.connection_state == "open" else ("Leia o QR code" if n.migrating else "Desconectado") }}
       </span>
     </div>
+    {% if auto_paused(n) %}
+    <div class="muted" style="margin-top:6px">⏸️ Mensagens automáticas pausadas neste WhatsApp (proteção contra bloqueio). As do vendedor saem normais.</div>
+    {% endif %}
     {% if n.migrating %}
     <div class="muted" style="margin-top:6px">📱 Este WhatsApp está mudando de sistema (mais estável). Clique em <b>Conectar agora</b> e leia o QR code no celular. Até ler, as mensagens continuam chegando normalmente pelo sistema antigo.</div>
     {% endif %}
@@ -115,6 +118,15 @@
         {% endif %}
       {% endif %}
       {% if is_admin %}
+        {% if auto_paused(n) %}
+        <form method="post" action="/whatsapp/{{ n.id }}/automaticas">
+          <input type="hidden" name="acao" value="retomar"><button class="btn ghost small" type="submit" title="Automáticas paradas até {{ n.auto_paused_until|hora }}">▶️ Retomar automáticas</button>
+        </form>
+        {% else %}
+        <form method="post" action="/whatsapp/{{ n.id }}/automaticas" onsubmit="return confirm('Pausar por 24h as mensagens automáticas de {{ n.label|e }}?\n\n(1ª mensagem do formulário, follow-up e fora do horário). Use quando o WhatsApp der restrição ou aviso de bloqueio. As mensagens que o vendedor manda continuam normais.')">
+          <input type="hidden" name="acao" value="pausar"><button class="btn ghost small" type="submit">⏸️ Pausar automáticas 24h</button>
+        </form>
+        {% endif %}
         <form method="post" action="/whatsapp/{{ n.id }}/remover" onsubmit="return confirm('Remover {{ n.label|e }} do CRM?\n\nO número é desconectado e sai da lista e do rodízio. As conversas antigas continuam salvas no CRM.')">
           <button class="btn ghost small" type="submit">Remover número</button>
         </form>

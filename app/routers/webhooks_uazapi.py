@@ -164,6 +164,10 @@ def _older_than(item: dict, hours: float) -> bool:
 
 def _apply_connection(db: Session, number: WhatsAppNumber, payload: dict) -> None:
     inst = payload.get("instance") or {}
+    if str(payload.get("type") or "") == "TemporaryBan" or payload.get("temporaryBan"):
+        from app.services import antiban  # 🛡️ o WhatsApp bloqueou por um tempo: nada de automática por 48h
+
+        antiban.pause(db, number, antiban.BAN_PAUSE_HOURS, "o WhatsApp avisou bloqueio temporário deste número")
     state = STATE.get(str(inst.get("status") or "").lower())
     if not state or state == number.connection_state:
         return

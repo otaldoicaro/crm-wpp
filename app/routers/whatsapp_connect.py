@@ -271,6 +271,26 @@ def disconnect_number(
     return RedirectResponse(url="/whatsapp", status_code=302)
 
 
+@router.post("/whatsapp/{number_id}/automaticas")
+def pause_automatic(
+    number_id: str,
+    acao: str = Form(...),
+    db: Session = Depends(get_db),
+    tenant: Tenant = Depends(current_tenant),
+    user: User = Depends(current_user_required),
+):
+    """⏸️ Para (24h) ou retoma as mensagens automáticas deste WhatsApp (ex: tomou restrição do WhatsApp)."""
+    from app.services import antiban
+
+    _require_admin(user)
+    number = _get_number(db, tenant, user, number_id)
+    if acao == "retomar":
+        antiban.resume(db, number)
+    else:
+        antiban.pause(db, number, 24, f"{user.name.split(' ')[0]} pausou na tela WhatsApp", warn=False)
+    return RedirectResponse(url="/whatsapp", status_code=302)
+
+
 @router.post("/whatsapp/{number_id}/owner")
 def set_owner(
     number_id: str,

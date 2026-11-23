@@ -103,18 +103,24 @@ def _step_label(tenant: Tenant, step: int) -> str:
     return "de 24h" if features.has(tenant, ONLY_FIRST) else f"{step}/2"
 
 
-def _send(db, tenant: Tenant, lead: Lead, step: int) -> bool:
+def _send(db, tenant: Tenant, lead: Lead, step: int):
+    """True = saiu, False = não saiu (o fluxo para), None = agora não (anti-bloqueio): tenta na próxima passada."""
     from app.routers.dashboard import _record_outbound
     from app.services import handover, invalid_contact, messaging, response_times
+
+    from app.services import antiban
 
     conversation = handover.ensure_sendable(db, lead)
     if conversation is None:
         return False
     number = conversation.whatsapp_number
-    text = text_for(tenant, lead, step)
+    if not antiban.allow(number, antiban.COLD):
+        return None  # 🛡️ esse WhatsApp mandou automática há pouco (ou está pausado): fica pra próxima passada
+    text = antiban.vary(text_for(tenant, lead, step))
     sender = lead.assigned_user or SimpleNamespace(id=None)
     response_times.expect_auto(lead, text)
     ok, wa_id, secret, used = messaging.send_text_any(number, lead.phone, text)
+    antiban.sent(db, number, antiban.COLD, ok)
     if ok is False:
         _record_outbound(db, conversation, sender, "", f"⚠️ Não enviada ({messaging.last_error()}): {text}")
         db.add(Message(conversation_id=conversation.id, direction="note",
@@ -166,7 +172,11 @@ def run() -> int:
                     if step == 0 and now - lead.last_outbound_at >= FIRST_AFTER and hours_open:
                         if not only_first and not about_deal(" ".join(_last_outbound_texts(db, lead))):
                             continue
-                        if _send(db, tenant, lead, 1):
+                        result = _send(db, tenant, lead, 1)
+                        if result is None:
+                            db.commit()
+                            continue
+                        if result:
                             lead.autofu_step, lead.autofu_at = 1, datetime.datetime.utcnow()
                         else:
                             lead.autofu_step = -1
@@ -174,7 +184,11 @@ def run() -> int:
                     elif only_first:
                         continue  # só de 24h: depois da 1ª mensagem, para aqui
                     elif step == 1 and at and now - at >= SECOND_AFTER and hours_open:
-                        if _send(db, tenant, lead, 2):
+                        result = _send(db, tenant, lead, 2)
+                        if result is None:
+                            db.commit()
+                            continue
+                        if result:
                             lead.autofu_step, lead.autofu_at = 2, datetime.datetime.utcnow()
                         else:
                             lead.autofu_step = -1
