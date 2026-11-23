@@ -145,6 +145,30 @@ def origin(lead, cfg) -> str:
     return profile.get("origem") or (cfg or {}).get("origem_por_fonte", {}).get(lead.source or "", "")
 
 
+def sells_monthly(tenant) -> bool:
+    """💰 Ramo em que a venda é a mensalidade (agência): o valor da venda (Lead.deal_value, que o Dashboard
+    soma) é a mensalidade, e o valor total do contrato fica na ficha ("valor_contrato")."""
+    return bool((config(tenant) or {}).get("venda_pela_mensalidade"))
+
+
+def save_sale(lead, monthly=None, contract=None) -> None:
+    """Guarda a mensalidade e/ou o valor total do contrato na ficha (None = não mexe; 0 = apaga)."""
+    profile = load(lead)
+    for key, value in (("mensalidade", monthly), ("valor_contrato", contract)):
+        if value is None:
+            continue
+        if value > 0:
+            profile[key] = round(value, 2)
+        else:
+            profile.pop(key, None)
+    lead.profile = json.dumps(profile, ensure_ascii=False)
+
+
+def contract_value(profile: dict):
+    """Valor total do contrato: o que o vendedor escreveu, ou setup + mensalidade × prazo."""
+    return profile.get("valor_contrato") or contract_total(profile)
+
+
 def contract_total(profile: dict):
     """Setup + mensalidade × prazo (None se faltar a mensalidade ou o prazo)."""
     monthly, months = profile.get("mensalidade"), profile.get("prazo_meses")

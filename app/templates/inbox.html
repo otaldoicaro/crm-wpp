@@ -150,7 +150,7 @@
             </select>
           </label>
           {% if has_feature(tenant, "pagamento_parcelado") %}{% with lead=selected_lead, with_value=True %}{% include "_payment_fields.html" %}{% endwith %}{% else %}
-          <label class="stage-value">R$ <input name="deal_value" inputmode="decimal" autocomplete="off" placeholder="valor da venda" value="{{ ('%.2f'|format(selected_lead.deal_value or selected_lead.quoted_value)).replace('.', ',') if (selected_lead.deal_value or selected_lead.quoted_value) else '' }}"></label>
+          <label class="stage-value">R$ <input name="deal_value" inputmode="decimal" autocomplete="off" placeholder="{{ 'mensalidade' if (segment_for(tenant).get('lead_profile') or {}).get('venda_pela_mensalidade') else 'valor da venda' }}" value="{{ ('%.2f'|format(selected_lead.deal_value or selected_lead.quoted_value)).replace('.', ',') if (selected_lead.deal_value or selected_lead.quoted_value) else '' }}"></label>
           {% endif %}
           <div class="stage-loss" hidden>{% with reason=selected_lead.loss_reason, detail=selected_lead.loss_detail, required=False %}{% include "_loss_fields.html" %}{% endwith %}</div>
           <button class="btn small" type="submit" hidden>Salvar</button>

@@ -542,6 +542,9 @@ async def save_lead_profile(
         return RedirectResponse(url="/", status_code=302)
     form = await request.form()
     lead.profile = json.dumps(lead_profile.from_form(form, cfg), ensure_ascii=False)
+    monthly = lead_profile.load(lead).get("mensalidade")
+    if monthly and lead_profile.sells_monthly(tenant) and lead.stage and lead.stage.is_won:
+        lead.deal_value = monthly  # 💰 mudou a mensalidade na ficha de uma venda: o Dashboard acompanha
     db.add(lead)
     db.commit()
     return RedirectResponse(url=f"/leads/{lead_id}?salvo=1#ficha", status_code=302)
@@ -617,6 +620,7 @@ def update_lead(
     email: str = Form(""),
     stage_id: str = Form(...),
     deal_value: str = Form(""),
+    valor_contrato: Optional[str] = Form(None),  # 💰 ramo que vende por mensalidade: total do contrato
     loss_reason: str = Form(""),
     loss_detail: str = Form(""),
     pay_mode: Optional[str] = Form(None),  # venda parcelada (features "pagamento_parcelado")
@@ -648,6 +652,13 @@ def update_lead(
         lead.deal_value = _parse_brl(deal_value) or None  # aceita 850,00 / 1.250,50 / 850.0
     except ValueError:
         pass  # valor ilegível: mantém o que estava (antes apagava)
+    if lead_profile.sells_monthly(tenant):  # 💰 valor da venda = mensalidade; o total do contrato vai pra ficha
+        try:
+            contract = _parse_brl(valor_contrato) if valor_contrato is not None else None
+        except ValueError:
+            contract = None
+        if lead.deal_value or contract is not None:
+            lead_profile.save_sale(lead, lead.deal_value, contract)
     if stage:
         funnel.set_stage(lead, stage)
     if pay_mode is not None and features.has(tenant, "pagamento_parcelado"):
@@ -1824,7 +1835,7 @@ def set_lead_stage(
     except ValueError:
         return JSONResponse({"ok": False, "error": "valor inválido (use só números, ex: 1250,90)"}, status_code=400)
     if stage.is_won and value <= 0:
-        return JSONResponse({"ok": False, "error": f"pra marcar como {stage.name}, preencha o valor da venda"}, status_code=400)
+        return JSONResponse({"ok": False, "error": f"pra marcar como {stage.name}, preencha " + ("a mensalidade" if lead_profile.sells_monthly(tenant) else "o valor da venda")}, status_code=400)
     changed = lead.stage_id != stage.id
     if changed and funnel.is_automatic(stage):
         return JSONResponse({"ok": False, "error": funnel.AUTOMATIC_MSG}, status_code=400)
@@ -1834,6 +1845,8 @@ def set_lead_stage(
     funnel.set_stage(lead, stage)
     if value > 0:
         lead.deal_value = value
+        if lead_profile.sells_monthly(tenant):
+            lead_profile.save_sale(lead, value)  # 💰 valor da venda = mensalidade (fica igual na ficha)
     if pay_mode is not None and features.has(tenant, "pagamento_parcelado"):
         car_deal.save_form(lead, pay_mode, down_payment, installments, installment_value, _parse_brl)
     if stage.is_lost:

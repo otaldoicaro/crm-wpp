@@ -43,7 +43,14 @@
           {% endfor %}
         </select>
       </label></p>
+      {% if (segment_for(tenant).get("lead_profile") or {}).get("venda_pela_mensalidade") %}
+      {# 💰 ramo que vende por mensalidade: a venda (Dashboard) é a mensalidade; o total do contrato fica junto #}
+      {% set contrato = (profile or {}).get("valor_contrato") or contract_total %}
+      <p><label>Valor total do contrato (R$)<br><input type="number" step="0.01" name="valor_contrato" value="{{ contrato or '' }}" placeholder="preencher quando ganhar"></label></p>
+      <p><label>Valor da mensalidade (R$) <span class="muted">· é o que conta como venda no Dashboard</span><br><input type="number" step="0.01" name="deal_value" id="dealValue" value="{{ lead.deal_value or (profile or {}).get('mensalidade') or '' }}" placeholder="preencher quando ganhar"></label></p>
+      {% else %}
       <p><label>Valor fechado (R$)<br><input type="number" step="0.01" name="deal_value" id="dealValue" value="{{ lead.deal_value or '' }}" placeholder="preencher quando ganhar"></label></p>
+      {% endif %}
       {% if has_feature(tenant, "pagamento_parcelado") %}<p class="pay-detail">{% include "_payment_fields.html" %}</p>{% endif %}
       <div class="stage-warning" id="stageWarning" hidden>
         <span>⚠️ Você colocou um <b>valor fechado</b>, mas a etapa ainda não está como <b>{{ won_stage_name }}</b>. Sem isso a venda não conta no Dashboard.</span>

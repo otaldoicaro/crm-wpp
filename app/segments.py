@@ -11,6 +11,8 @@ REFUND_REASON = "Devolução / reembolso"  # comprou e pediu o dinheiro de volta
 # diagnóstico da LP, os nichos e os serviços vendidos (tipo: "sim" = só marcar, "qtd" = quantidade,
 # "freq" = frequência)
 LEAD_PROFILE_AGENCIA = {
+    # 💰 venda = mensalidade: o Dashboard soma a mensalidade; o valor total do contrato fica ao lado (status do lead)
+    "venda_pela_mensalidade": True,
     "cargos": ["Sócio(a) / CEO", "Diretor(a)", "Head / Gerente de Marketing", "Analista de Marketing", "Outro"],
     "faturamento": ["Até R$ 50 mil", "R$ 50 mil a R$ 100 mil", "R$ 100 mil a R$ 250 mil", "R$ 250 mil a R$ 500 mil",
                     "Mais de R$ 500 mil"],
@@ -48,6 +50,7 @@ LEAD_PROFILE_AGENCIA = {
             ("setup", "Valor do setup (R$)", "dinheiro"),
             ("mensalidade", "Valor da mensalidade (R$)", "dinheiro"),
             ("prazo_meses", "Prazo do contrato (meses)", "inteiro"),
+            ("valor_contrato", "Valor total do contrato (R$)", "dinheiro"),
         ]},
         {"id": "origem", "titulo": "📍 Origem do lead", "campos": [
             ("origem", "Canal de origem", "opcao", ["Indicação de cliente", "Indicação interna", "Evento", "WhatsApp", "Instagram", "Site",

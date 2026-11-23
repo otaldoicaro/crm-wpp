@@ -152,7 +152,7 @@
           {{ m.campaign_badges(tenant, lead) }}
           {% if lead.tag == "cliente" %}<span class="tag-badge cliente">Cliente</span>{% endif %}
           {% if lead.form_details %}<span class="form-badge" title="Preencheu o formulário da LP">📝 Formulário</span>{% endif %}
-          {% if lead.deal_value %}<span class="value-badge">R$ {{ "%.0f"|format(lead.deal_value) }}</span>{% endif %}
+          {% if lead.deal_value %}<span class="value-badge">R$ {{ "%.0f"|format(lead.deal_value) }}{{ "/mês" if (segment_for(tenant).get("lead_profile") or {}).get("venda_pela_mensalidade") }}</span>{% endif %}
           {{ m.calls_badge(lead) }}
         </div>
         {% if attempts_on and stage.order < attempt_until and not stage.is_won and not stage.is_lost %}{{ m.attempt_chip(lead) }}{% endif %}
