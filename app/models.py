@@ -190,6 +190,9 @@ class WhatsAppNumber(Base):
     reset_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     last_routed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 📱 passando pra UAZapi: a instância nova já existe, mas o vendedor ainda não leu o QR. Até ler, o
+    # Evolution continua recebendo e enviando por este número (nada fica sem atendimento no meio)
+    migrating: Mapped[bool] = mapped_column(Boolean, default=False)
     # 📤 número de disparo: só manda a 1ª mensagem pros leads do formulário (rodízio entre eles); fica fora
     # do link /go e do rodízio de vendedor. Com algum marcado, o WhatsApp do vendedor/loja nunca faz 1º contato
     dispatch: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -450,6 +453,7 @@ class Conversation(Base):
     last_message_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now, index=True)
     # texto da última mensagem, pra lista do Inbox não precisar abrir todas as mensagens
     last_preview: Mapped[str] = mapped_column(String(200), default="")
+    wa_labels: Mapped[str] = mapped_column(Text, default="")  # 🏷️ etiquetas do WhatsApp (UAZapi): ids separados por vírgula
 
     lead: Mapped["Lead"] = relationship(back_populates="conversations")
     whatsapp_number: Mapped["WhatsAppNumber"] = relationship()

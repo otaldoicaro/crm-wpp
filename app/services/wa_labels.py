@@ -52,16 +52,16 @@ def remember(instance: str, label: dict) -> None:
             names[label_id] = str(label["name"])
 
 
-def labels_of(instance: str, refresh: bool = False) -> dict:
-    """{id: nome} das etiquetas do número (busca no Evolution no máximo a cada 10 min)."""
-    from app.services import evolution_client
+def labels_of(instance: str, refresh: bool = False, token: str = "") -> dict:
+    """{id: nome} das etiquetas do número (busca no Evolution ou na UAZapi — token — no máximo a cada 10 min)."""
+    from app.services import evolution_client, uazapi_client
 
     with _lock:
         fresh = time.time() - _fetched.get(instance, 0) < REFETCH_SECONDS
     if refresh or not fresh:
         try:
-            rows = evolution_client.find_labels(instance)
-        except evolution_client.EvolutionError as exc:
+            rows = uazapi_client.labels(token) if token else evolution_client.find_labels(instance)
+        except (evolution_client.EvolutionError, uazapi_client.UazapiError) as exc:
             logger.warning("wa_labels: não leu as etiquetas de %s: %s", instance, exc)
             rows = None
         with _lock:
@@ -72,12 +72,23 @@ def labels_of(instance: str, refresh: bool = False) -> dict:
         return dict(_names.get(instance, {}))
 
 
+def _token(number: WhatsAppNumber) -> str:
+    return number.access_token if number.provider == "uazapi" and not number.migrating else ""
+
+
+def label_name(number: WhatsAppNumber, label_id: str) -> str:
+    names = labels_of(number.evolution_instance, token=_token(number))
+    return (names.get(label_id) or labels_of(number.evolution_instance, refresh=True, token=_token(number)).get(label_id)
+            or f"#{label_id}")
+
+
 def tenant_label_names(db, tenant_id: str) -> list:
     """Nomes das etiquetas dos WhatsApps do cliente (pra tela de configuração escolher as de venda)."""
     seen = {}
-    for number in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant_id, WhatsAppNumber.provider == "evolution",
+    for number in db.query(WhatsAppNumber).filter(WhatsAppNumber.tenant_id == tenant_id,
+                                                  WhatsAppNumber.provider.in_(("evolution", "uazapi")),
                                                   WhatsAppNumber.is_active.is_(True), WhatsAppNumber.connection_state == "open"):
-        for name in labels_of(number.evolution_instance).values():
+        for name in labels_of(number.evolution_instance, token=_token(number)).values():
             seen.setdefault(plain(name), name)
     return sorted(seen.values(), key=plain)
 
@@ -115,9 +126,7 @@ def on_association(db, number: WhatsAppNumber, data) -> None:
         lead = find_lead_by_phone(db, number.tenant_id, phone) if phone else None
         if lead is None or lead.is_group or lead.deleted_at or not inbox_state.mirrored(lead):
             continue
-        names = labels_of(number.evolution_instance)
-        name = names.get(label_id) or labels_of(number.evolution_instance, refresh=True).get(label_id) or f"#{label_id}"
-        apply(db, lead, number, name, added)
+        apply(db, lead, number, label_name(number, label_id), added)
 
 
 def _conversation(db, lead: Lead, number: WhatsAppNumber):

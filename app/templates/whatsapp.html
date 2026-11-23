@@ -74,9 +74,12 @@
         {% endif %}
       </div>
       <span class="wa-status {{ 'on' if n.connection_state == 'open' else 'off' }}">
-        {{ "Conectado" if n.connection_state == "open" else "Desconectado" }}
+        {{ "Conectado" if n.connection_state == "open" else ("Leia o QR code" if n.migrating else "Desconectado") }}
       </span>
     </div>
+    {% if n.migrating %}
+    <div class="muted" style="margin-top:6px">📱 Este WhatsApp está mudando de sistema (mais estável). Clique em <b>Conectar agora</b> e leia o QR code no celular. Até ler, as mensagens continuam chegando normalmente pelo sistema antigo.</div>
+    {% endif %}
 
     <div class="wa-connect" hidden>
       <div class="error-box" style="margin-bottom:10px">⏳ <b>Acabou de desconectar? Espere 5 minutos</b> antes de ler o QR code. Antes disso o WhatsApp recusa e o número pode ficar travado.</div>

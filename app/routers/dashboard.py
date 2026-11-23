@@ -2630,6 +2630,7 @@ def lead_avatar(
     if not lead or not number or not number.qr_based:
         return _blank_avatar(86400)
     instance, phone, provider, token = number.evolution_instance, lead.phone, number.provider, number.access_token
+    migrating = number.migrating
     db.close()  # devolve a conexão do banco antes de ir no WhatsApp
 
     if not _AVATAR_SLOTS.acquire(blocking=False):
@@ -2637,7 +2638,7 @@ def lead_avatar(
     try:
         content = b""
         try:
-            url = (uazapi_client.profile_picture_url(token, phone) if provider == uazapi_client.PROVIDER
+            url = (uazapi_client.profile_picture_url(token, phone) if provider == uazapi_client.PROVIDER and not migrating
                    else evolution_client.profile_picture_url(instance, phone))
             if url:
                 resp = requests.get(url, timeout=6)
@@ -3118,7 +3119,7 @@ def edit_message(
     if number is None or not number.qr_based:
         return JSONResponse({"ok": False, "error": "Este número não permite editar"}, status_code=400)
     try:
-        if number.provider == uazapi_client.PROVIDER:
+        if number.provider == uazapi_client.PROVIDER and not number.migrating:
             uazapi_client.edit_text(number.access_token, message.wa_message_id, text)
         else:
             evolution_client.edit_text(number.evolution_instance, message.wa_message_id, text)
@@ -3210,7 +3211,7 @@ def delete_message(
     if number is None or not number.qr_based:
         return JSONResponse({"ok": False, "error": "Este número não permite apagar"}, status_code=400)
     try:
-        if number.provider == uazapi_client.PROVIDER:
+        if number.provider == uazapi_client.PROVIDER and not number.migrating:
             uazapi_client.delete_for_everyone(number.access_token, message.wa_message_id)
         else:
             evolution_client.delete_for_everyone(number.evolution_instance, message.wa_message_id)

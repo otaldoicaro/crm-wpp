@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 📱 Liga a conta da UAZAPI no CRM (o WhatsApp que substitui o Evolution, número por número).
-# No fim pergunta se liga em todos os clientes (ou, em cada um: ⚙ Configurações → Recursos → "📱 WhatsApp pela UAZAPI"),
+# No fim mostra os WhatsApps de todos os clientes e pergunta se passa todos pra UAZAPI (scripts/migrar_uazapi.py),
 # e na tela WhatsApp: 🔁 Passar pro UAZapi em cada número (o vendedor lê o QR code de novo).
 #
 # Rodar no terminal do VPS (como root):
@@ -69,12 +69,15 @@ if r.status_code != 200:
 print('Webhook OK:', url.split('/webhooks')[0] + '/webhooks/uazapi/…')
 " || fail "a UAZAPI não vai conseguir entregar as mensagens (fale com o Claude)"
 
-read -r -p "Ligar a UAZAPI em TODOS os clientes agora? (s/n): " ALL </dev/tty
+docker exec -i crm-app python -m scripts.migrar_uazapi todos
+read -r -p "Passar TODOS esses WhatsApps pra UAZAPI agora? (s/n): " ALL </dev/tty
 if [ "$ALL" = "s" ] || [ "$ALL" = "S" ]; then
   docker exec -i crm-app python -m scripts.recurso uazapi todos ligar
-  say "Pronto! A UAZAPI está liberada em todos os clientes."
+  docker exec -i crm-app python -m scripts.migrar_uazapi todos --aplicar
+  say "Pronto! Cada vendedor recebeu o aviso no CRM: Meu WhatsApp → Conectar agora → ler o QR code."
+  echo "Até ler, o número continua funcionando pelo Evolution. Quando lê, o CRM puxa as últimas 24h e desliga o Evolution sozinho."
+  echo "Pra desfazer (só quem ainda não leu o QR): docker exec -i crm-app python -m scripts.migrar_uazapi todos --voltar"
 else
-  say "Pronto! Pra liberar num cliente: ⚙ Configurações → Recursos → 📱 WhatsApp pela UAZAPI → Salvar."
+  say "Pronto! A conta está ligada, mas nenhum número mudou."
+  echo "Pra passar depois: docker exec -i crm-app python -m scripts.migrar_uazapi todos --aplicar"
 fi
-echo "Agora, na tela WhatsApp de cada cliente, em cada número: 🔁 Passar pro UAZapi (com o celular do vendedor na mão pro QR code)."
-echo "Assim que o QR é lido, o CRM puxa sozinho as conversas das últimas 24h (leva uns 10 minutos)."

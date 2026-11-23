@@ -30,7 +30,10 @@ logger = logging.getLogger("uazapi_client")
 PROVIDER = "uazapi"
 # o que o CRM precisa: mensagens (as do celular também), entregue/lida, conexão, ligações e o histórico
 # que o WhatsApp manda quando o número é conectado
-WEBHOOK_EVENTS = ["messages", "messages_update", "connection", "call", "history"]
+WEBHOOK_EVENTS = ["messages", "messages_update", "connection", "call", "history", "contacts", "labels", "chat_labels"]
+# histórico que o celular manda pro aparelho novo ao ler o QR: só os últimos dias (o CRM já tem o resto;
+# sem isso o WhatsApp manda 90 dias, que só atrasaria a chegada das mensagens recentes)
+HISTORY_DAYS = 2
 
 
 class UazapiError(Exception):
@@ -89,6 +92,13 @@ def set_webhook(token: str) -> None:
     })
 
 
+def webhook_ok(token: str) -> bool:
+    """O webhook da instância aponta pro CRM e está ligado? (a UAZapi desliga sozinha depois de 24h falhando)"""
+    body = _request("GET", "/webhook", token=token)
+    rows = body.get("items") if "items" in body else [body]
+    return any(isinstance(r, dict) and r.get("enabled") and r.get("url") == webhook_url() for r in rows)
+
+
 # ---------- instância / conexão ----------
 
 def create_instance(name: str) -> str:
@@ -104,6 +114,7 @@ def connect(token: str, phone_digits: str = "") -> dict:
     """Começa a conexão: sem número devolve o QR code; com número, o código de pareamento.
     {"qrcode": "data:image/png;base64,...", "paircode": "ABCD-EFGH", "status": "..."}."""
     payload = {"phone": phone_digits} if phone_digits else {}
+    payload["history_days"] = HISTORY_DAYS
     try:
         body = _request("POST", "/instance/connect", token=token, json=payload, timeout=40)
     except UazapiError as exc:
@@ -186,6 +197,24 @@ def delete_for_everyone(token: str, message_id: str) -> None:
 
 def mark_read(token: str, message_ids: list) -> None:
     _request("POST", "/message/markread", token=token, json={"id": list(message_ids)})
+
+
+def reload_message(token: str, message_id: str) -> None:
+    """Mensagem que chegou sem abrir (messageType "error" — o "Bad MAC" do Evolution): pede ao celular
+    uma cópia nova. Se vier, chega depois como mensagem normal pelo webhook, com o mesmo id."""
+    _request("POST", "/message/reload", token=token, json={"id": message_id})
+
+
+def labels(token: str) -> list:
+    """Etiquetas do WhatsApp Business do número: [{"id", "name"}] (id = o do WhatsApp quando houver)."""
+    body = _request("GET", "/labels", token=token)
+    rows = body.get("items") if "items" in body else body.get("labels") or []
+    out = []
+    for r in rows:
+        if isinstance(r, dict) and r.get("name"):
+            for key in {str(r.get("labelid") or ""), str(r.get("id") or "")} - {""}:
+                out.append({"id": key, "name": str(r["name"])})
+    return out
 
 
 # ---------- leitura ----------

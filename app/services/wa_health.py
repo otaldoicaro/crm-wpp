@@ -502,6 +502,8 @@ def _check_silent(db, number: WhatsAppNumber, now: datetime.datetime, pull) -> s
 
 
 _probed: dict = {}  # número -> quando fez a consulta de teste na UAZapi
+_hooked: dict = {}  # número -> quando conferiu o webhook na UAZapi
+HOOK_EVERY = 10 * 60
 PROBE_EVERY = 5 * 60  # a consulta de teste vai pro WhatsApp: 1 vez a cada 5 min por número basta
 
 
@@ -514,8 +516,8 @@ def check_uazapi(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
     from app.routers import webhooks_uazapi
     from app.services import uazapi_client
 
-    if not number.access_token:
-        return ""
+    if not number.access_token or number.migrating:
+        return ""  # passando pra UAZapi: até ler o QR quem atende é o Evolution
     try:
         state = uazapi_client.connection_state(number.access_token)
     except uazapi_client.UazapiError:
@@ -547,6 +549,16 @@ def check_uazapi(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
                       "Diz conectado, mas não envia nem recebe. " + RECONNECT_TEXT)
             return "zumbi"
     _warned.pop(number.evolution_instance, None)
+    if time.monotonic() - _hooked.get(number.id, -HOOK_EVERY) >= HOOK_EVERY:
+        _hooked[number.id] = time.monotonic()
+        try:  # a UAZapi desliga sozinha o webhook que passou 24h falhando (ex: CRM fora do ar): liga de novo
+            if not uazapi_client.webhook_ok(number.access_token):
+                uazapi_client.set_webhook(number.access_token)
+                logger.warning("wa_health: webhook da UAZapi de %s estava desligado/errado: ligado de novo", number.label)
+                webhooks_uazapi.catch_up(hours=24, number_id=number.id, max_pages=60)
+                return "webhook religado"
+        except uazapi_client.UazapiError as exc:
+            logger.warning("wa_health: não conferiu o webhook da UAZapi de %s: %s", number.label, exc)
     return _check_silent(db, number, now, lambda: webhooks_uazapi.catch_up(hours=2, number_id=number.id))
 
 

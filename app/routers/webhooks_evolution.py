@@ -522,6 +522,11 @@ def _process_event_db(db: Session, payload: dict) -> list:
         .first()
     )
     data = payload.get("data") or {}
+    if number is None and event != "connection.update":
+        # 📱 passando pra UAZapi e o vendedor ainda não leu o QR: o Evolution continua entregando as mensagens
+        number = (db.query(WhatsAppNumber)
+                  .filter(WhatsAppNumber.provider == "uazapi", WhatsAppNumber.migrating.is_(True),
+                          WhatsAppNumber.evolution_instance == instance).first())
     if not number:
         from app.services import wa_health
 

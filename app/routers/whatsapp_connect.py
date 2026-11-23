@@ -362,11 +362,10 @@ def switch_provider(
             uazapi_client.set_webhook(token)
         except uazapi_client.UazapiError as exc:
             return RedirectResponse(url="/whatsapp?error=" + quote(f"Não foi possível criar no UAZapi: {exc}"), status_code=302)
-        try:  # o aparelho antigo (Evolution) sai do celular, pra não ficar dois conectados
-            evolution_client.logout(number.evolution_instance)
-        except evolution_client.EvolutionError:
-            pass
+        # o Evolution continua recebendo até o vendedor ler o QR da UAZapi; aí ele sai sozinho
+        # (webhooks_uazapi.finish_migration) — nada fica sem atendimento no meio
         number.provider, number.access_token, number.connection_state = uazapi_client.PROVIDER, token, "close"
+        number.migrating = True
     elif para == "evolution" and number.provider == uazapi_client.PROVIDER:
         for action in (uazapi_client.disconnect, uazapi_client.delete_instance):
             try:
@@ -374,6 +373,7 @@ def switch_provider(
             except uazapi_client.UazapiError:
                 pass
         number.provider, number.access_token, number.connection_state = "evolution", "", "close"
+        number.migrating = False
     else:
         return RedirectResponse(url="/whatsapp", status_code=302)
     db.add(number)

@@ -47,6 +47,16 @@ def _healing(number: WhatsAppNumber, send):
     return send()
 
 
+def _uazapi(number) -> bool:
+    """Envia pela UAZapi. Número passando pra UAZapi que ainda não leu o QR (migrating) usa o Evolution."""
+    return number is not None and number.provider == uazapi_client.PROVIDER and not getattr(number, "migrating", False)
+
+
+def _evolution(number) -> bool:
+    return number is not None and (number.provider == "evolution" or (
+        number.provider == uazapi_client.PROVIDER and getattr(number, "migrating", False)))
+
+
 def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dict] = None, human: bool = False) -> tuple:
     """Devolve (ok, id_da_mensagem_no_whatsapp, messageSecret). quote: ver evolution_client.send_text.
     human=True: foi uma pessoa do time que escreveu agora (Instagram: pode usar a marca de agente humano, até 7 dias).
@@ -60,7 +70,7 @@ def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dic
         ok, mid, error = instagram.send_text(number, phone, body, human=human)
         _last.error = error
         return ok, mid, ""
-    if number.provider == uazapi_client.PROVIDER:
+    if _uazapi(number):
         try:
             return True, uazapi_client.send_text(number.access_token, phone, body, (quote or {}).get("id", "")), ""
         except uazapi_client.UazapiTimeout:
@@ -68,7 +78,7 @@ def send_text(number: WhatsAppNumber, phone: str, body: str, quote: Optional[dic
         except uazapi_client.UazapiError as exc:
             _last.error = friendly_error(exc)
             return False, "", ""
-    if number.provider == "evolution":
+    if _evolution(number):
         try:
             wa_id, secret = _healing(number, lambda: evolution_client.send_text(number.evolution_instance, phone, body, quote))
             return True, wa_id, secret
@@ -110,7 +120,7 @@ def send_media(
     """Devolve (ok, id_da_mensagem, media_id_pra_guardar, erro, messageSecret)."""
     if number.provider == instagram.PROVIDER or instagram.is_ig_contact(phone):
         return False, "", "", "arquivo ainda não sai pelo CRM no Instagram. Mande pelo app do Instagram", ""
-    if number.provider == uazapi_client.PROVIDER:
+    if _uazapi(number):
         try:
             if media_kind == "audio":  # mensagem de voz (a bolinha verde)
                 wa_id = uazapi_client.send_audio(number.access_token, phone, content)
@@ -121,7 +131,7 @@ def send_media(
         except uazapi_client.UazapiError as exc:
             return False, "", "", friendly_error(exc), ""
         return True, wa_id, wa_id, "", ""  # a mídia é buscada depois pelo id da própria mensagem
-    if number.provider == "evolution":
+    if _evolution(number):
         try:
             if media_kind == "audio":  # vai como mensagem de voz (legenda não existe em áudio)
                 wa_id, secret = _healing(number, lambda: evolution_client.send_audio(number.evolution_instance, phone, content))
@@ -148,7 +158,8 @@ def friendly_error(exc: Exception) -> str:
     """Erro do Evolution em linguagem de vendedor (o detalhe técnico vai pro log)."""
     text = str(exc).lower()
     logger.warning("falha no envio pelo WhatsApp: %s", exc)
-    if "'exists': false" in text or '"exists": false' in text:
+    if ("'exists': false" in text or '"exists": false' in text or "not on whatsapp" in text
+            or "not registered" in text or "isinwhatsapp': false" in text):
         _last.no_whatsapp = True
         return "esse número não tem WhatsApp. Confira o número com o cliente ou ligue"
     if "does not exist" in text or "connection closed" in text or "not connected" in text or "404" in text:
@@ -161,9 +172,9 @@ def friendly_error(exc: Exception) -> str:
 def fetch_media(number: WhatsAppNumber, media_id: str, url: str = "") -> tuple[Optional[bytes], Optional[str]]:
     if number is not None and number.provider == instagram.PROVIDER:
         return instagram.fetch_media(url)  # o Instagram manda o link do arquivo (guardado em media_url)
-    if number.provider == uazapi_client.PROVIDER:
+    if _uazapi(number):
         return uazapi_client.fetch_media(number.access_token, media_id)
-    if number.provider == "evolution":
+    if _evolution(number):
         return evolution_client.fetch_media(number.evolution_instance, media_id)
     return whatsapp_client.fetch_media(number, media_id)
 

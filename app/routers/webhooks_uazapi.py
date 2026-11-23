@@ -119,18 +119,36 @@ def process_event(db: Session, payload: dict) -> list:
         _apply_connection(db, number, payload)
         return []
     if kind == "messages_update":
-        _apply_acks(db, payload.get("event") or {})
+        event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+        _apply_self_reads(db, number, event)
+        _apply_acks(db, event)
         return []
+    if kind == "history" and str(payload.get("event") or "messages") != "messages":
+        return []  # lotes de conversas, etiquetas, "terminou": nada pra registrar
     if kind in ("messages", "history"):
         items = payload.get("messages") if isinstance(payload.get("messages"), list) else [payload.get("message") or {}]
         media_ids = []
         for item in items:
+            if not isinstance(item, dict):
+                continue
             if kind == "history" and _older_than(item, CONNECT_HOURS):
                 continue  # histórico antigo do celular: o CRM já tem (e não cria lead de conversa velha)
             message = handle_message(db, number, item, payload.get("chat") or {})
             if message is not None and message.media_id:
                 media_ids.append(message.id)
         return media_ids
+    if kind == "call":
+        _apply_call(db, number, payload)
+        return []
+    if kind == "contacts":
+        _apply_contact(db, number, payload.get("event") or {})
+        return []
+    if kind == "labels":
+        _apply_label_edit(number, payload.get("event") or {})
+        return []
+    if kind == "chat_labels":
+        _apply_chat_labels(db, number, payload.get("chat") or {})
+        return []
     _sample(kind or "desconhecido", payload)
     return []
 
@@ -176,6 +194,103 @@ def _apply_acks(db: Session, event: dict) -> None:
     db.commit()
 
 
+SELF_READ = {"read-self", "readself", "read_self"}
+
+
+def _apply_self_reads(db: Session, number: WhatsAppNumber, event: dict) -> None:
+    """📬 O vendedor leu no celular/WhatsApp Web a mensagem do cliente: a conversa sai das não lidas
+    (o mesmo do Evolution). No WhatsApp isso é um recibo "read-self" das mensagens que o cliente mandou."""
+    from app.routers.webhooks_evolution import _apply_self_reads as apply_evolution
+
+    kind = str(event.get("Type") or "").lower()
+    ids = [str(i) for i in event.get("MessageIDs") or [] if i]
+    if kind not in SELF_READ or not ids:
+        return
+    apply_evolution(db, number, [{"keyId": i, "status": "READ", "fromMe": False} for i in ids])
+
+
+CALL_TAGS = {"offer": "offer", "accept": "accept", "reject": "reject", "terminate": "terminate", "timeout": "timeout"}
+
+
+def _apply_call(db: Session, number: WhatsAppNumber, payload: dict) -> None:
+    """📞 Ligação do cliente pro WhatsApp do vendedor: mesmo registro do Evolution (tocando → atendida...)."""
+    from app.routers.webhooks_evolution import _apply_call as apply_evolution
+
+    if str(payload.get("type") or "") != "Call" or payload.get("fromMe"):
+        return  # CallLog (registro final) e ligação que o vendedor fez: ficam de fora por enquanto
+    event = payload.get("event") or {}
+    tag = str((event.get("Data") or {}).get("Tag") or payload.get("callState") or "").lower()
+    status = {"offered": "offer", "accepted": "accept", "rejected": "reject", "terminated": "terminate"}.get(tag, CALL_TAGS.get(tag, ""))
+    sender = str(payload.get("sender_pn") or event.get("CallCreator") or event.get("From") or "")
+    if event.get("GroupJID") or not event.get("CallID") or not sender:
+        return
+    apply_evolution(db, number, {"id": event["CallID"], "from": sender, "status": status,
+                                 "isVideo": bool(event.get("IsVideo") or (event.get("Data") or {}).get("IsVideo"))})
+    db.commit()
+
+
+def _apply_contact(db: Session, number: WhatsAppNumber, event: dict) -> None:
+    """📇 Nome salvo na agenda do celular do vendedor vira o nome do lead (o mesmo do Evolution)."""
+    from app.routers.webhooks_evolution import _apply_saved_names
+
+    action = event.get("Action") or {}
+    name = str(action.get("fullName") or action.get("firstName") or "")
+    jid = str(event.get("JID") or "")
+    if jid and name:
+        _apply_saved_names(db, number, [{"remoteJid": jid, "name": name}])
+
+
+def _apply_label_edit(number: WhatsAppNumber, event: dict) -> None:
+    from app.services import wa_labels
+
+    action = event.get("Action") or {}
+    wa_labels.remember(number.evolution_instance, {"id": event.get("LabelID"), "name": action.get("name"),
+                                                   "deleted": action.get("deleted")})
+
+
+def _label_ids(raw) -> set:
+    if isinstance(raw, str):
+        raw = raw.strip()
+        try:
+            import json
+
+            raw = json.loads(raw) if raw.startswith("[") else [x for x in raw.split(",")]
+        except ValueError:
+            raw = []
+    return {str(x).strip() for x in raw or [] if str(x).strip()}
+
+
+def _apply_chat_labels(db: Session, number: WhatsAppNumber, chat: dict) -> None:
+    """🏷️ Etiquetas de uma conversa mudaram: a UAZapi manda a lista completa; o CRM compara com a última
+    que guardou (Conversation.wa_labels) pra saber o que foi posto e o que foi tirado."""
+    from app.models import Conversation
+    from app.services import inbox_state, wa_labels
+    from app.services.lead_match import find_lead_by_phone
+
+    chat_id = str(chat.get("wa_chatid") or "")
+    if not chat_id or chat_id.endswith(("@g.us", "@broadcast", "@newsletter")) or "wa_label" not in chat:
+        return
+    phone = _digits(chat_id) if chat_id.endswith("@s.whatsapp.net") else _digits(str(chat.get("phone") or ""))
+    lead = find_lead_by_phone(db, number.tenant_id, phone) if phone else None
+    if lead is None or lead.is_group or lead.deleted_at or not inbox_state.mirrored(lead):
+        return
+    conversation = (db.query(Conversation).filter(Conversation.lead_id == lead.id,
+                                                  Conversation.whatsapp_number_id == number.id).first())
+    if conversation is None:
+        return
+    new = _label_ids(chat.get("wa_label"))
+    first = not conversation.wa_labels  # 1ª vez que o CRM vê as etiquetas desta conversa
+    old = _label_ids(conversation.wa_labels) - {"-"}
+    conversation.wa_labels = ",".join(sorted(new)) or "-"
+    db.add(conversation)
+    db.commit()
+    if first and len(new) > 1:
+        return  # já tinha etiquetas de antes: não dá pra saber qual foi posta agora (não fecha venda velha)
+    for label_id in sorted(new - old) + sorted(old - new):
+        name = wa_labels.label_name(number, label_id)
+        wa_labels.apply(db, lead, number, name, label_id in new)
+
+
 def _contact_phone(db: Session, item: dict, chat: dict) -> str:
     """Telefone (só dígitos) da pessoa da conversa. Conversa por LID: usa o telefone que o UAZapi resolveu
     (chat.phone / sender_pn) e guarda a ligação LID -> telefone pro resto do CRM."""
@@ -203,11 +318,17 @@ def parse(item: dict) -> tuple:
     content = item.get("content")
     if isinstance(content, dict) and any(k[:1].islower() and k.endswith("Message") or k == "conversation" for k in content):
         return _parse_content(content)  # veio o objeto do protocolo do WhatsApp: mesmo leitor do Evolution
+    raw_kind = str(item.get("messageType") or "")
+    field = raw_kind[:1].lower() + raw_kind[1:]
+    if isinstance(content, dict) and content and field.endswith("Message") and field != "extendedTextMessage":
+        body, media_type, context = _parse_content({field: content})  # localização, contato, mídia...: igual ao Evolution
+        if body or media_type:
+            return body, media_type, context or content.get("contextInfo") or {}
     text = str(item.get("text") or "")
     if isinstance(content, str) and not text:
         text = content
     context = (content.get("contextInfo") if isinstance(content, dict) else None) or {}
-    kind = str(item.get("messageType") or "").lower()
+    kind = raw_kind.lower()
     if kind in TEXT_TYPES:
         return text, "", context
     field = TYPE_FIELDS.get(kind)
@@ -231,7 +352,60 @@ def handle_message(db: Session, number: WhatsAppNumber, item: dict, chat: dict):
         return _handle_locked(db, number, item, chat, chat_id, wa_id)
 
 
+_reloaded: dict = {}  # id da mensagem que não abriu -> quando pediu a cópia ao celular
+RELOAD_EVERY = 30 * 60
+
+
+def _ask_copy(number: WhatsAppNumber, wa_id: str) -> None:
+    """🔐 Mensagem que chegou sem abrir (o "Bad MAC" que deixava o Evolution surdo): a UAZapi já pede uma
+    cópia ao celular sozinha; se não veio, o CRM pede de novo (no máximo a cada 30 min por mensagem).
+    Quando a cópia chega, entra como mensagem normal pelo webhook, com o mesmo id."""
+    now = time.time()
+    if now - _reloaded.get(wa_id, 0) < RELOAD_EVERY:
+        return
+    _reloaded[wa_id] = now
+    if len(_reloaded) > 5000:
+        for key in [k for k, v in _reloaded.items() if now - v > RELOAD_EVERY]:
+            _reloaded.pop(key, None)
+    try:
+        uazapi_client.reload_message(number.access_token, wa_id)
+        logger.warning("uazapi: %s recebeu uma mensagem que não abriu (%s): pedida uma cópia ao celular", number.label, wa_id)
+    except uazapi_client.UazapiError as exc:
+        logger.warning("uazapi: não deu pra pedir a cópia da mensagem %s: %s", wa_id, exc)
+
+
+def _evolution_item(item: dict, chat_id: str) -> dict:
+    """A mesma mensagem no formato do Evolution (pra reaproveitar edição, exclusão e reação de lá)."""
+    kind = str(item.get("messageType") or "")
+    field = kind[:1].lower() + kind[1:]
+    content = item.get("content") if isinstance(item.get("content"), dict) else {}
+    message = content if field in content else {field: content}
+    return {"key": {"id": str(item.get("messageid") or ""), "fromMe": bool(item.get("fromMe")), "remoteJid": chat_id},
+            "message": message}
+
+
+def _special(db: Session, number: WhatsAppNumber, item: dict, chat_id: str) -> bool:
+    """Tipos que não viram mensagem nova na conversa. Devolve True se tratou."""
+    from app.routers.webhooks_evolution import IGNORED_TYPES, _apply_edit_or_delete, _apply_reaction
+
+    kind = str(item.get("messageType") or "").lower()
+    if kind == "error":
+        _ask_copy(number, str(item.get("messageid") or item.get("id") or ""))
+        return True
+    if kind in ("reactionmessage", "reaction") or item.get("reaction"):
+        if item.get("fromMe") and item.get("reaction") and item.get("text"):  # vendedor reagiu no celular
+            _apply_reaction(db, number, {"key": {"fromMe": True},
+                                         "message": {"reactionMessage": {"text": item["text"], "key": {"id": item["reaction"]}}}})
+        return True
+    if kind in {t.lower() for t in IGNORED_TYPES}:
+        _apply_edit_or_delete(db, number, _evolution_item(item, chat_id))  # apagou/editou: atualiza a original
+        return True
+    return False
+
+
 def _handle_locked(db: Session, number: WhatsAppNumber, item: dict, chat: dict, chat_id: str, wa_id: str):
+    if _special(db, number, item, chat_id):
+        return None
     body, media_type, context = parse(item)
     if not body and not media_type:
         _sample("sem conteúdo " + str(item.get("messageType")), {"message": item})
@@ -250,16 +424,71 @@ def _handle_locked(db: Session, number: WhatsAppNumber, item: dict, chat: dict, 
             when = None
     media_id = wa_id if media_type else ""
     if item.get("fromMe"):
-        return record_outbound_from_phone(db, number, phone, wa_id, body, media_id, media_type, when=when)
-    return ingest_inbound(
-        db, number, from_phone=phone, wa_message_id=wa_id, body=body, media_id=media_id, media_type=media_type,
-        profile_name=str(item.get("senderName") or chat.get("wa_name") or ""),
-        referral=_referral_from_context(context or {}), when=when,
-    )
+        message = record_outbound_from_phone(db, number, phone, wa_id, body, media_id, media_type, when=when)
+    else:
+        message = ingest_inbound(
+            db, number, from_phone=phone, wa_message_id=wa_id, body=body, media_id=media_id, media_type=media_type,
+            profile_name=str(item.get("senderName") or chat.get("wa_name") or ""),
+            referral=_referral_from_context(context or {}), when=when,
+        )
+    return _extras(db, message, item, context or {}, media_type)
+
+
+def _extras(db: Session, message, item: dict, context: dict, media_type: str):
+    """Resposta a outra mensagem (o "responder" do WhatsApp) e duração do áudio, como no Evolution."""
+    from app.routers.webhooks_evolution import _set_seconds, _with_quote
+
+    if message is None:
+        return None
+    quoted = str(item.get("quoted") or context.get("stanzaId") or "")
+    if quoted:
+        message = _with_quote(db, message, {**context, "stanzaId": quoted})
+    content = item.get("content") if isinstance(item.get("content"), dict) else {}
+    if media_type == "audio":
+        try:
+            message = _set_seconds(db, message, int(content.get("seconds") or 0))
+        except (TypeError, ValueError):
+            pass
+    return message
+
+
+def finish_migration(number_id: str) -> bool:
+    """📱 O vendedor leu o QR da UAZapi: o Evolution sai (desconecta do celular e apaga a sessão, junto com
+    as sobras de "Desconectar 100%"), pra não ficar um aparelho a mais conectado. Devolve True se terminou."""
+    from app.services import evolution_client, wa_health
+
+    db = SessionLocal()
+    try:
+        number = db.get(WhatsAppNumber, number_id)
+        if number is None or not number.migrating:
+            return False
+        number.migrating = False
+        db.add(number)
+        db.commit()
+        root = wa_health.instance_root(number.evolution_instance)
+        used = {n for (n,) in db.query(WhatsAppNumber.evolution_instance).filter(WhatsAppNumber.id != number.id)}
+        names = [number.evolution_instance]
+        try:
+            names += [name for name, _state, _owner in evolution_client.list_instances()
+                      if name not in used and name != number.evolution_instance and wa_health.instance_root(name) == root]
+        except evolution_client.EvolutionError:
+            pass
+        for name in names:
+            for action in (evolution_client.logout, evolution_client.delete_instance):
+                try:
+                    action(name)
+                except evolution_client.EvolutionError:
+                    pass
+        logger.warning("uazapi: %s passou pra UAZapi; Evolution desligado (%s)", number.label, ", ".join(names))
+        return True
+    finally:
+        db.close()
 
 
 def on_connected(number_id: str) -> bool:
-    """Agenda a busca das últimas 24h do número que acabou de conectar (no máximo 1x a cada 30 min)."""
+    """Agenda a busca das últimas 24h do número que acabou de conectar (no máximo 1x a cada 30 min) e
+    tira o Evolution de quem estava passando pra UAZapi."""
+    threading.Thread(target=_finish_quietly, args=(number_id,), daemon=True).start()
     now = time.time()
     if now - _connected_at.get(number_id, 0) < 1800:
         return False
@@ -269,6 +498,13 @@ def on_connected(number_id: str) -> bool:
         timer.daemon = True
         timer.start()
     return True
+
+
+def _finish_quietly(number_id: str) -> None:
+    try:
+        finish_migration(number_id)
+    except Exception:
+        logger.exception("uazapi: falhou ao desligar o Evolution de %s", number_id)
 
 
 def _pull_recent(number_id: str) -> None:
@@ -285,6 +521,7 @@ def catch_up(hours: float = 1.0, max_pages: int = 20, number_id: str = "") -> di
     Sem filtro de data na API: vai paginando das mais novas pras mais velhas até passar do período.
     Devolve {nome do número: quantas entraram}."""
     cutoff_ms = (datetime.datetime.utcnow() - datetime.timedelta(hours=hours) - datetime.datetime(1970, 1, 1)).total_seconds() * 1000
+    fresh_ms = (time.time() - 120) * 1000
     db = SessionLocal()
     result = {}
     try:
@@ -305,6 +542,8 @@ def catch_up(hours: float = 1.0, max_pages: int = 20, number_id: str = "") -> di
                         if ts_ms and ts_ms < cutoff_ms:
                             old = True
                             continue
+                        if ts_ms > fresh_ms:
+                            continue  # chegou agora: o webhook ainda pode estar gravando (a próxima rodada pega)
                         wa_id = str(item.get("messageid") or item.get("id") or "")
                         if not wa_id or message_exists(db, wa_id):
                             continue
