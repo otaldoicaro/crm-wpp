@@ -488,6 +488,9 @@ def _check_silent(db, number: WhatsAppNumber, now: datetime.datetime, pull) -> s
             heal(number, "parou de receber mensagens")
             pull()
             return "silencioso"
+        if strikes == 1 and number.provider == "uazapi" and uazapi_reset(number, "parou de receber mensagens"):
+            pull()  # 🔁 1ª vez na UAZapi: retomada controlada (sem QR); continuou parado -> aí avisa
+            return "silencioso"
         pull()  # puxa do provedor o que tiver escapado
         if instance in _silent_warned:
             return ""  # já avisou: só avisa de novo depois de voltar a receber
@@ -502,9 +505,31 @@ def _check_silent(db, number: WhatsAppNumber, now: datetime.datetime, pull) -> s
 
 
 _probed: dict = {}  # número -> quando fez a consulta de teste na UAZapi
+_reset_at: dict = {}  # número -> quando pediu a retomada controlada da conexão na UAZapi
+RESET_COOLDOWN = 60 * 60
+_unreachable: dict = {}  # número -> rodadas seguidas sem conseguir falar com a UAZapi
+UNREACHABLE_WARN = 10  # ~10 min
 _hooked: dict = {}  # número -> quando conferiu o webhook na UAZapi
 HOOK_EVERY = 10 * 60
 PROBE_EVERY = 5 * 60  # a consulta de teste vai pro WhatsApp: 1 vez a cada 5 min por número basta
+
+
+def uazapi_reset(number: WhatsAppNumber, why: str) -> bool:
+    """🔁 Retomada controlada da conexão na UAZapi (não apaga o pareamento, não pede QR; a própria UAZapi
+    tem cooldown). No máximo 1 vez por hora por número. True = pediu."""
+    from app.services import uazapi_client
+
+    with _lock:
+        if time.monotonic() - _reset_at.get(number.id, -RESET_COOLDOWN) < RESET_COOLDOWN:
+            return False
+        _reset_at[number.id] = time.monotonic()
+    try:
+        ok = uazapi_client.reset(number.access_token)
+    except uazapi_client.UazapiError as exc:
+        logger.warning("wa_health: retomada da UAZapi de %s recusada (%s): %s", number.label, why, exc)
+        return False
+    logger.warning("wa_health: retomada da conexão na UAZapi de %s (%s): %s", number.label, why, ok)
+    return True
 
 
 def check_uazapi(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
@@ -520,8 +545,17 @@ def check_uazapi(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
         return ""  # passando pra UAZapi: até ler o QR quem atende é o Evolution
     try:
         state = uazapi_client.connection_state(number.access_token)
-    except uazapi_client.UazapiError:
-        return ""  # UAZapi fora do ar ou lenta: não dá pra concluir nada
+    except uazapi_client.UazapiError as exc:
+        misses = _unreachable[number.id] = _unreachable.get(number.id, 0) + 1
+        if misses == UNREACHABLE_WARN:  # ~10 min sem conseguir falar com a UAZapi: alguém precisa saber
+            logger.warning("wa_health: sem contato com a UAZapi pra %s há %s rodadas: %s", number.label, misses, exc)
+            _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label}: servidor do WhatsApp sem resposta",
+                  "Há uns 10 minutos o CRM não consegue falar com o servidor do WhatsApp (UAZAPI) deste número. "
+                  "Mensagens podem atrasar; quando voltar, o CRM puxa o que ficou pra trás. Se passar de 30 min, avise o suporte.")
+            return "sem contato"
+        return ""  # UAZapi fora do ar ou lenta: não dá pra concluir nada ainda
+    if _unreachable.pop(number.id, 0) >= UNREACHABLE_WARN:
+        webhooks_uazapi.catch_up(hours=3, number_id=number.id, max_pages=60)  # voltou: puxa o período sem contato
     if state != "open":
         if number.connection_state == "open" and state == "close":
             number.connection_state = "close"
@@ -540,9 +574,12 @@ def check_uazapi(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
         except uazapi_client.UazapiTimeout:
             pass  # lento não é travado
         except uazapi_client.UazapiError as exc:
+            if number.evolution_instance not in _warned and uazapi_reset(number, "conexão zumbi"):
+                _warned[number.evolution_instance] = 0  # 1ª vez: tenta retomar; se falhar de novo daqui a 5 min, avisa
+                return "retomando"
             with _lock:
-                warn = number.evolution_instance not in _warned
-                _warned.setdefault(number.evolution_instance, time.monotonic())
+                warn = not _warned.get(number.evolution_instance)
+                _warned[number.evolution_instance] = _warned.get(number.evolution_instance) or time.monotonic()
             if warn:
                 logger.warning("wa_health: %s (UAZapi) travado: %s", number.label, exc)
                 _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} travou",

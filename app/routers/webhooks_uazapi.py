@@ -295,7 +295,7 @@ def _apply_chat_labels(db: Session, number: WhatsAppNumber, chat: dict) -> None:
         wa_labels.apply(db, lead, number, name, label_id in new)
 
 
-def _contact_phone(db: Session, item: dict, chat: dict) -> str:
+def _contact_phone(db: Session, item: dict, chat: dict, number: Optional[WhatsAppNumber] = None) -> str:
     """Telefone (só dígitos) da pessoa da conversa. Conversa por LID: usa o telefone que o UAZapi resolveu
     (chat.phone / sender_pn) e guarda a ligação LID -> telefone pro resto do CRM."""
     chat_id = str(item.get("chatid") or chat.get("wa_chatid") or "")
@@ -309,11 +309,17 @@ def _contact_phone(db: Session, item: dict, chat: dict) -> str:
         lid = chat_id
     if phone and lid.endswith("@lid"):
         _remember_lid(db, lid, phone)
+    if not phone and str(item.get("chatlid") or "").endswith("@lid") and not lid:
+        lid = str(item["chatlid"])
     if not phone and chat_id.endswith("@lid"):
         from app.models import LidMap
 
         known = db.get(LidMap, _digits(chat_id))
         phone = known.phone if known else ""
+        if not phone and number is not None:  # 🔎 última tentativa: pergunta à UAZapi de quem é esse LID
+            phone = uazapi_client.chat_phone(number.access_token, chat_id)
+            if phone:
+                _remember_lid(db, chat_id, phone)
     return phone
 
 
@@ -360,6 +366,36 @@ _reloaded: dict = {}  # id da mensagem que não abriu -> quando pediu a cópia a
 RELOAD_EVERY = 30 * 60
 
 
+BROKEN_ALERT = 5  # mensagens que não abriram no mesmo WhatsApp em 1h: é o começo do "número surdo"
+_broken: dict = {}  # número -> horários das mensagens que não abriram
+_broken_warned: dict = {}
+
+
+def _count_broken(number: WhatsAppNumber) -> None:
+    """🔐 Muitas mensagens que não abrem no mesmo WhatsApp em pouco tempo: avisa (e tenta uma retomada
+    controlada da conexão), antes que vire "número surdo" sem ninguém perceber."""
+    now = time.time()
+    times = [t for t in _broken.get(number.id, []) if now - t < 3600] + [now]
+    _broken[number.id] = times
+    if len(times) < BROKEN_ALERT or now - _broken_warned.get(number.id, 0) < 6 * 3600:
+        return
+    _broken_warned[number.id] = now
+    from app.services import wa_health
+
+    logger.warning("uazapi: %s com %s mensagens que não abriram na última hora", number.label, len(times))
+    wa_health.uazapi_reset(number, "mensagens que não abrem")
+    db = SessionLocal()
+    try:
+        fresh = db.get(WhatsAppNumber, number.id)
+        if fresh is not None:
+            wa_health._warn(db, fresh, wa_health._admins_and_owner(db, fresh), f"🔐 {fresh.label} recebendo mensagens que não abrem",
+                            f"Na última hora {len(times)} mensagens chegaram sem abrir nesse WhatsApp (o CRM já pediu de novo ao "
+                            "celular). Deixe o WhatsApp aberto no celular, com internet. Se continuar: " + wa_health.RECONNECT_TEXT)
+            db.commit()
+    finally:
+        db.close()
+
+
 def _ask_copy(number: WhatsAppNumber, wa_id: str) -> None:
     """🔐 Mensagem que chegou sem abrir (o "Bad MAC" que deixava o Evolution surdo): a UAZapi já pede uma
     cópia ao celular sozinha; se não veio, o CRM pede de novo (no máximo a cada 30 min por mensagem).
@@ -371,6 +407,7 @@ def _ask_copy(number: WhatsAppNumber, wa_id: str) -> None:
     if len(_reloaded) > 5000:
         for key in [k for k, v in _reloaded.items() if now - v > RELOAD_EVERY]:
             _reloaded.pop(key, None)
+    _count_broken(number)
     try:
         uazapi_client.reload_message(number.access_token, wa_id)
         logger.warning("uazapi: %s recebeu uma mensagem que não abriu (%s): pedida uma cópia ao celular", number.label, wa_id)
@@ -414,7 +451,7 @@ def _handle_locked(db: Session, number: WhatsAppNumber, item: dict, chat: dict, 
     if not body and not media_type:
         _sample("sem conteúdo " + str(item.get("messageType")), {"message": item})
         return None
-    phone = _contact_phone(db, item, chat)
+    phone = _contact_phone(db, item, chat, number)
     if not phone:
         logger.warning("uazapi: conversa %s sem telefone conhecido; mensagem %s fica pra depois", chat_id, wa_id)
         return None

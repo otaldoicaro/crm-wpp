@@ -199,6 +199,27 @@ def mark_read(token: str, message_ids: list) -> None:
     _request("POST", "/message/markread", token=token, json={"id": list(message_ids)})
 
 
+def reset(token: str) -> bool:
+    """Retomada controlada da conexão (sem apagar o pareamento nem pedir QR). True = aceito/em andamento."""
+    body = _request("POST", "/instance/reset", token=token, timeout=30)
+    return bool(body.get("resetting")) or "started" in str(body.get("response") or "").lower()
+
+
+def chat_phone(token: str, chat_id: str) -> str:
+    """Telefone (só dígitos) de uma conversa por LID, pelo que a UAZapi sabe dela ("" se não souber)."""
+    try:
+        body = _request("POST", "/chat/details", token=token, json={"number": chat_id, "preview": True})
+    except UazapiError:
+        return ""
+    for key in ("phone", "wa_chatid", "jid"):
+        raw = str(body.get(key) or "")
+        if raw and not raw.endswith("@lid"):
+            digits = "".join(ch for ch in raw.split("@")[0].split(":")[0] if ch.isdigit())
+            if len(digits) >= 10:
+                return digits
+    return ""
+
+
 def reload_message(token: str, message_id: str) -> None:
     """Mensagem que chegou sem abrir (messageType "error" — o "Bad MAC" do Evolution): pede ao celular
     uma cópia nova. Se vier, chega depois como mensagem normal pelo webhook, com o mesmo id."""
