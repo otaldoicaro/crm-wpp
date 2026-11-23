@@ -128,16 +128,29 @@ def request_access_submit(
 # atual, então depois que a senha muda ele deixa de valer.
 RESET_MAX_AGE = 60 * 60
 _reset_serializer = URLSafeTimedSerializer(SECRET_KEY, salt="redefinir-senha")
+# 🔑 link que o admin gera na Equipe e manda pela pessoa (WhatsApp): vale 24 h, também uma vez só
+ADMIN_RESET_MAX_AGE = 24 * 60 * 60
+_admin_reset_serializer = URLSafeTimedSerializer(SECRET_KEY, salt="redefinir-senha-admin")
 
 
 def _reset_fingerprint(user: User) -> str:
     return user.password_hash[-16:]
 
 
+def admin_reset_link(base: str, user: User) -> str:
+    token = _admin_reset_serializer.dumps({"u": user.id, "h": _reset_fingerprint(user)})
+    return f"{base}/redefinir-senha/{token}"
+
+
 def _user_from_reset_token(db: Session, tenant: Tenant, token: str):
-    try:
-        data = _reset_serializer.loads(token, max_age=RESET_MAX_AGE)
-    except (BadSignature, SignatureExpired):
+    data = None
+    for serializer, max_age in ((_reset_serializer, RESET_MAX_AGE), (_admin_reset_serializer, ADMIN_RESET_MAX_AGE)):
+        try:
+            data = serializer.loads(token, max_age=max_age)
+            break
+        except (BadSignature, SignatureExpired):
+            continue
+    if not isinstance(data, dict):
         return None
     user = db.get(User, data.get("u"))
     if not user or user.tenant_id != tenant.id or not user.is_active or user.removed_at:

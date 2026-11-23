@@ -14,6 +14,14 @@
   </div>
 </div>
 
+{% if password_link %}
+<div class="card wa-link" style="border-left:4px solid var(--y)">
+  <b>🔑 Link pra {{ password_member.name }} criar uma senha nova</b>
+  <p class="muted" style="margin:4px 0 8px">Mande este link pra pessoa (WhatsApp, por exemplo). Ele vale por <b>24 horas</b> e funciona <b>uma vez só</b>. Você não fica sabendo a senha nova. Até ela usar o link, a senha antiga continua valendo.</p>
+  <div class="wa-link-row"><input type="text" readonly value="{{ password_link }}" id="pwLink" onclick="this.select()">
+    <button type="button" class="btn small" onclick="navigator.clipboard.writeText(document.getElementById('pwLink').value); this.textContent='Copiado ✓'">Copiar</button></div>
+</div>
+{% endif %}
 <details class="card viewer-card">
   <summary class="wa-label" style="cursor:pointer">👀 Criar acesso só de visualização (demonstração)</summary>
   <p class="muted" style="margin:8px 0 10px">Pra mostrar o CRM a alguém: a pessoa vê tudo como admin (Pipeline, Inbox, Dashboard), mas <b>não consegue alterar nem enviar nada</b>, não entra no rodízio e não vê Equipe nem WhatsApp. <b>Atenção:</b> ela vê as conversas e os contatos reais deste CRM. Pra mostrar a quem é de fora, use um CRM de demonstração.</p>
@@ -142,6 +150,9 @@
         <td>
           {% if u.id != user.id %}
           <div class="row-actions">
+            {% if u.is_active %}<form method="post" action="/equipe/{{ u.id }}/senha" onsubmit="return confirm('Gerar um link pra {{ u.name|e }} criar uma senha nova? A senha atual continua valendo até ele usar o link.')">
+              <button class="btn ghost small" type="submit" title="Gerar link pra {{ u.name }} criar uma senha nova">🔑 Senha</button>
+            </form>{% endif %}
             <form method="post" action="/equipe/{{ u.id }}/ativo" onsubmit="return confirm('{{ 'Desativar' if u.is_active else 'Reativar' }} {{ u.name|e }}?{{ ' Ele não consegue entrar até ser reativado.' if u.is_active else '' }}')">
               <button class="btn ghost small" type="submit">{{ "Desativar" if u.is_active else "Reativar" }}</button>
             </form>
