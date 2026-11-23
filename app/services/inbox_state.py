@@ -79,8 +79,8 @@ def mark_unread(db: Session, user_id: str, lead_id: str) -> None:
 def unread_map(db: Session, user: User, lead_ids: list) -> dict:
     """{lead_id: n} das conversas não lidas por esta pessoa (n=0 + manual = só a bolinha).
     Mensagem do cliente conta como não lida se veio depois de: quando a pessoa leu,
-    quando ela começou a usar a função, e da última resposta da equipe (se alguém já
-    respondeu, o que veio antes já foi visto). Uma consulta só pra lista inteira."""
+    quando ela começou a usar a função, da última resposta da equipe (se alguém já
+    respondeu, o que veio antes já foi visto) e de quando o vendedor do lead leu (celular ou CRM). Uma consulta só pra lista inteira."""
     if not lead_ids:
         return {}
     baseline = user.inbox_seen_from or datetime.datetime.utcnow()
@@ -97,6 +97,9 @@ def unread_map(db: Session, user: User, lead_ids: list) -> dict:
             or_(read.c.last_read_at.is_(None), Message.created_at > read.c.last_read_at),
             or_(Lead.last_reply_at.is_(None), Message.created_at > Lead.last_reply_at),  # automática não conta
             or_(Lead.settled_at.is_(None), Message.created_at > Lead.settled_at),
+            # o vendedor do lead já leu (no celular ou no CRM): o time usa o WhatsApp direto, e às vezes a
+            # resposta dele não chega ao CRM, mas a leitura chega
+            or_(Lead.seen_at.is_(None), Message.created_at > Lead.seen_at),
         )
         .group_by(Conversation.lead_id)
         .all()
@@ -161,6 +164,7 @@ def unread_filter(query, user: User):
                 or_(read.c.last_read_at.is_(None), Lead.last_inbound_at > read.c.last_read_at),
                 or_(Lead.last_reply_at.is_(None), Lead.last_inbound_at > Lead.last_reply_at),  # automática não conta
                 or_(Lead.settled_at.is_(None), Lead.last_inbound_at > Lead.settled_at),
+                or_(Lead.seen_at.is_(None), Lead.last_inbound_at > Lead.seen_at),  # vendedor já leu
             ),
         )
     )

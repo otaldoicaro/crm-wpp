@@ -230,9 +230,14 @@ def record_outbound_from_phone(
 
     conversation = _get_or_create_conversation(db, number, lead)
     pending = _unconfirmed_match(db, lead, body, media_type, when)
+    auto = response_times.is_auto_echo(lead, body)
     if when is None or lead.last_outbound_at is None or when > lead.last_outbound_at:
         # vendedor respondeu pelo celular (ou é o eco de uma automática do CRM: essa não conta como resposta)
-        response_times.mark_outbound(lead, when, auto=response_times.is_auto_echo(lead, body))
+        response_times.mark_outbound(lead, when, auto=auto)
+    elif not auto and (lead.last_reply_at is None or when > lead.last_reply_at):
+        # resposta do celular que chegou atrasada (recuperada depois de uma automática): também conta
+        # como resposta, senão a conversa ficava "não lida" mesmo respondida
+        lead.last_reply_at = when
     funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
     followup.on_outbound_text(db, lead, body)  # mandou preço pelo celular: vai pra "Negociando"
     suggestions.on_message(lead, body, outbound=True)  # 💡 "temos sim", "não temos", "pedido confirmado"...
