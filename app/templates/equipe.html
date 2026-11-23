@@ -114,10 +114,18 @@
             <button class="btn small {{ '' if u.accepting_leads else 'ghost' }}" type="submit" title="{{ 'Admin fica fora do rodízio por padrão' if u.role == 'admin' and not u.accepting_leads }}">{{ "No rodízio" if u.accepting_leads else ("Fora do rodízio (admin)" if u.role == "admin" else "Pausado") }}</button>
           </form>
           {% if u.accepting_leads %}
-          <form method="post" action="/equipe/{{ u.id }}/metade" style="margin:4px 0 0">
-            <button class="btn small {{ '' if u.rodizio_half else 'ghost' }}" type="submit"
-              title="{{ 'Recebe 1 lead a cada 2 vezes que seria a vez dele(a). Clique pra voltar ao rodízio inteiro' if u.rodizio_half else 'Clique pra ' ~ u.name ~ ' receber só metade: 1 lead a cada 2 vezes' }}">{{ "½ rodízio (50%)" if u.rodizio_half else "Rodízio 100%" }}</button>
+          <form method="post" action="/equipe/{{ u.id }}/peso" class="rodizio-pct" style="margin:4px 0 0"
+            title="Porcentagem dos leads do rodízio que vai pra {{ u.name }}. Vazio = parte igual. Quem está desconectado ou de folga não conta: a parte dele vai pros outros na mesma proporção.">
+            <input type="number" name="peso" min="0" max="100" step="1" inputmode="numeric" placeholder="igual"
+              value="{{ u.rodizio_peso if u.rodizio_peso else '' }}" onchange="try { sessionStorage.setItem('equipesScroll', String(window.scrollY)); } catch (x) {} this.form.submit()" aria-label="% do rodízio de {{ u.name }}">
+            <span>%</span>
+            {% if rodizio_share.get(u.id) is not none %}<span class="muted" title="Quanto recebe hoje, entre quem está no rodízio">≈ {{ rodizio_share[u.id] }}% hoje</span>{% endif %}
           </form>
+          {% if u.rodizio_half and not u.rodizio_peso %}
+          <form method="post" action="/equipe/{{ u.id }}/metade" style="margin:4px 0 0">
+            <button class="btn small" type="submit" title="Recebe 1 lead a cada 2 vezes que seria a vez dele(a). Clique pra voltar ao rodízio inteiro">½ rodízio (50%)</button>
+          </form>
+          {% endif %}
           {% endif %}
           {% endif %}
           {% endif %}
@@ -285,15 +293,15 @@
 
   // 👥 equipes: cada vendedor numa equipe só (marcar numa tira das outras, na hora), aviso de mudança
   // não salva e "Salvar equipes" sem recarregar a página (nada se perde, a tela não volta pro topo)
+  try {  // salvou algo na Equipe (grupo, % do rodízio): volta pro mesmo ponto da tela
+    var back = sessionStorage.getItem("equipesScroll");
+    if (back !== null) { sessionStorage.removeItem("equipesScroll"); window.scrollTo(0, parseInt(back, 10) || 0); }
+  } catch (x) {}
   var teamsForm = document.getElementById("teamsForm");
   if (teamsForm) {
     var status = document.getElementById("teamsStatus"), saveBox = document.getElementById("teamsSave");
     var saveBtn = document.getElementById("teamsSaveBtn"), dirty = false;
     var boxes = Array.prototype.slice.call(teamsForm.querySelectorAll('input[name="membro"]'));
-    try {
-      var back = sessionStorage.getItem("equipesScroll");
-      if (back !== null) { sessionStorage.removeItem("equipesScroll"); window.scrollTo(0, parseInt(back, 10) || 0); }
-    } catch (x) {}
     function teamName(teamId) {
       var input = teamsForm.querySelector('input[name="nome_' + teamId + '"]');
       return input ? input.value.trim() : "";

@@ -1342,3 +1342,7 @@ th.js-sortable.sorted-asc::after { content: " ▲"; font-size: .7em; }
 .cr-metrics div { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px dashed var(--line); padding: 2px 0; }
 .cr-metrics span { color: var(--muted); }
 .cr-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+/* Equipe: % do rodízio de cada vendedor */
+.rodizio-pct { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 12px; }
+.rodizio-pct input { width: 64px; padding: 3px 6px; font-size: 13px; }

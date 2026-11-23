@@ -84,6 +84,13 @@ def team_page(
     shared_numbers = [n for n in numbers if not n.owner_user_id]
     connected_total = sum(1 for n in numbers if not n.qr_based or n.connection_state == "open")
     seller_teams = teams.tenant_teams(db, tenant.id)
+    # % do rodízio: quanto cada um recebe de fato entre quem está no rodízio agora (trabalhando, ativo)
+    from app.services.distribution import weights
+
+    in_turn = [u for u in users if u.is_active and u.accepting_leads and not u.on_leave and not u.read_only]
+    turn_weights = weights(in_turn)
+    turn_total = sum(turn_weights.values()) or 1
+    rodizio_share = {uid: round(100 * w / turn_total) for uid, w in turn_weights.items()}
     return templates.TemplateResponse(
         request,
         "equipe.html",
@@ -96,6 +103,8 @@ def team_page(
             "removed": removed,
             "duplicates": duplicates,
             "open_leads": open_leads,
+            "rodizio_share": rodizio_share,
+            "rodizio_with_pct": any((u.rodizio_peso or 0) > 0 for u in in_turn),
             "numbers_by_owner": numbers_by_owner,
             "shared_numbers": shared_numbers,
             "numbers_total": len(numbers),
@@ -231,6 +240,7 @@ def team_action(
     repassar_leads: str = Form(""),
     remover_whatsapp: str = Form(""),
     confirmar: str = Form(""),
+    peso: str = Form(""),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(current_tenant),
     user: User = Depends(current_user_required),
@@ -257,6 +267,11 @@ def team_action(
         member.accepting_leads = not member.accepting_leads
     elif action == "metade" and not member.read_only:
         member.rodizio_half, member.rodizio_skip = not member.rodizio_half, False  # ½ rodízio: 1 lead a cada 2 vezes
+    elif action == "peso" and not member.read_only:
+        # % do rodízio: vazio ou 0 = parte igual; 1 a 100 = essa porcentagem (o ½ antigo deixa de valer)
+        digits = "".join(ch for ch in peso if ch.isdigit())
+        member.rodizio_peso = max(0, min(100, int(digits))) if digits else 0
+        member.rodizio_half, member.rodizio_skip = False, False
     elif action == "folga" and not member.read_only:
         member.on_leave = not member.on_leave  # 🏖 de folga: sai do rodízio e as mensagens do WhatsApp dele vão pra quem está trabalhando
     elif action == "passar" and member.role != "admin" and not member.read_only:

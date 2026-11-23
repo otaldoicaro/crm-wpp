@@ -137,20 +137,43 @@ def pick_number_for_click(db: Session, tenant_id: str) -> WhatsAppNumber | None:
     return chosen
 
 
+def weights(owners: list) -> dict:
+    """Peso de cada vendedor no rodízio {user_id: peso}. Com % (Equipe → % do rodízio) vale a %; sem %,
+    a parte igual (a média de quem tem %, ou 100 se ninguém tem). ½ rodízio (antigo) conta metade."""
+    set_ = [o.rodizio_peso for o in owners if (o.rodizio_peso or 0) > 0]
+    default = sum(set_) / len(set_) if set_ else 100
+    out = {}
+    for owner in owners:
+        weight = owner.rodizio_peso if (owner.rodizio_peso or 0) > 0 else default
+        out[owner.id] = weight * (0.5 if owner.rodizio_half and not (owner.rodizio_peso or 0) > 0 else 1)
+    return out
+
+
+CREDIT_LIMIT = 1_000_000  # a conta do revezamento nunca passa disso (troca de equipe, gente entrando e saindo)
+
+
 def take_turn(numbers: list) -> WhatsAppNumber:
-    """A vez no rodízio (números já em ordem: quem recebeu há mais tempo primeiro). Vendedor com
-    ½ rodízio pula uma vez sim, outra não: quando pula, vai pro fim da fila como se tivesse recebido.
-    Marca a hora no escolhido. Todos pulando (ex: só ele no rodízio): fica com o 1º mesmo."""
+    """A vez no rodízio (números já em ordem: quem recebeu há mais tempo primeiro). Revezamento por peso
+    (o mesmo do nginx, "smooth weighted round-robin"): a cada lead, cada vendedor disponível ganha o
+    próprio peso em crédito; recebe quem tiver mais crédito, e ele paga a soma dos pesos. Assim, com
+    André 20% e Davi 5%, de cada 25 leads André recebe 20 e Davi 5, intercalados (não em bloco).
+    Quem está desconectado/de folga não ganha crédito: quando volta, não recebe uma rajada de leads.
+    Sem % ninguém: todos iguais (como era). Marca a hora no escolhido."""
     now = datetime.datetime.utcnow()
+    first_of = {}
     for number in numbers:
-        owner = number.owner
-        if owner is not None and owner.rodizio_half and not owner.rodizio_skip:
-            owner.rodizio_skip = True  # pulou esta: a próxima vez dele conta
-            number.last_routed_at = now - datetime.timedelta(seconds=1)  # na frente de quem recebeu agora
-            continue
-        if owner is not None and owner.rodizio_half:
-            owner.rodizio_skip = False
-        number.last_routed_at = now
-        return number
-    numbers[0].last_routed_at = now
-    return numbers[0]
+        if number.owner is not None and number.owner_user_id not in first_of:
+            first_of[number.owner_user_id] = number  # vendedor com 2 números: vale o que recebeu há mais tempo
+    if not first_of:
+        numbers[0].last_routed_at = now
+        return numbers[0]
+    owners = [n.owner for n in first_of.values()]
+    weight = {k: int(round(v * 100)) for k, v in weights(owners).items()}
+    total = sum(weight.values()) or 1
+    for owner in owners:
+        owner.rodizio_credit = max(-CREDIT_LIMIT, min(CREDIT_LIMIT, (owner.rodizio_credit or 0) + weight[owner.id]))
+    chosen = max(owners, key=lambda o: o.rodizio_credit)  # empate: o 1º da lista (recebeu há mais tempo)
+    chosen.rodizio_credit -= total
+    number = first_of[chosen.id]
+    number.last_routed_at = now
+    return number

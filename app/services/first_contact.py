@@ -183,7 +183,7 @@ def assign_form_lead(db, lead: Lead) -> None:
         return
     from app.services.distribution import take_turn
 
-    number = take_turn(numbers)  # ½ rodízio: vendedor pela metade pula uma vez sim, outra não
+    number = take_turn(numbers)  # revezamento pela % de cada vendedor (Equipe)
     lead.assigned_user_id = number.owner_user_id
     db.commit()
 

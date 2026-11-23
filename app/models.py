@@ -133,6 +133,10 @@ class User(Base):
     # rodizio_skip = a próxima vez dele conta (a anterior foi pulada)
     rodizio_half: Mapped[bool] = mapped_column(Boolean, default=False)
     rodizio_skip: Mapped[bool] = mapped_column(Boolean, default=False)
+    # % do rodízio (Equipe): quanto dos leads do rodízio vai pra ele (ex: 20 = 20%). 0 = parte igual
+    # (a média de quem tem %). rodizio_credit = a conta do revezamento por peso (distribution.take_turn)
+    rodizio_peso: Mapped[int] = mapped_column(Integer, default=0)
+    rodizio_credit: Mapped[int] = mapped_column(Integer, default=0)
     # 🏖 de folga (Equipe): sai do rodízio, e quem escreve no WhatsApp dele vai pra um vendedor que está
     # trabalhando (fora contato Time/Outro). Volta com "Trabalhando"; os leads repassados ficam com quem atendeu
     on_leave: Mapped[bool] = mapped_column(Boolean, default=False)
