@@ -220,7 +220,20 @@ def _answers(lead) -> dict:
     return found
 
 
+def min_revenue(lead) -> float:
+    """Faturamento mínimo pra ser MQL: o do ramo pra plataforma do lead ("mql_faturamento_por_plataforma",
+    ex: Meta a partir de R$ 50 mil) ou o padrão (R$ 100 mil)."""
+    by_platform = ((config(lead.tenant) if lead.tenant else None) or {}).get("mql_faturamento_por_plataforma") or {}
+    if by_platform:
+        from app.services.platform import resolve_platform
+
+        return by_platform.get(resolve_platform(lead.attribution), QUALIFIED_MIN_REVENUE)
+    return QUALIFIED_MIN_REVENUE
+
+
 def money_qualified(lead) -> bool:
     answers = _answers(lead)
     revenue, invest = floor_value(answers.get("faturamento", "")), floor_value(answers.get("investimento", ""))
-    return (revenue is not None and revenue >= QUALIFIED_MIN_REVENUE) or (invest is not None and invest >= QUALIFIED_MIN_INVEST)
+    if invest is not None and invest >= QUALIFIED_MIN_INVEST:
+        return True
+    return revenue is not None and revenue >= min_revenue(lead)

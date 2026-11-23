@@ -13,6 +13,9 @@ REFUND_REASON = "Devolução / reembolso"  # comprou e pediu o dinheiro de volta
 LEAD_PROFILE_AGENCIA = {
     # 💰 venda = mensalidade: o Dashboard soma a mensalidade; o valor total do contrato fica ao lado (status do lead)
     "venda_pela_mensalidade": True,
+    # 📊 MQL: faturamento mínimo por plataforma de origem (as outras usam o padrão de R$ 100 mil).
+    # Meta traz pouco lead de +100 mil; de 50 a 100 mil ainda dá pra trabalhar e dá mais sinal pra otimizar.
+    "mql_faturamento_por_plataforma": {"meta": 50_000},
     "cargos": ["Sócio(a) / CEO", "Diretor(a)", "Head / Gerente de Marketing", "Analista de Marketing", "Outro"],
     "faturamento": ["Até R$ 50 mil", "R$ 50 mil a R$ 100 mil", "R$ 100 mil a R$ 250 mil", "R$ 250 mil a R$ 500 mil",
                     "Mais de R$ 500 mil"],
