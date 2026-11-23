@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 📱 Liga a conta da UAZAPI no CRM (o WhatsApp que substitui o Evolution, número por número).
-# Depois, em cada cliente que for usar: ⚙ Configurações → Recursos → "📱 WhatsApp pela UAZAPI" → Salvar,
+# No fim pergunta se liga em todos os clientes (ou, em cada um: ⚙ Configurações → Recursos → "📱 WhatsApp pela UAZAPI"),
 # e na tela WhatsApp: 🔁 Passar pro UAZapi em cada número (o vendedor lê o QR code de novo).
 #
 # Rodar no terminal do VPS (como root):
@@ -69,5 +69,12 @@ if r.status_code != 200:
 print('Webhook OK:', url.split('/webhooks')[0] + '/webhooks/uazapi/…')
 " || fail "a UAZAPI não vai conseguir entregar as mensagens (fale com o Claude)"
 
-say "Pronto! Agora, no CRM do cliente: ⚙ Configurações → Recursos → 📱 WhatsApp pela UAZAPI → Salvar."
-echo "Depois, na tela WhatsApp, em cada número: 🔁 Passar pro UAZapi (com o celular do vendedor na mão pro QR code)."
+read -r -p "Ligar a UAZAPI em TODOS os clientes agora? (s/n): " ALL </dev/tty
+if [ "$ALL" = "s" ] || [ "$ALL" = "S" ]; then
+  docker exec -i crm-app python -m scripts.recurso uazapi todos ligar
+  say "Pronto! A UAZAPI está liberada em todos os clientes."
+else
+  say "Pronto! Pra liberar num cliente: ⚙ Configurações → Recursos → 📱 WhatsApp pela UAZAPI → Salvar."
+fi
+echo "Agora, na tela WhatsApp de cada cliente, em cada número: 🔁 Passar pro UAZapi (com o celular do vendedor na mão pro QR code)."
+echo "Assim que o QR é lido, o CRM puxa sozinho as conversas das últimas 24h (leva uns 10 minutos)."

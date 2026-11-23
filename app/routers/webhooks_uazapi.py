@@ -15,6 +15,8 @@ from __future__ import annotations
 import datetime
 import hmac
 import logging
+import threading
+import time
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Request
@@ -31,6 +33,12 @@ from app.services.inbound import ingest_inbound, message_exists, record_outbound
 logger = logging.getLogger("webhooks_uazapi")
 router = APIRouter()
 
+# 📥 número que acabou de conectar: puxa as conversas das últimas 24h que o UAZapi recebeu do celular
+# (o WhatsApp manda o histórico recente pro aparelho novo nos primeiros minutos). Roda 2 vezes, porque o
+# histórico chega aos poucos; a deduplicação pelo id evita mensagem repetida.
+CONNECT_HOURS = 24
+CONNECT_DELAYS = (90, 600)
+_connected_at: dict = {}  # id do número -> quando agendou (evita agendar 2x: tela e webhook avisam juntos)
 SAMPLES_LEFT = {"n": 30}  # quantos eventos registrar no log com o formato completo (calibragem)
 # tipo de mensagem do UAZapi (minúsculo) -> campo do protocolo do WhatsApp (pra reaproveitar MEDIA_TYPES)
 TYPE_FIELDS = {field.lower(): field for field in MEDIA_TYPES}
@@ -106,12 +114,23 @@ def process_event(db: Session, payload: dict) -> list:
         items = payload.get("messages") if isinstance(payload.get("messages"), list) else [payload.get("message") or {}]
         media_ids = []
         for item in items:
+            if kind == "history" and _older_than(item, CONNECT_HOURS):
+                continue  # histórico antigo do celular: o CRM já tem (e não cria lead de conversa velha)
             message = handle_message(db, number, item, payload.get("chat") or {})
             if message is not None and message.media_id:
                 media_ids.append(message.id)
         return media_ids
     _sample(kind or "desconhecido", payload)
     return []
+
+
+def _older_than(item: dict, hours: float) -> bool:
+    try:
+        ts = int(item.get("messageTimestamp") or 0)
+    except (TypeError, ValueError):
+        return True
+    ts_s = ts / 1000 if ts > 10 ** 11 else ts
+    return ts_s < time.time() - hours * 3600
 
 
 def _apply_connection(db: Session, number: WhatsAppNumber, payload: dict) -> None:
@@ -128,6 +147,8 @@ def _apply_connection(db: Session, number: WhatsAppNumber, payload: dict) -> Non
 
         wa_health.on_dropped(db, number)  # caiu de verdade (o Desconectar da tela já grava "close" antes)
     db.commit()
+    if state == "open":
+        on_connected(number.id)  # 📥 acabou de conectar: puxa as conversas das últimas 24h
 
 
 def _apply_acks(db: Session, event: dict) -> None:
@@ -221,7 +242,28 @@ def handle_message(db: Session, number: WhatsAppNumber, item: dict, chat: dict):
     )
 
 
-def catch_up(hours: float = 1.0, max_pages: int = 20) -> dict:
+def on_connected(number_id: str) -> bool:
+    """Agenda a busca das últimas 24h do número que acabou de conectar (no máximo 1x a cada 30 min)."""
+    now = time.time()
+    if now - _connected_at.get(number_id, 0) < 1800:
+        return False
+    _connected_at[number_id] = now
+    for delay in CONNECT_DELAYS:
+        timer = threading.Timer(delay, _pull_recent, args=(number_id,))
+        timer.daemon = True
+        timer.start()
+    return True
+
+
+def _pull_recent(number_id: str) -> None:
+    try:
+        result = catch_up(hours=CONNECT_HOURS, max_pages=60, number_id=number_id)
+        logger.warning("uazapi: últimas %sh do número recém-conectado: %s", CONNECT_HOURS, result)
+    except Exception:
+        logger.exception("uazapi: falhou ao puxar as últimas %sh de %s", CONNECT_HOURS, number_id)
+
+
+def catch_up(hours: float = 1.0, max_pages: int = 20, number_id: str = "") -> dict:
     """Conferência periódica (history_sync chama a cada minuto): busca no UAZapi as mensagens recentes de
     cada número e registra as que o webhook não entregou (o UAZapi não repete entrega que falhou).
     Sem filtro de data na API: vai paginando das mais novas pras mais velhas até passar do período.
@@ -231,7 +273,10 @@ def catch_up(hours: float = 1.0, max_pages: int = 20) -> dict:
     result = {}
     try:
         numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.provider == uazapi_client.PROVIDER,
-                                                  WhatsAppNumber.is_active.is_(True), WhatsAppNumber.access_token != "").all()
+                                                  WhatsAppNumber.is_active.is_(True), WhatsAppNumber.access_token != "")
+        if number_id:
+            numbers = numbers.filter(WhatsAppNumber.id == number_id)
+        numbers = numbers.all()
         for number in numbers:
             added, offset = 0, 0
             try:

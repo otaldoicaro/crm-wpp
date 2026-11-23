@@ -232,6 +232,10 @@ def _uazapi_qr(db: Session, number: WhatsAppNumber) -> JSONResponse:
 
 
 def _mark_connected(db: Session, number: WhatsAppNumber) -> dict:
+    if number.provider == uazapi_client.PROVIDER and number.connection_state != "open":
+        from app.routers.webhooks_uazapi import on_connected
+
+        on_connected(number.id)  # 📥 acabou de ler o QR: puxa as conversas das últimas 24h
     number.connection_state = "open"
     try:
         if number.provider == uazapi_client.PROVIDER:
