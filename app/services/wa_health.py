@@ -507,6 +507,10 @@ def _check_silent(db, number: WhatsAppNumber, now: datetime.datetime, pull) -> s
 _probed: dict = {}  # número -> quando fez a consulta de teste na UAZapi
 _reset_at: dict = {}  # número -> quando pediu a retomada controlada da conexão na UAZapi
 RESET_COOLDOWN = 60 * 60
+# 🔁 retomada automática na UAZapi. Desligar sem publicar código: UAZAPI_AUTO_RESET=0 no crm.env e reiniciar o CRM
+UAZAPI_AUTO_RESET = os.getenv("UAZAPI_AUTO_RESET", "1") != "0"
+# só erro que diz "sem conexão" conta como travado (limite de chamadas, servidor lento ou erro 5xx não é o número)
+_DEAD_WORDS = ("not connected", "disconnected", "not logged", "logged out", "no session", "connection closed", "websocket")
 _unreachable: dict = {}  # número -> rodadas seguidas sem conseguir falar com a UAZapi
 UNREACHABLE_WARN = 10  # ~10 min
 _hooked: dict = {}  # número -> quando conferiu o webhook na UAZapi
@@ -519,6 +523,13 @@ def uazapi_reset(number: WhatsAppNumber, why: str) -> bool:
     tem cooldown). No máximo 1 vez por hora por número. True = pediu."""
     from app.services import uazapi_client
 
+    if not UAZAPI_AUTO_RESET:
+        return False
+    try:  # só número que a própria UAZapi diz conectado (nunca no meio de um QR code sendo lido)
+        if uazapi_client.connection_state(number.access_token) != "open":
+            return False
+    except uazapi_client.UazapiError:
+        return False
     with _lock:
         if time.monotonic() - _reset_at.get(number.id, -RESET_COOLDOWN) < RESET_COOLDOWN:
             return False
@@ -569,11 +580,17 @@ def check_uazapi(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
         webhooks_uazapi.on_connected(number.id)
     if number.phone_number and time.monotonic() - _probed.get(number.id, -PROBE_EVERY) >= PROBE_EVERY:
         _probed[number.id] = time.monotonic()
+        dead = ""
         try:  # consulta que precisa da conexão de verdade, sem mandar nada pra ninguém
             uazapi_client.whatsapp_numbers(number.access_token, [number.phone_number])
         except uazapi_client.UazapiTimeout:
             pass  # lento não é travado
-        except uazapi_client.UazapiError as exc:
+        except uazapi_client.UazapiError as err:
+            if any(word in str(err).lower() for word in _DEAD_WORDS):
+                dead = str(err)
+            else:
+                logger.warning("wa_health: consulta de teste de %s falhou sem ser conexão (ignorado): %s", number.label, err)
+        if dead:
             if number.evolution_instance not in _warned and uazapi_reset(number, "conexão zumbi"):
                 _warned[number.evolution_instance] = 0  # 1ª vez: tenta retomar; se falhar de novo daqui a 5 min, avisa
                 return "retomando"
@@ -581,7 +598,7 @@ def check_uazapi(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
                 warn = not _warned.get(number.evolution_instance)
                 _warned[number.evolution_instance] = _warned.get(number.evolution_instance) or time.monotonic()
             if warn:
-                logger.warning("wa_health: %s (UAZapi) travado: %s", number.label, exc)
+                logger.warning("wa_health: %s (UAZapi) travado: %s", number.label, dead)
                 _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} travou",
                       "Diz conectado, mas não envia nem recebe. " + RECONNECT_TEXT)
             return "zumbi"
