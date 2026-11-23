@@ -1346,3 +1346,9 @@ th.js-sortable.sorted-asc::after { content: " ▲"; font-size: .7em; }
 /* Equipe: % do rodízio de cada vendedor */
 .rodizio-pct { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 12px; }
 .rodizio-pct input { width: 64px; padding: 3px 6px; font-size: 13px; }
+
+/* 🤝 selo de campanha (ex: PARCEIROS), ao lado da origem do lead */
+.campaign-tag {
+  display: inline-flex; align-items: center; font-size: .68rem; font-weight: 800; padding: 3px 8px; border-radius: 7px;
+  background: #fff4d6; color: #8a5a00; border: 1px solid #f0c55a; text-transform: uppercase; letter-spacing: .02em; white-space: nowrap;
+}

@@ -20,6 +20,7 @@
     <h2 style="display:flex; align-items:center; gap:10px;">
       {{ lead.name or "(sem nome)" }}{% set empresa = empresa_de(lead) %}{% if empresa %} <span class="muted" style="font-weight:500">· 🏢 {{ empresa }}</span>{% endif %}
       {{ m.platform_badge(platform, platform_label, lead.source) }}
+      {{ m.campaign_badges(tenant, lead) }}
     </h2>
     {% if has_feature(tenant, "tentativas_contato") and not lead.is_group and not (lead.stage and (lead.stage.is_won or lead.stage.is_lost)) %}
     {{ m.attempt_box(lead, "/leads/" ~ lead.id, not user.read_only) }}

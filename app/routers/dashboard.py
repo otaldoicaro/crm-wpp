@@ -946,6 +946,9 @@ async def save_deadlines(
                 tenant.agenda_reminder_hours = max(0, min(12, int(str(form.get("agenda_reminder_hours") or "0"))))
             except ValueError:
                 pass
+        if "campaign_tags" in form:  # 🤝 selos de campanha ("PARC = 🤝 PARCEIROS")
+            lines = [ln.strip() for ln in str(form.get("campaign_tags", "")).replace("\r\n", "\n").split("\n") if ln.strip()]
+            tenant.campaign_tags = "\n".join(lines)[:1000]
         if "wa_labels_form" in form:  # 🏷️ etiquetas do WhatsApp que contam como venda
             picked = [str(x).strip() for x in form.getlist("wa_sale_label") if str(x).strip()]
             extra = [x.strip() for x in str(form.get("wa_sale_labels_extra", "")).split(",") if x.strip()]

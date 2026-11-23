@@ -48,6 +48,9 @@ templates.env.globals["auto_stage"] = funnel.is_automatic  # etapas que só o CR
 templates.env.globals["loss_reasons"] = segments.loss_reasons  # motivos de perda do ramo do cliente
 templates.env.globals["segment_for"] = segments.segment_for
 templates.env.globals["has_feature"] = features.has  # recursos ligados só pra este cliente
+from app.services import campaign_tags as _campaign_tags  # noqa: E402
+
+templates.env.globals["campaign_tags"] = _campaign_tags.tags_for  # 🤝 selos de campanha (ex: PARCEIROS)
 from app.services import calls as _calls  # noqa: E402
 
 templates.env.globals["call_duration"] = _calls.duration  # 📞 "2:10", "1h05"

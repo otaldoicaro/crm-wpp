@@ -34,6 +34,10 @@
   <p class="muted">Bom pra vendas mais longas (serviços, projetos). Pra venda rápida, os prazos por etapa costumam bastar.</p>
 
 
+  <h3 id="selos-campanha">🤝 Selos de campanha</h3>
+  <p class="muted">Lead que veio de uma campanha com uma sigla no nome (utm_campaign / nome da campanha no Meta ou Google) ganha um selo no topo da conversa, na ficha e no card do Pipeline.
+    Uma regra por linha: <b>SIGLA = Selo</b>. A sigla vale como palavra inteira (PARC pega “[PARC] Oficinas”, mas não “Parcelado”).</p>
+  <textarea name="campaign_tags" rows="3" style="width:100%;max-width:420px" placeholder="PARC = 🤝 PARCEIROS">{{ tenant.campaign_tags or "" }}</textarea>
   <h3 id="etiquetas-whatsapp">🏷️ Etiquetas do WhatsApp Business</h3>
   <p class="muted">Quando o vendedor põe ou tira uma etiqueta numa conversa (no celular ou no WhatsApp Web), aparece um registro na conversa do CRM.
     Marque abaixo as etiquetas que querem dizer <b>venda feita</b>: pôr uma delas fecha a venda (etapa Ganho) com o último preço enviado{% if "funil_manual" in features_on %} — no funil manual, vira 💡 sugestão pro vendedor confirmar{% endif %}.

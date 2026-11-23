@@ -149,6 +149,7 @@
         {% for c in (company_contacts or {}).get(lead.id, []) %}<a class="card-contact" href="{{ '/inbox/' if c.conversations else '/leads/' }}{{ c.id }}" title="Outro contato da mesma empresa">👤 {{ c.name or c.phone or "(sem nome)" }}{% if c.phone and c.name %} · {{ c.phone|contato }}{% endif %}</a>{% endfor %}
         <div class="meta-row">
           {{ m.platform_badge(lead_platforms[lead.id], platform_labels[lead_platforms[lead.id]], lead.source) }}
+          {{ m.campaign_badges(tenant, lead) }}
           {% if lead.tag == "cliente" %}<span class="tag-badge cliente">Cliente</span>{% endif %}
           {% if lead.form_details %}<span class="form-badge" title="Preencheu o formulário da LP">📝 Formulário</span>{% endif %}
           {% if lead.deal_value %}<span class="value-badge">R$ {{ "%.0f"|format(lead.deal_value) }}</span>{% endif %}

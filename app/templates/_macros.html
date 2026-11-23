@@ -16,6 +16,10 @@
 </span>
 {%- endmacro %}
 
+{% macro campaign_badges(tenant, lead) -%}
+{% for tag in campaign_tags(tenant, lead) %}<span class="campaign-tag" title="Campanha: {{ lead.attribution.utm_campaign }}">{{ tag }}</span>{% endfor %}
+{%- endmacro %}
+
 {% macro platform_badge(platform, label, source="") -%}
 {% if source == "instagram" and platform in ("direct", "organic") %}
 <span class="platform-badge direct">📸 Instagram</span>
