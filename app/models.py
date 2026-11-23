@@ -74,6 +74,8 @@ class Tenant(Base):
     # 🌙 mensagem fora do horário (services/after_hours.py): texto do cliente (vazio = padrão do ramo)
     after_hours_text: Mapped[str] = mapped_column(Text, default="")
     after_hours_detail_text: Mapped[str] = mapped_column(Text, default="")  # quem já disse peça, carro e ano
+    # 🏷️ etiquetas do WhatsApp Business que contam como venda (nomes separados por vírgula; services/wa_labels.py)
+    wa_sale_labels: Mapped[str] = mapped_column(Text, default="")
     # 📅 agendamentos (recurso "agendamentos", services/agenda.py): textos pro cliente (vazio = padrão do ramo)
     # e com quantas horas de antecedência sai o lembrete (0 = sem lembrete)
     agenda_confirm_text: Mapped[str] = mapped_column(Text, default="")

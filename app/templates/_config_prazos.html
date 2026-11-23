@@ -33,6 +33,25 @@
   </label>
   <p class="muted">Bom pra vendas mais longas (serviços, projetos). Pra venda rápida, os prazos por etapa costumam bastar.</p>
 
+
+  <h3 id="etiquetas-whatsapp">🏷️ Etiquetas do WhatsApp Business</h3>
+  <p class="muted">Quando o vendedor põe ou tira uma etiqueta numa conversa (no celular ou no WhatsApp Web), aparece um registro na conversa do CRM.
+    Marque abaixo as etiquetas que querem dizer <b>venda feita</b>: pôr uma delas fecha a venda (etapa Ganho) com o último preço enviado{% if "funil_manual" in features_on %} — no funil manual, vira 💡 sugestão pro vendedor confirmar{% endif %}.
+    Tirar a etiqueta só registra (não desfaz a venda).</p>
+  <input type="hidden" name="wa_labels_form" value="1">
+  {% set sale_now = (tenant.wa_sale_labels or "").lower().split(",") | map("trim") | list %}
+  {% if wa_label_names %}
+  <div class="wa-label-list" {% if aba != "prazos" %}hidden{% endif %}>
+    {% for name in wa_label_names %}
+    <label style="display:inline-flex;gap:6px;align-items:center;margin:2px 14px 2px 0">
+      <input type="checkbox" name="wa_sale_label" value="{{ name }}" {{ "checked" if name.lower().strip() in sale_now }}> {{ name }}</label>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">Nenhuma etiqueta encontrada nos WhatsApps conectados (só o WhatsApp Business tem etiquetas).</p>
+  {% endif %}
+  <label style="display:block;margin-top:6px">Outra etiqueta de venda (escreva o nome igual ao do WhatsApp; várias separadas por vírgula):
+    <input name="wa_sale_labels_extra" style="width:100%;max-width:420px" placeholder="ex: Pago, Pedido finalizado"></label>
 </section>
 <section class="cfg-sec" data-aba="mensagens" {% if aba != "mensagens" %}hidden{% endif %}>
   <p class="muted" style="margin-top:0">Tudo que sai sozinho pro cliente. Cada uma só funciona se estiver ligada (aqui ou em ⚙️ Recursos).</p>

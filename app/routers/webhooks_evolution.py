@@ -557,6 +557,18 @@ def _process_event_db(db: Session, payload: dict) -> list:
         _apply_saved_names(db, number, data)
         return []
 
+    if event == "labels.edit":  # 🏷️ etiqueta do WhatsApp Business criada/renomeada no celular
+        from app.services import wa_labels
+
+        wa_labels.on_edit(number, data)
+        return []
+
+    if event == "labels.association":  # 🏷️ etiqueta posta/tirada numa conversa
+        from app.services import wa_labels
+
+        wa_labels.on_association(db, number, data)
+        return []
+
     if event == "call":
         for call in data if isinstance(data, list) else [data]:
             _apply_call(db, number, call)

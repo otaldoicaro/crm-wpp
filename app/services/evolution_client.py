@@ -22,7 +22,9 @@ from app.config import EVOLUTION_API_KEY, EVOLUTION_API_URL, EVOLUTION_WEBHOOK_T
 logger = logging.getLogger("evolution_client")
 
 # MESSAGES_UPDATE: só pra saber quando o vendedor leu a mensagem do cliente no celular
-WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE", "CONTACTS_UPSERT", "CALL"]
+# LABELS_*: 🏷️ etiquetas do WhatsApp Business (services/wa_labels.py)
+WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE", "CONTACTS_UPSERT", "CALL",
+                  "LABELS_EDIT", "LABELS_ASSOCIATION"]
 
 
 class EvolutionError(Exception):
@@ -160,6 +162,19 @@ def owner_phone(instance: str) -> str:
         if jid:
             return jid.split("@")[0].split(":")[0]
     return ""
+
+
+def find_labels(instance: str) -> list:
+    """🏷️ Etiquetas do WhatsApp Business desse número: [{"id", "name", "color"}] (vazio no WhatsApp comum)."""
+    body = _request("GET", f"/label/findLabels/{instance}")
+    rows = body if isinstance(body, list) else body.get("labels") or body.get("records") or []
+    out = []
+    for row in rows if isinstance(rows, list) else []:
+        if isinstance(row, dict):
+            label_id = str(row.get("labelId") or row.get("id") or "")
+            if label_id and row.get("name"):
+                out.append({"id": label_id, "name": str(row["name"]), "color": row.get("color")})
+    return out
 
 
 def list_instances() -> list:

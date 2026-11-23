@@ -804,6 +804,21 @@ def deadlines_page():
     return RedirectResponse(url="/configuracoes?aba=prazos", status_code=302)
 
 
+def _wa_label_names(db, tenant) -> list:
+    """🏷️ Etiquetas pra marcar como "de venda": as dos WhatsApps conectados + as já escolhidas."""
+    from app.services import wa_labels
+
+    try:
+        known = wa_labels.tenant_label_names(db, tenant.id)
+    except Exception:  # Evolution fora do ar: mostra só as escolhidas
+        known = []
+    saved = [x.strip() for x in (tenant.wa_sale_labels or "").split(",") if x.strip()]
+    names = {wa_labels.plain(n): n for n in saved}
+    for name in known:
+        names.setdefault(wa_labels.plain(name), name)
+    return sorted(names.values(), key=wa_labels.plain)
+
+
 @router.get("/configuracoes", response_class=HTMLResponse)
 def settings_page(
     request: Request,
@@ -830,6 +845,8 @@ def settings_page(
             "autofu_default1": autofollow.default_text1(tenant), "autofu_only_first": features.has(tenant, autofollow.ONLY_FIRST), "autofu_default2": autofollow.DEFAULT_TEXT2,
             "after_hours_default": after_hours.default_text(tenant), "after_hours_label": after_hours.hours_label(tenant),
             "after_hours_detail_default": after_hours.detail_default(tenant),
+            "wa_label_names": _wa_label_names(db, tenant) if aba == "prazos" else
+            [x.strip() for x in (tenant.wa_sale_labels or "").split(",") if x.strip()],
         })
     else:
         ctx.update({
@@ -929,6 +946,15 @@ async def save_deadlines(
                 tenant.agenda_reminder_hours = max(0, min(12, int(str(form.get("agenda_reminder_hours") or "0"))))
             except ValueError:
                 pass
+        if "wa_labels_form" in form:  # 🏷️ etiquetas do WhatsApp que contam como venda
+            picked = [str(x).strip() for x in form.getlist("wa_sale_label") if str(x).strip()]
+            extra = [x.strip() for x in str(form.get("wa_sale_labels_extra", "")).split(",") if x.strip()]
+            seen, names = set(), []
+            for name in picked + extra:
+                if name.lower() not in seen:
+                    seen.add(name.lower())
+                    names.append(name.replace(",", " "))
+            tenant.wa_sale_labels = ", ".join(names)[:1000]
         if form.get("features_form") == "1":
             was_on = autofollow.is_on(tenant)
             tenant.features = features.store(form.getlist("feature"))
