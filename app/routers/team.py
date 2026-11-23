@@ -56,26 +56,6 @@ def team_page(
     return _team_page(request, db, tenant, user)
 
 
-@router.post("/equipe/{user_id}/senha", response_class=HTMLResponse)
-def team_password_link(
-    user_id: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    tenant: Tenant = Depends(current_tenant),
-    user: User = Depends(current_user_required),
-):
-    """🔑 Esqueceu a senha: o admin gera um link (24 h, uma vez só) e manda pra pessoa criar a senha nova.
-    O admin não fica sabendo a senha."""
-    from app.routers.auth_router import _public_base, admin_reset_link
-
-    _require_admin(user)
-    member = db.get(User, user_id)
-    if not member or member.tenant_id != tenant.id or member.removed_at or member.id == user.id or not member.is_active:
-        raise HTTPException(status_code=404, detail="Pessoa não encontrada")
-    link = admin_reset_link(_public_base(request), member)
-    return _team_page(request, db, tenant, user, {"password_link": link, "password_member": member})
-
-
 def _team_page(request: Request, db: Session, tenant: Tenant, user: User, extra: Optional[dict] = None):
     _require_admin(user)
     everyone = db.query(User).filter(User.tenant_id == tenant.id).order_by(User.is_active.desc(), User.name).all()
