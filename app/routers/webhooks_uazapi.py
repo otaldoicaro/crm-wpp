@@ -39,6 +39,17 @@ router = APIRouter()
 CONNECT_HOURS = 24
 CONNECT_DELAYS = (90, 600)
 _connected_at: dict = {}  # id do número -> quando agendou (evita agendar 2x: tela e webhook avisam juntos)
+# 🔒 o UAZapi entrega as mensagens em paralelo: 3 mensagens seguidas de um cliente novo chegavam juntas e
+# cada uma criava um lead (lead duplicado), e a conferência periódica podia gravar de novo uma mensagem que o
+# webhook estava gravando. Mensagens da MESMA conversa passam uma de cada vez (conversas diferentes seguem em
+# paralelo). 256 travas fixas, escolhidas pelo cliente + conversa.
+_chat_locks = [threading.Lock() for _ in range(256)]
+
+
+def _chat_lock(number: WhatsAppNumber, chat_id: str) -> threading.Lock:
+    return _chat_locks[hash((number.tenant_id, _digits(chat_id))) % len(_chat_locks)]
+
+
 SAMPLES_LEFT = {"n": 30}  # quantos eventos registrar no log com o formato completo (calibragem)
 # tipo de mensagem do UAZapi (minúsculo) -> campo do protocolo do WhatsApp (pra reaproveitar MEDIA_TYPES)
 TYPE_FIELDS = {field.lower(): field for field in MEDIA_TYPES}
@@ -214,8 +225,13 @@ def handle_message(db: Session, number: WhatsAppNumber, item: dict, chat: dict):
     wa_id = str(item.get("messageid") or item.get("id") or "")
     if not chat_id or not wa_id or item.get("isGroup") or chat_id.endswith(("@g.us", "@broadcast", "@newsletter")):
         return None  # 1ª versão: só conversas individuais
-    if message_exists(db, wa_id):
-        return None
+    with _chat_lock(number, chat_id):
+        if message_exists(db, wa_id):  # dentro da trava: quem chegar depois já vê a mensagem gravada
+            return None
+        return _handle_locked(db, number, item, chat, chat_id, wa_id)
+
+
+def _handle_locked(db: Session, number: WhatsAppNumber, item: dict, chat: dict, chat_id: str, wa_id: str):
     body, media_type, context = parse(item)
     if not body and not media_type:
         _sample("sem conteúdo " + str(item.get("messageType")), {"message": item})
