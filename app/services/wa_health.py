@@ -424,9 +424,6 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
     """Confere um número. Devolve o que fez ("", "caiu", "religou", "zumbi", "silencioso")."""
     if paused():
         return ""
-    from app.services.after_hours import is_open
-    from app.services.response_times import parse_hours
-
     try:
         state = evolution_client.connection_state(number.evolution_instance)
     except evolution_client.EvolutionError:
@@ -458,6 +455,15 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
             return "zumbi"
         return ""
     _warned.pop(number.evolution_instance, None)  # funciona: um travamento novo volta a avisar
+    return _check_silent(db, number, now, lambda: catch_up(number.id))
+
+
+def _check_silent(db, number: WhatsAppNumber, now: datetime.datetime, pull) -> str:
+    """"Parou de receber": diz conectado e passa no teste, mas não chega nada enquanto os outros recebem.
+    pull() puxa do provedor (Evolution ou UAZapi) o que tiver escapado. Devolve "silencioso" ou ""."""
+    from app.services.after_hours import is_open
+    from app.services.response_times import parse_hours
+
     tenant = db.get(Tenant, number.tenant_id)
     hours = parse_hours(tenant.business_hours if tenant else "")
     last = _last_inbound(db, number)
@@ -478,11 +484,11 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
                 return ""  # reiniciou há pouco: dá o mesmo tempo pra ver se voltou
             _silent[instance] = time.monotonic()
             strikes = _silent_strikes[instance] = _silent_strikes.get(instance, 0) + 1
-        if strikes == 1 and AUTO_RESTART:
+        if strikes == 1 and AUTO_RESTART and number.provider == "evolution":
             heal(number, "parou de receber mensagens")
-            catch_up(number.id)
+            pull()
             return "silencioso"
-        catch_up(number.id)  # puxa do Evolution o que tiver escapado
+        pull()  # puxa do provedor o que tiver escapado
         if instance in _silent_warned:
             return ""  # já avisou: só avisa de novo depois de voltar a receber
         _silent_warned.add(instance)
@@ -493,6 +499,55 @@ def check_number(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
               "enquanto os outros recebem. Se no celular estão chegando mensagens de clientes: " + RECONNECT_TEXT)
         return "silencioso"
     return ""
+
+
+_probed: dict = {}  # número -> quando fez a consulta de teste na UAZapi
+PROBE_EVERY = 5 * 60  # a consulta de teste vai pro WhatsApp: 1 vez a cada 5 min por número basta
+
+
+def check_uazapi(db, number: WhatsAppNumber, now: datetime.datetime) -> str:
+    """📱 Vigia dos números da UAZapi (o mesmo cuidado dos do Evolution, sem reiniciar nada sozinho):
+    - caiu e o aviso do webhook se perdeu -> marca desconectado e avisa o vendedor (QR code);
+    - voltou sem ninguém ver -> marca conectado e puxa as últimas 24h;
+    - diz conectado mas a consulta de teste falha -> avisa "travou";
+    - "parou de receber" (mesma regra do Evolution) -> confere as mensagens guardadas na UAZapi e avisa."""
+    from app.routers import webhooks_uazapi
+    from app.services import uazapi_client
+
+    if not number.access_token:
+        return ""
+    try:
+        state = uazapi_client.connection_state(number.access_token)
+    except uazapi_client.UazapiError:
+        return ""  # UAZapi fora do ar ou lenta: não dá pra concluir nada
+    if state != "open":
+        if number.connection_state == "open" and state == "close":
+            number.connection_state = "close"
+            db.add(number)
+            on_dropped(db, number)
+            return "caiu"
+        return ""
+    if number.connection_state != "open":
+        number.connection_state = "open"
+        db.add(number)
+        webhooks_uazapi.on_connected(number.id)
+    if number.phone_number and time.monotonic() - _probed.get(number.id, -PROBE_EVERY) >= PROBE_EVERY:
+        _probed[number.id] = time.monotonic()
+        try:  # consulta que precisa da conexão de verdade, sem mandar nada pra ninguém
+            uazapi_client.whatsapp_numbers(number.access_token, [number.phone_number])
+        except uazapi_client.UazapiTimeout:
+            pass  # lento não é travado
+        except uazapi_client.UazapiError as exc:
+            with _lock:
+                warn = number.evolution_instance not in _warned
+                _warned.setdefault(number.evolution_instance, time.monotonic())
+            if warn:
+                logger.warning("wa_health: %s (UAZapi) travado: %s", number.label, exc)
+                _warn(db, number, _admins_and_owner(db, number), f"📵 {number.label} travou",
+                      "Diz conectado, mas não envia nem recebe. " + RECONNECT_TEXT)
+            return "zumbi"
+    _warned.pop(number.evolution_instance, None)
+    return _check_silent(db, number, now, lambda: webhooks_uazapi.catch_up(hours=2, number_id=number.id))
 
 
 def _others_receiving(db, number: WhatsAppNumber, now: datetime.datetime, window: datetime.timedelta) -> bool:
@@ -510,15 +565,16 @@ def run() -> dict:
     try:
         now = datetime.datetime.utcnow()
         try:
-            done.update(reconcile(db))  # sessões que sobraram: nenhuma mensagem fica de fora
+            if evolution_client.is_configured():
+                done.update(reconcile(db))  # sessões que sobraram: nenhuma mensagem fica de fora
         except Exception:
             db.rollback()
             logger.exception("wa_health: falhou ao conferir as sessões que sobraram")
-        numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.provider == "evolution",
+        numbers = db.query(WhatsAppNumber).filter(WhatsAppNumber.provider.in_(("evolution", "uazapi")),
                                                   WhatsAppNumber.is_active.is_(True)).all()
         for number in numbers:
             try:
-                what = check_number(db, number, now)
+                what = check_uazapi(db, number, now) if number.provider == "uazapi" else check_number(db, number, now)
                 db.commit()
                 if what:
                     done[number.label] = what
@@ -531,7 +587,9 @@ def run() -> dict:
 
 
 def schedule(delay_seconds: int = 120) -> None:
-    if not evolution_client.is_configured():
+    from app.services import uazapi_client
+
+    if not evolution_client.is_configured() and not uazapi_client.is_configured():
         return
 
     def go():
