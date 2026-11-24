@@ -136,6 +136,8 @@ def process_event(db: Session, payload: dict) -> list:
             message = handle_message(db, number, item, payload.get("chat") or {})
             if message is not None and message.media_id:
                 media_ids.append(message.id)
+        if kind == "messages":
+            _apply_chat_unread(db, number, payload.get("chat") or {})  # respondeu no celular: o contador zera
         return media_ids
     if kind == "call":
         _apply_call(db, number, payload)
@@ -148,6 +150,9 @@ def process_event(db: Session, payload: dict) -> list:
         return []
     if kind == "chat_labels":
         _apply_chat_labels(db, number, payload.get("chat") or {})
+        return []
+    if kind == "chats":
+        _apply_chat_unread(db, number, payload.get("chat") or {})
         return []
     _sample(kind or "desconhecido", payload)
     return []
@@ -211,6 +216,43 @@ def _apply_self_reads(db: Session, number: WhatsAppNumber, event: dict) -> None:
     if kind not in SELF_READ or not ids:
         return
     apply_evolution(db, number, [{"keyId": i, "status": "READ", "fromMe": False} for i in ids])
+
+
+_unread: dict = {}  # (número, conversa) -> último contador de não lidas que a UAZapi mandou
+
+
+def _apply_chat_unread(db: Session, number: WhatsAppNumber, chat: dict) -> bool:
+    """📬 O vendedor abriu a conversa no celular (ou respondeu por lá): o contador de não lidas da UAZapi
+    (chat.wa_unreadCount) passa de 1+ pra 0 e a conversa sai das não lidas do CRM. A UAZapi não manda o
+    recibo "lido por mim" que o Evolution mandava, então é por esse contador que o CRM fica sabendo.
+    Só conta a passagem de 1+ pra 0: se a UAZapi mandasse sempre 0, nada seria marcado como lido à toa."""
+    from app.services import inbox_state
+    from app.services.lead_match import find_lead_by_phone
+
+    chat_id = str(chat.get("wa_chatid") or "")
+    count = chat.get("wa_unreadCount")
+    if (not chat_id or chat_id.endswith(("@g.us", "@broadcast", "@newsletter")) or chat.get("wa_isGroup")
+            or isinstance(count, bool) or not isinstance(count, (int, float, str))):
+        return False
+    try:
+        count = int(count)
+    except ValueError:
+        return False
+    key = (number.id, _digits(chat_id))
+    before = _unread.get(key)
+    _unread[key] = count
+    if len(_unread) > 50000:
+        _unread.clear()
+    if count > 0 or not before:
+        return False
+    phone = _contact_phone(db, {}, chat)
+    lead = find_lead_by_phone(db, number.tenant_id, phone) if phone else None
+    if lead is None or lead.deleted_at:
+        return False
+    inbox_state.mark_seen_by_seller(lead)
+    db.add(lead)
+    db.commit()
+    return True
 
 
 CALL_TAGS = {"offer": "offer", "accept": "accept", "reject": "reject", "terminate": "terminate", "timeout": "timeout"}

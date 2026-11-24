@@ -30,7 +30,9 @@ logger = logging.getLogger("uazapi_client")
 PROVIDER = "uazapi"
 # o que o CRM precisa: mensagens (as do celular também), entregue/lida, conexão, ligações e o histórico
 # que o WhatsApp manda quando o número é conectado
-WEBHOOK_EVENTS = ["messages", "messages_update", "connection", "call", "history", "contacts", "labels", "chat_labels"]
+# "chats": o contador de não lidas da conversa (é por ele que o CRM sabe que o vendedor leu no celular)
+WEBHOOK_EVENTS = ["messages", "messages_update", "connection", "call", "history", "contacts", "labels", "chat_labels",
+                  "chats"]
 # histórico que o celular manda pro aparelho novo ao ler o QR: só os últimos dias (o CRM já tem o resto;
 # sem isso o WhatsApp manda 90 dias, que só atrasaria a chegada das mensagens recentes)
 HISTORY_DAYS = 2
@@ -96,7 +98,13 @@ def webhook_ok(token: str) -> bool:
     """O webhook da instância aponta pro CRM e está ligado? (a UAZapi desliga sozinha depois de 24h falhando)"""
     body = _request("GET", "/webhook", token=token)
     rows = body.get("items") if "items" in body else [body]
-    return any(isinstance(r, dict) and r.get("enabled") and r.get("url") == webhook_url() for r in rows)
+    return any(isinstance(r, dict) and r.get("enabled") and r.get("url") == webhook_url() and _has_events(r) for r in rows)
+
+
+def _has_events(row: dict) -> bool:
+    """Webhook antigo sem algum evento novo do CRM (ex.: "chats"): o vigia grava de novo com a lista atual."""
+    events = row.get("events")
+    return not isinstance(events, list) or set(WEBHOOK_EVENTS) <= {str(e) for e in events}
 
 
 # ---------- instância / conexão ----------
