@@ -207,6 +207,9 @@ def _unconfirmed_match(db: Session, lead: Lead, body: str, media_type: str,
     return None
 
 
+LIVE_REPLY_WINDOW = datetime.timedelta(minutes=10)  # resposta do celular que chegou até 10 min depois de enviada
+
+
 def record_outbound_from_phone(
     db: Session,
     number: WhatsAppNumber,
@@ -238,6 +241,14 @@ def record_outbound_from_phone(
         # resposta do celular que chegou atrasada (recuperada depois de uma automática): também conta
         # como resposta, senão a conversa ficava "não lida" mesmo respondida
         lead.last_reply_at = when
+    if not auto:
+        # 📬 o vendedor respondeu pelo WhatsApp (celular/Web): ele viu a conversa, então ela sai das não lidas.
+        # A hora da mensagem vem do RELÓGIO DO CELULAR dele: se estiver uns minutos atrasado, a resposta parecia
+        # mais velha que a última mensagem do cliente e a conversa continuava "não lida". Resposta que acabou de
+        # chegar conta como vista AGORA; resposta antiga (recuperada depois) conta até a hora dela.
+        now = datetime.datetime.utcnow()
+        live = when is None or abs(now - when) <= LIVE_REPLY_WINDOW
+        inbox_state.mark_seen_by_seller(lead, now if live else when)
     funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
     followup.on_outbound_text(db, lead, body)  # mandou preço pelo celular: vai pra "Negociando"
     suggestions.on_message(lead, body, outbound=True)  # 💡 "temos sim", "não temos", "pedido confirmado"...
