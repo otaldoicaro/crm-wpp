@@ -27,7 +27,7 @@
   {% if etapa %}{% set _ = f.append(("Etapa: " ~ ((filter_stages|selectattr("id", "equalto", etapa)|map(attribute="name")|first) or ""), "etapa")) %}{% endif %}
   {% if quando %}{% set _ = f.append((inbox_dates|selectattr(0, "equalto", quando)|map(attribute=1)|first, "quando")) %}{% endif %}
   {% if fav %}{% set _ = f.append(("⭐ Favoritas", "fav")) %}{% endif %}
-  {% if lidas and tab != "naolidas" %}{% set _ = f.append((statuses|selectattr(0, "equalto", lidas)|map(attribute=1)|first or lidas, "lidas")) %}{% endif %}
+  {% if lidas and tab != "naolidas" and lidas != "vistas" %}{% set _ = f.append((statuses|selectattr(0, "equalto", lidas)|map(attribute=1)|first or lidas, "lidas")) %}{% endif %}
   {% if aviso and tab not in ("interesse", "venda") %}{% set _ = f.append((avisos|selectattr(0, "equalto", aviso)|map(attribute=1)|first or aviso, "aviso")) %}{% endif %}
   {% if ordem and ordem != "recentes" %}{% set _ = f.append(("Esperando há mais tempo primeiro", "ordem")) %}{% endif %}
   <div class="inbox-filter-row">
@@ -37,6 +37,7 @@
   {# 🏷 abas das conversas marcadas (clique de novo pra voltar a ver todas) #}
   <nav class="inbox-tabs status-chips flag-tabs">
     {% for key, label in inbox_flags %}<a data-reset-scroll class="flag-tab flag-{{ key }} {{ 'on' if marca == key }}" href="{{ path }}?marca={{ '' if marca == key else key }}" title="{{ 'Voltar a ver todas as conversas' if marca == key else 'Só as conversas marcadas como ' ~ label }}">{{ label }} <span class="unread-total {{ 'zero' if not status_counts[key] }}" data-status="{{ key }}">{{ status_counts[key] }}</span></a>{% endfor %}
+    <a data-reset-scroll class="flag-tab flag-vistas {{ 'on' if lidas == 'vistas' }}" href="{{ path }}?lidas={{ '' if lidas == 'vistas' else 'vistas' }}&aviso=" title="{{ 'Voltar a ver todas as conversas' if lidas == 'vistas' else 'O vendedor abriu a conversa (no CRM ou no WhatsApp) e ainda não respondeu o cliente' }}">👀 Viu e não respondeu <span class="unread-total {{ 'zero' if not status_counts.vistas }}" data-status="vistas">{{ status_counts.vistas }}</span></a>
     {% if user.role != "admin" and (status_counts.repassados or marca == "repassados") %}<a data-reset-scroll class="flag-tab flag-repassados {{ 'on' if marca == 'repassados' }}" href="{{ path }}?marca={{ '' if marca == 'repassados' else 'repassados' }}" title="{{ 'Voltar pras suas conversas' if marca == 'repassados' else 'Leads que você passou pra outro vendedor: saem das suas conversas, mas dá pra ver aqui' }}">↪ Repassados <span class="unread-total zero" data-status="repassados">{{ status_counts.repassados }}</span></a>{% endif %}
   </nav>
   {% if f %}
@@ -50,6 +51,7 @@
       <label><input type="radio" name="lidas" value="" {{ "checked" if not lidas or lidas == "naolidas" }}> Todas</label>
       <label><input type="radio" name="lidas" value="naorespondidas" {{ "checked" if lidas == "naorespondidas" }}> Não respondidas <span class="muted" data-status="naorespondidas">{{ status_counts.naorespondidas }}</span></label>
       <label><input type="radio" name="lidas" value="followup" {{ "checked" if lidas == "followup" }}> Sem resposta do cliente <span class="muted" data-status="followup">{{ status_counts.followup }}</span></label>
+      <label><input type="radio" name="lidas" value="vistas" {{ "checked" if lidas == "vistas" }}> 👀 Viu e não respondeu <span class="muted" data-status="vistas">{{ status_counts.vistas }}</span></label>
     </div>
     <div class="fp-group"><b>Avisos</b>
       <label><input type="radio" name="aviso" value="" {{ "checked" if not aviso }}> Nenhum</label>

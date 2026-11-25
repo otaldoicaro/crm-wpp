@@ -1279,6 +1279,7 @@ INBOX_STATUSES = [  # "precisa de atenção": um de cada vez
     ("naolidas", "Não lidas"),
     ("naorespondidas", "Não respondidas"),
     ("followup", "Sem resposta do cliente"),
+    ("vistas", "👀 Viu e não respondeu"),  # o vendedor abriu (CRM) ou leu no celular e não respondeu
 ]
 LEGACY_STATUS_TIPOS = ("naolidas", "followup", "parados")  # antes ficavam junto com os tipos
 
@@ -1384,6 +1385,8 @@ def _inbox_query(
         query = inbox_state.unanswered_filter(query)
     elif status == "naolidas":
         query = inbox_state.unread_filter(query, user)
+    elif status == "vistas":
+        query = inbox_state.seen_unanswered_filter(query)
     elif status == "followup":
         query = query.filter(followup.followup_condition(tenant, funnel._stages(db, tenant.id)))
     elif status == "parados":
