@@ -38,9 +38,11 @@ FEATURES = {
                          "(pro vendedor do agendamento; precisa de 📅 Agendamentos e ✅ Tarefas ligados)",
     "tarefas": "✅ Tarefas: na conversa e na ficha do lead dá pra criar uma tarefa com data (ex: fazer follow-up); a aba ✅ Tarefas "
                "mostra as de hoje, atrasadas e futuras, e no dia aparece o aviso no menu",
+    "dash_mql": "🎯 Faixas de MQL no Dashboard: aba com quantos leads responderam cada faixa de faturamento, quais "
+                "campanhas trouxeram cada faixa e a lista dos leads pra filtrar (faturamento, investimento, plataforma, campanha)",
     "empresas": "🏢 Empresas no Pipeline: no status do lead dá pra juntar o contato ao card de outra pessoa da mesma empresa "
                 "(ex: quem chamou passou o número do sócio). O card mostra os contatos juntos e conta como um lead só",
-    "dash_agencia": "📊 Dashboard de agência: Leads = todos que entraram · Qualificados = faturamento a partir de R$ 100 mil ou "
+    "dash_agencia": "📊 Dashboard de agência: Leads = todos que entraram · Qualificados = faturamento a partir de R$ 100 mil (Meta: R$ 50 mil) ou "
                     "investimento a partir de R$ 3 mil (formulário ou Leadster) · Propostas = chegou em Proposta Enviada ou depois · "
                     "Vendas = fechou",
     "lixeira_apaga": "🗑️ Lixeira com prazo: lead excluído fica na Lixeira por 30 dias (dá pra restaurar) e depois é apagado de vez, "
@@ -64,7 +66,7 @@ GROUPS = [
     ("👥 Vendedores", ["sem_passar_lead", "passar_troca_numero", "passar_so_na_ficha"]),
     ("🤖 Mensagens automáticas pro cliente", ["followup_automatico", "followup_so_24h", "mensagem_fora_horario"]),
     ("💰 Venda e pagamento", ["pagamento_parcelado"]),
-    ("📊 Dashboard e telas", ["auditoria_no_dashboard", "dash_agencia", "tarefas", "empresas"]),
+    ("📊 Dashboard e telas", ["auditoria_no_dashboard", "dash_agencia", "dash_mql", "tarefas", "empresas"]),
     ("🗑️ Lixeira", ["lixeira_apaga"]),
 ]
 

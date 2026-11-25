@@ -81,6 +81,7 @@
   {% for key, label in ((("comercial", "📊 Comercial"), ("criativos", "🎨 Criativos"), ("clientes", "🔁 Clientes")) if own_traffic else (("comercial", "📊 Comercial"), ("trafego", "📣 Tráfego"), ("criativos", "🎨 Criativos"), ("clientes", "🔁 Clientes"))) %}
   <a class="dash-tab {{ 'on' if aba == key }}" href="/dashboard?aba={{ key }}&{{ tab_qs }}">{{ label }}</a>
   {% endfor %}
+  {% if has_feature(tenant, "dash_mql") and segment_for(tenant).get("lead_profile") %}<a class="dash-tab {{ 'on' if aba == 'mql' }}" href="/dashboard?aba=mql&{{ tab_qs }}">🎯 MQL</a>{% endif %}
   {% if has_feature(tenant, "auditoria_no_dashboard") and not user.read_only %}<a class="dash-tab" href="/auditoria" title="Quando cada lead entrou e cada contato que ele recebeu">🔎 Auditoria</a>{% endif %}
 </nav>
 {% endif %}
@@ -737,6 +738,91 @@
 })();
 </script>
 {% endif %}
+{% endif %}
+
+{% if aba == "mql" and mql %}
+{# 🎯 faixas de faturamento que os leads responderam, campanhas de cada faixa e a lista pra filtrar #}
+<div class="section-title"><h3 style="margin:0">🎯 Leads por faixa de faturamento</h3></div>
+<p class="muted" style="margin:-4px 0 10px">{{ mql.total }} leads no período · {{ mql.answered }} responderam o faturamento · {{ mql.mql_total }} MQL. Clique numa faixa pra ver os leads dela.</p>
+<div class="card" style="overflow-x:auto">
+  <table class="table-simple">
+    <thead><tr><th>Faturamento por mês</th><th class="num">Leads</th><th class="num">% dos leads</th><th class="num">MQL</th><th>Plataformas</th><th>Campanhas que trouxeram</th></tr></thead>
+    <tbody>
+    {% for r in mql.summary %}
+      <tr>
+        <td><a href="#mqlLista" class="mql-faixa" data-faixa="{{ r.faixa }}"><b>{{ r.faixa }}</b></a></td>
+        <td class="num">{{ r.leads }}</td>
+        <td class="num">{{ (r.share|string).replace(".", ",") }}%</td>
+        <td class="num">{{ r.mql or "—" }}</td>
+        <td>{% for name, count in r.platforms %}<span class="mql-chip">{{ name }} {{ count }}</span>{% endfor %}</td>
+        <td>{% for name, count in r.campaigns[:4] %}<a href="#mqlLista" class="mql-chip mql-camp" data-faixa="{{ r.faixa }}" data-camp="{{ name if name != '(sem campanha)' else '' }}" title="Ver os leads desta faixa vindos desta campanha">{{ name }} · {{ count }}</a>{% endfor %}{% if r.campaigns|length > 4 %}<span class="muted"> +{{ r.campaigns|length - 4 }}</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="section-title" id="mqlLista"><h3 style="margin:0">Leads</h3> <span class="muted" id="mqlCount"></span></div>
+<div class="card">
+  <div class="mql-filters">
+    <input type="search" id="mqlBusca" placeholder="Buscar nome ou empresa">
+    <select id="mqlFat"><option value="">Faturamento: todos</option>{% for f in mql.faixas %}<option>{{ f }}</option>{% endfor %}</select>
+    <select id="mqlInv"><option value="">Investimento: todos</option>{% for f in mql.investimentos %}<option>{{ f }}</option>{% endfor %}</select>
+    <select id="mqlPlat"><option value="">Plataforma: todas</option>{% for p in mql.platforms %}<option>{{ p }}</option>{% endfor %}</select>
+    <select id="mqlCamp"><option value="">Campanha: todas</option><option value="-">(sem campanha)</option>{% for c in mql.campaigns %}<option>{{ c }}</option>{% endfor %}</select>
+    <label class="mql-only"><input type="checkbox" id="mqlSo"> Só MQL</label>
+    <button type="button" class="btn ghost small" id="mqlLimpar">Limpar</button>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="table-simple" id="mqlTabela">
+    <thead><tr><th>Lead</th><th>Entrou</th><th>Faturamento</th><th>Investimento</th><th>Plataforma</th><th>Campanha</th><th>Etapa</th><th>MQL</th></tr></thead>
+    <tbody>
+    {% for r in mql.rows %}{% set l = r.lead %}
+      <tr data-fat="{{ r.faturamento }}" data-inv="{{ r.investimento }}" data-plat="{{ r.platform_label }}" data-camp="{{ r.campaign or '-' }}" data-mql="{{ 1 if r.mql else 0 }}" data-busca="{{ ((l.name or '') ~ ' ' ~ (l.company or '') ~ ' ' ~ (l.phone or ''))|lower }}">
+        <td><a href="/leads/{{ l.id }}">{{ l.name or l.phone }}</a>{% if l.company %}<div class="muted" style="font-size:.75rem">{{ l.company }}</div>{% endif %}</td>
+        <td>{{ l.created_at|hora("%d/%m/%Y") }}</td>
+        <td>{{ r.faturamento }}</td>
+        <td>{{ r.investimento }}</td>
+        <td>{{ r.platform_label }}</td>
+        <td>{{ r.campaign or "—" }}</td>
+        <td>{{ l.stage.name if l.stage else "—" }}</td>
+        <td>{{ "✅" if r.mql else "" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+<script>
+(function () {
+  var ids = ["mqlBusca", "mqlFat", "mqlInv", "mqlPlat", "mqlCamp", "mqlSo"], el = {};
+  ids.forEach(function (id) { el[id] = document.getElementById(id); });
+  var rows = Array.prototype.slice.call(document.querySelectorAll("#mqlTabela tbody tr")), count = document.getElementById("mqlCount");
+  function apply() {
+    var q = el.mqlBusca.value.trim().toLowerCase(), shown = 0, mql = 0;
+    rows.forEach(function (tr) {
+      var d = tr.dataset, ok = (!q || d.busca.indexOf(q) !== -1) && (!el.mqlFat.value || d.fat === el.mqlFat.value)
+        && (!el.mqlInv.value || d.inv === el.mqlInv.value) && (!el.mqlPlat.value || d.plat === el.mqlPlat.value)
+        && (!el.mqlCamp.value || d.camp === el.mqlCamp.value) && (!el.mqlSo.checked || d.mql === "1");
+      tr.hidden = !ok; if (ok) { shown++; if (d.mql === "1") mql++; }
+    });
+    count.textContent = shown + " de " + rows.length + " leads · " + mql + " MQL";
+  }
+  ids.forEach(function (id) { el[id].addEventListener(id === "mqlBusca" ? "input" : "change", apply); });
+  document.getElementById("mqlLimpar").addEventListener("click", function () {
+    ids.forEach(function (id) { if (id === "mqlSo") el[id].checked = false; else el[id].value = ""; }); apply();
+  });
+  document.querySelectorAll(".mql-faixa, .mql-camp").forEach(function (a) {
+    a.addEventListener("click", function () {
+      ids.forEach(function (id) { if (id === "mqlSo") el[id].checked = false; else el[id].value = ""; });
+      el.mqlFat.value = a.dataset.faixa;
+      if (a.classList.contains("mql-camp")) el.mqlCamp.value = a.dataset.camp || "-";
+      apply();
+    });
+  });
+  apply();
+})();
+</script>
 {% endif %}
 
 {% if aba == "clientes" %}

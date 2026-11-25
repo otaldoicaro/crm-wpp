@@ -24,6 +24,7 @@ from app.services.inbox_state import NOT_SALES_TAGS
 from app.models import CampaignSpend, Conversation, ConversionEvent, KpiGoal, Lead, LeadComment, Message, PipelineStage, Tenant, User, WhatsAppNumber
 from app import features, segments
 from app.services import teams, uazapi_client
+from app.services import mql_report
 from app.services import after_hours, autofollow, autostage, car_deal, channels, comments, deals, handover, invalid_contact, lead_profile, trash, notify, products, evolution_client, ownership, receipts, first_contact, followup, funnel, inbox_state, media_store, messaging, meta_spend, response_times, suggestions, traffic
 from app.services.conversions.dispatcher import dispatch_stage_conversion
 from app.routers.quick_replies import replies_for_js
@@ -3446,7 +3447,9 @@ def dashboard_view(
     if not is_admin:
         seller = ""  # vendedor vê os números gerais da equipe + os dele (nunca os de outro vendedor)
     # abas: Comercial (padrão) · Tráfego · Clientes. Vendedor só vê a Comercial.
-    if aba not in ("comercial", "trafego", "criativos", "clientes", "integracoes") or not is_admin:
+    if aba not in ("comercial", "trafego", "criativos", "clientes", "integracoes", "mql") or not is_admin:
+        aba = "comercial"
+    if aba == "mql" and not (features.has(tenant, "dash_mql") and lead_profile.config(tenant)):
         aba = "comercial"
 
     now = datetime.datetime.utcnow()
@@ -3470,7 +3473,7 @@ def dashboard_view(
     # só Comercial e Tráfego mostram números dos leads: Clientes e Integrações não carregam os
     # milhares de leads do período. E as conversas não vêm junto (era metade do tempo da tela):
     # pra saber "tem conversa?" basta a lista de ids, numa consulta só
-    needs_leads = aba in ("comercial", "trafego", "criativos")
+    needs_leads = aba in ("comercial", "trafego", "criativos", "mql")
     all_period_leads = leads_query.options(
         selectinload(Lead.attribution), joinedload(Lead.assigned_user), joinedload(Lead.stage)).all() if needs_leads else []
     canal = canal if canal in channels.CHANNEL_KEYS else ""
@@ -3689,7 +3692,7 @@ def dashboard_view(
         db, tenant.id, leads,
         to_local(range_from).date() if range_from else None, to_local(range_to).date() if range_to else None,
         funnel.is_qualified(stages, tenant), set(won_stage_ids), funnel.is_opportunity(stages), channel=canal,
-    ) if aba in ("trafego", "criativos") else None  # cada aba calcula só o que mostra
+    ) if aba in ("trafego", "criativos", "mql") else None  # cada aba calcula só o que mostra
     creatives = _creative_cards(db, tenant.id, traffic_data) if aba == "criativos" else []
     if creatives and not any(c["creative"] for c in creatives):
         meta_spend.refresh_creatives_now(tenant.id, force=False)  # 1ª vez: busca as imagens sozinho
@@ -3704,6 +3707,8 @@ def dashboard_view(
         "dashboard.html",
         {
             "creatives": creatives,
+            "mql": mql_report.build(leads, lead_profile.config(tenant), mql_report.campaign_by_lead(traffic_data),
+                                    funnel.is_qualified(stages, tenant)) if aba == "mql" else None,
             "cr_msg": request.query_params.get("cr", ""),
             "cr_status": meta_spend.creatives_status.get(tenant.id) if aba == "criativos" else None,
             "tenant": tenant,

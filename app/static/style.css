@@ -1353,3 +1353,10 @@ th.js-sortable.sorted-asc::after { content: " ▲"; font-size: .7em; }
   display: inline-flex; align-items: center; font-size: .68rem; font-weight: 800; padding: 3px 8px; border-radius: 7px;
   background: #fff4d6; color: #8a5a00; border: 1px solid #f0c55a; text-transform: uppercase; letter-spacing: .02em; white-space: nowrap;
 }
+
+/* 🎯 aba MQL do Dashboard */
+.mql-chip { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 8px; border-radius: 999px; background: var(--bg, #f4f2ec); border: 1px solid var(--line); font-size: .75rem; color: var(--text); text-decoration: none; white-space: nowrap; }
+a.mql-chip:hover { border-color: var(--y); }
+.mql-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.mql-filters input[type=search], .mql-filters select { max-width: 100%; min-width: 150px; }
+.mql-only { display: inline-flex; gap: 6px; align-items: center; font-size: .85rem; }
