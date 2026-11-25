@@ -4,6 +4,7 @@ textos e o tipo de venda. As frases das sugestões de etapa ficam em services/su
 Cliente sem ramo (ou com um ramo que não existe mais) usa "autopecas"."""
 
 NO_REPLY_REASON = "Não responde mais"
+NEVER_REPLIED_REASON = "Nunca respondeu"  # o time chamou e o cliente nunca mandou nenhuma mensagem
 INVALID_REASON = "Contato inválido"  # o WhatsApp diz que o número não existe (testado com e sem o 9)
 REFUND_REASON = "Devolução / reembolso"  # comprou e pediu o dinheiro de volta
 
@@ -101,6 +102,7 @@ SEGMENTS = {
             "Resolveu de outro jeito",
             REFUND_REASON,
             NO_REPLY_REASON,
+            NEVER_REPLIED_REASON,
             INVALID_REASON,
             "Outro",
         ],
@@ -127,6 +129,7 @@ SEGMENTS = {
             "Desistiu / só pesquisando",
             REFUND_REASON,
             NO_REPLY_REASON,
+            NEVER_REPLIED_REASON,
             INVALID_REASON,
             "Outro",
         ],
@@ -169,6 +172,7 @@ SEGMENTS = {
             "Desistiu / só pesquisando",
             REFUND_REASON,
             NO_REPLY_REASON,
+            NEVER_REPLIED_REASON,
             INVALID_REASON,
             "Outro",
         ],

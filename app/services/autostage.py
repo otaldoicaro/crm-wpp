@@ -184,7 +184,7 @@ def reopen_if_request(db, lead: Lead, body: str, when: Optional[datetime.datetim
         return lead
     if refund_if_asked(db, lead, body, outbound=False):
         return lead  # pediu o dinheiro de volta: não é pedido novo
-    replied = stage.is_lost and lead.loss_reason == segments.NO_REPLY_REASON and not funnel.is_courtesy(body)
+    replied = stage.is_lost and lead.loss_reason in (segments.NO_REPLY_REASON, segments.NEVER_REPLIED_REASON) and not funnel.is_courtesy(body)
     if not replied and not looks_like_request(body, segments.key_for_lead(lead)):
         return lead
     if stage.is_won:  # a venda feita continua contando: o pedido novo vira outro negócio

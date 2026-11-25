@@ -137,6 +137,19 @@ def check_loss(db, lead: Lead, stage: PipelineStage, reason: str) -> Optional[st
                 f"“{NO_REPLY_REASON}” só depois de pelo menos {FOLLOW_UPS_BEFORE_NO_REPLY} follow-ups sem resposta "
                 "(mensagens do time depois da última mensagem do cliente)."
             )
+    if reason == segments.NEVER_REPLIED_REASON:
+        from app.models import Conversation, Message
+
+        replied = lead.last_inbound_at is not None or (
+            db.query(Message.id)
+            .join(Conversation, Conversation.id == Message.conversation_id)
+            .filter(Conversation.lead_id == lead.id, Message.direction == "in")
+            .first()
+            is not None
+        )
+        if replied:
+            return (f"“{segments.NEVER_REPLIED_REASON}” é só pra quem nunca mandou mensagem. "
+                    f"Esse cliente já respondeu: use “{NO_REPLY_REASON}”.")
     return None
 
 
