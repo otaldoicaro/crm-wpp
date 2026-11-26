@@ -70,7 +70,7 @@
     </div>
     {# ☑ vendedores: admin escolhe quais ver ao mesmo tempo; vendedor numa equipe, entre ele e os colegas #}
     {% if filter_sellers %}
-    <div class="fp-group fp-sellers"><b>{{ "Vendedores" if user.role == "admin" else ("Minha equipe · " ~ my_team.name) }}</b>
+    <div class="fp-group fp-sellers"><b>{{ ("Minha equipe · " ~ my_team.name) if (my_team and user.role != "admin" and not sees_all) else "Vendedores" }}</b>
       <input type="hidden" name="vendedor" value="">
       {% if seller_teams %}<div class="fp-team-btns">{% for t in seller_teams %}<button type="button" class="btn ghost small" data-team-ids="{{ t.ids|join(',') }}" title="Marcar / desmarcar os vendedores desta equipe">👥 {{ t.team.name }}</button>{% endfor %}</div>{% endif %}
       <div class="fp-checks">

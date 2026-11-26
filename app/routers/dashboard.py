@@ -1467,7 +1467,7 @@ def _seller_condition(vendedor: str, removed_ids: list):
 def _seller_choices(db: Session, tenant: Tenant, user: User) -> list:
     """Quem aparece nas caixinhas de vendedor do Inbox: admin, todos os vendedores; vendedor numa
     equipe, ele e os colegas; fora de equipe, ninguém (vê só as dele)."""
-    if user.role == "admin":
+    if user.role == "admin" or teams.sees_all(user):  # 👥 vendedor que vê todos: o mesmo filtro do admin
         return [p for p in team_members(db, tenant.id) if p.role == "agent"]
     team = teams.team_of(db, user)
     return teams.members(db, tenant.id, team.id) if team else []
@@ -1483,7 +1483,7 @@ def _clean_vendedor(db: Session, tenant: Tenant, user: User, vendedor: str) -> s
 
 def _team_shortcuts(db: Session, tenant: Tenant, user: User) -> list:
     """Atalhos de equipe nas caixinhas do Inbox: [{"team", "ids"}]. Admin vê todas; vendedor, a dele."""
-    if user.role == "admin":
+    if user.role == "admin" or teams.sees_all(user):
         chosen = teams.tenant_teams(db, tenant.id)
     else:
         chosen = [t for t in [teams.team_of(db, user)] if t is not None]
@@ -1642,6 +1642,7 @@ def _inbox_context(
             "seller_tokens": _seller_tokens(vendedor),
             "seller_teams": _team_shortcuts(db, tenant, user),
             "my_team": teams.team_of(db, user),
+            "sees_all": teams.sees_all(user),
             "has_removed": bool(removed_ids) if user.role == "admin" else False,
             "msg_sig": _msg_sig(db, selected_lead.id) if selected_lead else "0",
             "tenant": tenant,
@@ -1694,6 +1695,7 @@ def _transfer_options(db: Session, tenant: Tenant, lead: Lead) -> list:
 
 INBOX_FILTER_COOKIE = "inbox_filtro_v3"  # v3: padrão "Tudo (menos grupos)" + "Todas as etapas" pra todo mundo
 INBOX_TEXT_COOKIE = "inbox_texto"
+INBOX_OWN_COOKIE = "inbox_vendedor_padrao"  # 👥 já aplicou o "filtro em mim mesmo" nesta sessão
 
 
 def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, selected_lead_id: Optional[str]):
@@ -1733,6 +1735,10 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
         vendedor = ",".join(v for v in qp.getlist("vendedor") if v)
     # filtro lembrado de um vendedor/número que foi excluído depois (ou de outra equipe): sai do filtro
     vendedor = _clean_vendedor(db, tenant, user, vendedor)
+    # 👥 vendedor que vê todos: a cada vez que entra (sessão do navegador), o filtro começa nele mesmo
+    own_default = teams.sees_all(user) and not request.cookies.get(INBOX_OWN_COOKIE)
+    if own_default and "vendedor" not in qp:
+        vendedor = user.id
     if numero and not db.query(WhatsAppNumber.id).filter(WhatsAppNumber.id == numero, WhatsAppNumber.tenant_id == tenant.id).first():
         numero = ""
     inbox_state.ensure_baseline(db, user)
@@ -1754,6 +1760,8 @@ def _render_inbox(request: Request, db: Session, tenant: Tenant, user: User, sel
         response.set_cookie(INBOX_TEXT_COOKIE, quote(texto), samesite="lax")  # sem httponly: o menu apaga
     else:
         response.delete_cookie(INBOX_TEXT_COOKIE)
+    if own_default:
+        response.set_cookie(INBOX_OWN_COOKIE, "1", httponly=True, samesite="lax")  # sem validade: vale até fechar o navegador
     response.set_cookie(INBOX_FILTER_COOKIE, f"{numero}|{vendedor}|{tipo}|{lidas}|{ordem}|{etapa}|{aviso}|{fav}|{quando}|{marca}", httponly=True, samesite="lax")
     return response
 

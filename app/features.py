@@ -54,6 +54,9 @@ FEATURES = {
                           "conta ligação ou e-mail). Zera quando o cliente responde",
     "transcrever_audios": "🎙️ Transcrever os áudios do WhatsApp (o texto aparece embaixo do áudio e entra nas regras "
                           "automáticas e na busca). Custo no Groq: ~US$ 0,04 por hora de áudio",
+    "vendedor_ve_todos": "👥 Todo vendedor vê as conversas dos leads dos colegas, com o filtro de vendedor igual ao do "
+                         "admin. Ao abrir o Inbox o filtro já vem marcado nele mesmo (desmarcando, vê a equipe toda). "
+                         "Grupos e contatos Time/Outro continuam só de cada um",
     "uazapi": "📱 WhatsApp pela UAZAPI (pago, cobrado por número conectado): na tela WhatsApp o admin pode passar cada "
               "número do Evolution pra UAZAPI (🔁 Passar pro UAZapi) e ler o QR code de novo; as conversas continuam as "
               "mesmas. Precisa da conta da UAZAPI configurada no servidor",
@@ -63,7 +66,7 @@ GROUPS = [
     ("🧭 Funil e etapas", ["funil_manual", "visita_negociando", "agendamentos", "tarefa_pos_visita", "lead_frio", "sem_prazos", "tentativas_contato"]),
     ("📱 WhatsApp", ["uazapi"]),
     ("💬 Conversas e Inbox", ["interessados_negociando", "sem_popup_outro_vendedor", "transcrever_audios", "sem_espelhar_time_outro"]),
-    ("👥 Vendedores", ["sem_passar_lead", "passar_troca_numero", "passar_so_na_ficha"]),
+    ("👥 Vendedores", ["vendedor_ve_todos", "sem_passar_lead", "passar_troca_numero", "passar_so_na_ficha"]),
     ("🤖 Mensagens automáticas pro cliente", ["followup_automatico", "followup_so_24h", "mensagem_fora_horario"]),
     ("💰 Venda e pagamento", ["pagamento_parcelado"]),
     ("📊 Dashboard e telas", ["auditoria_no_dashboard", "dash_agencia", "dash_mql", "tarefas", "empresas"]),

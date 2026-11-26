@@ -34,8 +34,25 @@ def team_of(db: Session, user: User) -> Optional[SellerTeam]:
     return team if team is not None and team.tenant_id == user.tenant_id else None
 
 
+def sees_all(user: Optional[User]) -> bool:
+    """👥 Recurso "vendedor_ve_todos": este vendedor vê os leads de todos os colegas (não só da equipe dele)."""
+    from app import features
+
+    return user is not None and user.role == "agent" and features.has(user.tenant, "vendedor_ve_todos")
+
+
+def all_sellers(db: Session, tenant_id: str) -> list:
+    """Vendedores da empresa (removidos e visitantes não contam)."""
+    return (db.query(User).filter(User.tenant_id == tenant_id, User.removed_at.is_(None), User.pending_approval.is_(False),
+                                  User.read_only.is_(False), User.role == "agent")
+            .order_by(User.name).all())
+
+
 def peer_ids(db: Session, user: User) -> list:
-    """Colegas de equipe deste vendedor (sem ele mesmo). Admin ou fora de equipe: []."""
+    """Colegas de equipe deste vendedor (sem ele mesmo). Admin ou fora de equipe: [].
+    Com "vendedor_ve_todos": todos os vendedores da empresa."""
+    if sees_all(user):
+        return [u.id for u in all_sellers(db, user.tenant_id) if u.id != user.id]
     team = team_of(db, user)
     if team is None:
         return []
