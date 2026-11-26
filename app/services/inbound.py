@@ -245,10 +245,15 @@ def record_outbound_from_phone(
         # 📬 o vendedor respondeu pelo WhatsApp (celular/Web): ele viu a conversa, então ela sai das não lidas.
         # A hora da mensagem vem do RELÓGIO DO CELULAR dele: se estiver uns minutos atrasado, a resposta parecia
         # mais velha que a última mensagem do cliente e a conversa continuava "não lida". Resposta que acabou de
-        # chegar conta como vista AGORA; resposta antiga (recuperada depois) conta até a hora dela.
+        # chegar conta como vista até a última mensagem do cliente que o CRM já tinha (não "agora": uma mensagem do
+        # cliente que chega depois, mesmo com hora um pouco anterior, ele ainda não viu); resposta antiga (recuperada
+        # depois) conta até a hora dela.
         now = datetime.datetime.utcnow()
         live = when is None or abs(now - when) <= LIVE_REPLY_WINDOW
-        inbox_state.mark_seen_by_seller(lead, now if live else when)
+        seen = when or now
+        if live and lead.last_inbound_at is not None and lead.last_inbound_at > seen:
+            seen = min(lead.last_inbound_at, now)
+        inbox_state.mark_seen_by_seller(lead, seen)
     funnel.on_message(db, lead, outbound=True)  # time falou: vai pra "Em atendimento"
     followup.on_outbound_text(db, lead, body)  # mandou preço pelo celular: vai pra "Negociando"
     suggestions.on_message(lead, body, outbound=True)  # 💡 "temos sim", "não temos", "pedido confirmado"...
