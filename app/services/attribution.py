@@ -116,7 +116,7 @@ def attribution_from_click_bridge(db: Session, lead: Lead, message_body: str) ->
         code = bridge.tracking_code if bridge else None
     if not bridge or bridge.consumed_at:
         return None
-    if not any((bridge.utm_source, bridge.utm_campaign, bridge.gclid, bridge.fbclid)) and lead.attribution is not None:
+    if not any((bridge.utm_source, bridge.utm_campaign, bridge.gclid, bridge.fbclid, bridge.ad_id)) and lead.attribution is not None:
         return None  # clique sem origem não apaga nada
     if not _drop_empty(db, lead):
         return None
@@ -130,6 +130,7 @@ def attribution_from_click_bridge(db: Session, lead: Lead, message_body: str) ->
         utm_term=bridge.utm_term,
         gclid=bridge.gclid,
         fbclid=bridge.fbclid,
+        ad_id=bridge.ad_id or "",
         tracking_code=code,
     )
     bridge.consumed_at = datetime.datetime.utcnow()

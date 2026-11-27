@@ -7,7 +7,8 @@ Instagram etc. Cada clique abre o WhatsApp de um vendedor diferente (rodízio).
 
 Parâmetros aceitos na URL: texto (mensagem pré-preenchida, ex: lista de peças da LP),
 tel (telefone que a pessoa digitou no formulário — plano B pra casar a origem),
-utm_*, gclid, fbclid.
+utm_*, gclid, fbclid, ad_id (no Meta: ad_id={{ad.id}} — o painel de tráfego acha o conjunto e o anúncio
+mesmo que o nome tenha mudado).
 
 Nos dois casos: recebe o clique de um anúncio do Google Ads, guarda o
 gclid + UTMs, e redireciona pro WhatsApp já com a mensagem pré-preenchida
@@ -118,6 +119,7 @@ def _redirect_with_tracking(
         utm_campaign=params.get("utm_campaign", ""),
         utm_content=params.get("utm_content", ""),
         utm_term=params.get("utm_term", ""),
+        ad_id="".join(ch for ch in params.get("ad_id", "") if ch.isdigit())[:60],
         destination_phone=number.phone_number,
         lead_phone=normalize_br_phone(params.get("tel", "")),
     )

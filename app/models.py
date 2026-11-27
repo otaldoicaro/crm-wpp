@@ -434,6 +434,7 @@ class ClickBridge(Base):
     utm_campaign: Mapped[str] = mapped_column(String(160), default="")
     utm_content: Mapped[str] = mapped_column(String(160), default="")
     utm_term: Mapped[str] = mapped_column(String(160), default="")
+    ad_id: Mapped[str] = mapped_column(String(60), default="")  # ?ad_id={{ad.id}} do Meta: casa o anúncio certo no painel
     destination_phone: Mapped[str] = mapped_column(String(30), default="")
     # telefone que a pessoa digitou no formulário da LP (só dígitos, com 55). Plano B pra
     # casar a origem se ela apagar o código de rastreio da mensagem antes de enviar.
